@@ -2,10 +2,9 @@ require('dotenv').config({ path: '.env.local' });
 
 const express = require('express');
 const cookieParser = require('cookie-parser');
-const fs = require('fs');
 const path = require('path');
 const { buscarBoard } = require('./jira');
-const { cadastrar, entrar } = require('./supabase');
+const { cadastrar, entrar, lerSnapshot, gravarSnapshot } = require('./supabase');
 const {
   COOKIE_NAME,
   SESSAO_DIAS,
@@ -19,23 +18,15 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 const PUBLIC_DIR = path.join(__dirname, 'public');
 
-const DATA_DIR = path.join(__dirname, 'data');
-const SNAPSHOT_PATH = path.join(DATA_DIR, 'snapshot.json');
-if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR);
-
-function lerSnapshot() {
-  if (!fs.existsSync(SNAPSHOT_PATH)) {
-    return { vazio: true, erro: 'Ainda não foi feita nenhuma carga. Clique em "Atualizar agora".', colunas: [], pessoas: {} };
-  }
-  return JSON.parse(fs.readFileSync(SNAPSHOT_PATH, 'utf8'));
-}
-
-function gravarSnapshot(dados) {
-  fs.writeFileSync(SNAPSHOT_PATH, JSON.stringify(dados, null, 2));
-}
-
 app.use(express.json());
 app.use(cookieParser());
+
+async function executarAtualizacao(usuario) {
+  const dados = await buscarBoard();
+  await gravarSnapshot(dados);
+  console.log(`[${new Date().toLocaleTimeString('pt-BR')}] Board atualizado por ${usuario}. Sprint: ${dados.sprint}`);
+  return dados;
+}
 
 // ---- login / cadastro (nao exige sessao) ----
 
@@ -76,9 +67,7 @@ app.post('/auth/entrar', async (req, res) => {
   try {
     const usuarioSupabase = await entrar(email, senha);
 
-    // 2a checagem de dominio: de novo, agora no login. Nao confia so no
-    // que passou no cadastro - se por algum motivo existir uma conta no
-    // Supabase com e-mail fora da lista, barra aqui mesmo assim.
+    // 2a checagem de dominio: de novo, agora no login.
     if (!emailPermitido(usuarioSupabase.email)) {
       console.warn(`Login recusado para ${usuarioSupabase.email} (fora da lista permitida).`);
       return res.status(403).json({ erro: 'Esse e-mail não tem acesso liberado a este board.' });
@@ -105,7 +94,24 @@ app.post('/auth/logout', (req, res) => {
   res.json({ ok: true });
 });
 
-// ---- paginas e API protegidas ----
+// ---- cron diario (nao exige sessao de usuario - exige o segredo do cron) ----
+
+app.get('/api/cron-atualizar', async (req, res) => {
+  const auth = req.headers.authorization || '';
+  if (auth !== `Bearer ${process.env.CRON_SECRET}`) {
+    return res.status(401).json({ erro: 'Não autorizado.' });
+  }
+
+  try {
+    const dados = await executarAtualizacao('cron diário');
+    res.json({ ok: true, sprint: dados.sprint });
+  } catch (erro) {
+    console.error('Falha na atualização automática (cron):', erro.message);
+    res.status(500).json({ erro: erro.message });
+  }
+});
+
+// ---- paginas e API protegidas por sessao de usuario ----
 
 app.get('/', exigirSessaoPagina, (req, res) => {
   res.sendFile(path.join(PUBLIC_DIR, 'index.html'));
@@ -115,15 +121,13 @@ app.get('/api/eu', exigirSessaoApi, (req, res) => {
   res.json(req.usuario);
 });
 
-app.get('/api/dados', exigirSessaoApi, (req, res) => {
-  res.json(lerSnapshot());
+app.get('/api/dados', exigirSessaoApi, async (req, res) => {
+  res.json(await lerSnapshot());
 });
 
 app.post('/api/atualizar', exigirSessaoApi, async (req, res) => {
   try {
-    const dados = await buscarBoard();
-    gravarSnapshot(dados);
-    console.log(`[${new Date().toLocaleTimeString('pt-BR')}] Board atualizado por ${req.usuario.email}. Sprint: ${dados.sprint}`);
+    const dados = await executarAtualizacao(req.usuario.email);
     res.json(dados);
   } catch (erro) {
     console.error('Falha ao atualizar:', erro.message);
@@ -131,6 +135,12 @@ app.post('/api/atualizar', exigirSessaoApi, async (req, res) => {
   }
 });
 
-app.listen(PORT, () => {
-  console.log(`Kanban BRB rodando em http://localhost:${PORT}`);
-});
+// Local: `node server.js` roda o servidor de verdade.
+// Vercel: importa `app` como funcao serverless, sem chamar listen().
+if (require.main === module) {
+  app.listen(PORT, () => {
+    console.log(`Kanban BRB rodando em http://localhost:${PORT}`);
+  });
+}
+
+module.exports = app;

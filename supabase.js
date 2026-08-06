@@ -42,4 +42,23 @@ function traduzErro(error) {
   return 'Não foi possível concluir sua solicitação. Tente novamente em instantes.';
 }
 
-module.exports = { cadastrar, entrar };
+/** Le o snapshot mais recente gravado na tabela public.snapshot. */
+async function lerSnapshot() {
+  const { data, error } = await supabase.from('snapshot').select('dados, atualizado_em').eq('id', 1).single();
+  if (error) {
+    console.error('[supabase] falha ao ler snapshot:', error.message);
+    return { vazio: true, erro: 'Não foi possível ler os dados agora.', colunas: [], pessoas: {} };
+  }
+  return data.dados;
+}
+
+/** Sobrescreve a unica linha da tabela public.snapshot com o board novo. */
+async function gravarSnapshot(dados) {
+  const { error } = await supabase
+    .from('snapshot')
+    .update({ dados, atualizado_em: new Date().toISOString() })
+    .eq('id', 1);
+  if (error) throw new Error('Falha ao gravar snapshot: ' + error.message);
+}
+
+module.exports = { cadastrar, entrar, lerSnapshot, gravarSnapshot };
