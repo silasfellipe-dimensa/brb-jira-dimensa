@@ -1,0 +1,575 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<title>Kanban BRB</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  :root {
+    --bg: #F4F6F5;
+    --bg-panel: #FFFFFF;
+    --ink: #1A211F;
+    --ink-dim: #5B6B66;
+    --ink-faint: #8B9994;
+    --line: #DCE3E0;
+    --line-soft: #E9EDEB;
+    --accent: #0F6B62;
+    --accent-soft: #E4F0EE;
+    --warn: #A8452E;
+    --warn-soft: #F6E9E5;
+
+    --c-andamento: #0F6B62;  --c-andamento-soft: #E4F0EE;
+    --c-dev:       #3A6E8F;  --c-dev-soft:       #E5EEF3;
+    --c-teste:     #3B4B9A;  --c-teste-soft:     #E7E9F5;
+    --c-terceiros: #A8452E;  --c-terceiros-soft: #F6E9E5;
+    --c-concluido: #5B6B66;  --c-concluido-soft: #EAEDEC;
+
+    --shadow: 0 1px 2px rgba(26,33,31,0.06), 0 1px 1px rgba(26,33,31,0.04);
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #14201C;
+      --bg-panel: #1A2723;
+      --ink: #E9F0ED;
+      --ink-dim: #9DB0AA;
+      --ink-faint: #6C8079;
+      --line: #2A3A34;
+      --line-soft: #223029;
+      --accent: #4FBBAA;
+      --accent-soft: #1E3833;
+      --warn: #E08361;
+      --warn-soft: #3A281F;
+
+      --c-andamento: #4FBBAA;  --c-andamento-soft: #1E3833;
+      --c-dev:       #7FB2D6;  --c-dev-soft:       #1E2E38;
+      --c-teste:     #8B98D9;  --c-teste-soft:     #24273F;
+      --c-terceiros: #E08361;  --c-terceiros-soft: #3A281F;
+      --c-concluido: #9DB0AA;  --c-concluido-soft: #263430;
+
+      --shadow: 0 1px 3px rgba(0,0,0,0.35);
+    }
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--ink);
+    font-family: -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  header.top {
+    background: var(--bg);
+    border-bottom: 1px solid var(--line);
+    padding: 22px 28px 18px;
+  }
+
+  .top-row {
+    display: flex;
+    align-items: flex-end;
+    justify-content: space-between;
+    gap: 24px;
+    flex-wrap: wrap;
+    max-width: 1400px;
+    margin: 0 auto;
+  }
+
+  .titles h1 {
+    margin: 0 0 4px;
+    font-size: 1.5rem;
+    font-weight: 700;
+    letter-spacing: -0.01em;
+  }
+
+  .titles p { margin: 0; color: var(--ink-dim); font-size: 0.875rem; }
+
+  .badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    margin-left: 2px;
+    padding: 2px 9px 2px 7px;
+    border-radius: 100px;
+    background: var(--accent-soft);
+    color: var(--accent);
+    font-family: ui-monospace, "Cascadia Mono", Consolas, monospace;
+    font-size: 0.72rem;
+    font-weight: 600;
+    vertical-align: middle;
+  }
+
+  .badge .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--accent); }
+
+  .controls { display: flex; align-items: center; gap: 10px; }
+
+  .search { position: relative; }
+
+  .search input {
+    width: 240px;
+    padding: 8px 12px 8px 32px;
+    border-radius: 8px;
+    border: 1px solid var(--line);
+    background: var(--bg-panel);
+    color: var(--ink);
+    font-size: 0.875rem;
+    outline: none;
+  }
+
+  .search input:focus { border-color: var(--accent); }
+  .search input::placeholder { color: var(--ink-faint); }
+
+  .search svg {
+    position: absolute; left: 10px; top: 50%;
+    transform: translateY(-50%);
+    width: 14px; height: 14px;
+    stroke: var(--ink-faint); fill: none; stroke-width: 2;
+    pointer-events: none;
+  }
+
+  .search-count {
+    font-size: 0.78rem;
+    color: var(--ink-faint);
+    font-family: ui-monospace, Consolas, monospace;
+    min-width: 64px;
+  }
+
+  .btn-refresh {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    padding: 8px 13px;
+    border-radius: 8px;
+    border: 1px solid var(--line);
+    background: var(--bg-panel);
+    color: var(--ink);
+    font-family: inherit;
+    font-size: 0.82rem;
+    cursor: pointer;
+    transition: border-color 0.15s ease, color 0.15s ease, opacity 0.15s ease;
+  }
+
+  .btn-refresh:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); }
+  .btn-refresh:disabled { opacity: 0.55; cursor: default; }
+
+  .btn-refresh svg {
+    width: 14px; height: 14px;
+    stroke: currentColor; fill: none; stroke-width: 2;
+  }
+
+  .usuario {
+    display: flex; align-items: center; gap: 8px;
+    padding-right: 8px; margin-right: 2px;
+    border-right: 1px solid var(--line);
+  }
+
+  .usuario img {
+    width: 26px; height: 26px; border-radius: 50%; display: block;
+  }
+
+  .usuario .nome { font-size: 0.8rem; color: var(--ink-dim); }
+
+  .usuario .sair {
+    font-size: 0.76rem;
+    color: var(--ink-faint);
+    background: none; border: none; cursor: pointer;
+    text-decoration: underline;
+    font-family: inherit;
+    padding: 0;
+  }
+
+  .usuario .sair:hover { color: var(--warn); }
+
+  .btn-refresh.girando svg { animation: girar 0.8s linear infinite; }
+
+  @keyframes girar { to { transform: rotate(360deg); } }
+
+  @media (prefers-reduced-motion: reduce) {
+    .btn-refresh.girando svg { animation: none; }
+  }
+
+  .aviso {
+    max-width: 1400px;
+    margin: 16px auto 0;
+    padding: 10px 14px;
+    border-radius: 8px;
+    background: var(--warn-soft);
+    border: 1px solid var(--warn);
+    color: var(--warn);
+    font-size: 0.82rem;
+  }
+
+  main { max-width: 1400px; margin: 0 auto; padding: 22px 28px 40px; }
+
+  .board {
+    display: grid;
+    grid-auto-flow: column;
+    grid-auto-columns: minmax(180px, 1fr);
+    gap: 16px;
+    align-items: start;
+  }
+
+  .column {
+    background: var(--bg-panel);
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    overflow: hidden;
+    box-shadow: var(--shadow);
+    display: flex;
+    flex-direction: column;
+    align-self: start;
+  }
+
+  .column-head {
+    padding: 14px 14px 12px;
+    border-bottom: 1px solid var(--line-soft);
+    border-top: 3px solid var(--col);
+    flex-shrink: 0;
+  }
+
+  .column-head .name {
+    display: flex; align-items: center; justify-content: space-between; gap: 8px;
+  }
+
+  .column-head .label {
+    font-family: ui-monospace, "Cascadia Mono", Consolas, monospace;
+    font-size: 0.72rem;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--col);
+  }
+
+  .column-head .count {
+    font-family: ui-monospace, Consolas, monospace;
+    font-size: 0.72rem;
+    font-weight: 600;
+    color: var(--ink-faint);
+    background: var(--col-soft);
+    padding: 1px 7px;
+    border-radius: 100px;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .cards { padding: 10px; display: flex; flex-direction: column; gap: 8px; }
+
+  .card {
+    padding: 10px 12px 11px;
+    border-radius: 8px;
+    background: var(--bg);
+    border: 1px solid var(--line-soft);
+    color: var(--ink);
+    transition: border-color 0.12s ease;
+  }
+
+  .card:hover { border-color: var(--col); }
+  .card.hidden { display: none; }
+
+  .card-title { font-size: 0.85rem; line-height: 1.4; }
+
+  .card-meta {
+    display: flex; align-items: center; justify-content: flex-end;
+    gap: 6px; margin-top: 9px;
+  }
+
+  .assignee-name { font-size: 0.72rem; color: var(--ink-dim); }
+  .assignee-name.empty { color: var(--ink-faint); font-style: italic; }
+
+  .avatar {
+    position: relative;
+    width: 22px; height: 22px;
+    border-radius: 50%;
+    flex-shrink: 0;
+    overflow: hidden;
+  }
+
+  .avatar img { width: 100%; height: 100%; object-fit: cover; display: block; }
+
+  .avatar-fallback {
+    position: absolute; inset: 0;
+    display: none;
+    align-items: center; justify-content: center;
+    font-size: 0.62rem; font-weight: 700; color: #fff;
+  }
+
+  .avatar-empty { border: 1.5px dashed var(--line); }
+
+  .empty-col, .no-match {
+    padding: 26px 14px;
+    text-align: center;
+    color: var(--ink-faint);
+    font-size: 0.8rem;
+  }
+
+  .no-match { display: none; }
+
+  footer {
+    max-width: 1400px;
+    margin: 0 auto;
+    padding: 0 28px 28px;
+    color: var(--ink-faint);
+    font-size: 0.78rem;
+    display: flex;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  @media (max-width: 1080px) {
+    .board { grid-auto-flow: row; grid-auto-columns: unset; }
+    .search input { width: 100%; }
+  }
+
+  @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+</head>
+<body>
+
+<header class="top">
+  <div class="top-row">
+    <div class="titles">
+      <h1>Kanban BRB <span class="badge" id="badgeSprint"><span class="dot"></span></span></h1>
+      <p id="subtitulo">Equipe Exclusiva — Tarefas Dimensa</p>
+    </div>
+    <div class="controls">
+      <div class="usuario" id="usuario" style="display:none">
+        <span class="nome" id="usuarioNome"></span>
+        <button class="sair" id="btnSair" type="button">Sair</button>
+      </div>
+      <button class="btn-refresh" id="btnAtualizar" type="button">
+        <svg viewBox="0 0 24 24" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-2.64-6.36"></path><polyline points="21 3 21 9 15 9"></polyline></svg>
+        <span id="btnAtualizarTexto">Atualizar agora</span>
+      </button>
+      <div class="search-count" id="searchCount"></div>
+      <div class="search">
+        <svg viewBox="0 0 24 24" stroke-linecap="round"><circle cx="11" cy="11" r="7"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+        <input type="text" id="filtro" placeholder="Filtrar tasks..." autocomplete="off">
+      </div>
+    </div>
+  </div>
+  <div class="aviso" id="aviso" style="display:none"></div>
+</header>
+
+<main><div class="board" id="board"></div></main>
+
+<footer>
+  <span id="rodapeEsq"></span>
+  <span id="rodapeDir"></span>
+</footer>
+
+<script>
+  var dados = { vazio: true, colunas: [], pessoas: {} };
+
+  function esc(s) {
+    return String(s).replace(/[&<>"']/g, function (c) {
+      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+    });
+  }
+
+  function iniciais(nome) {
+    var p = nome.trim().split(/\s+/);
+    return ((p[0][0] || '') + (p.length > 1 ? p[p.length - 1][0] : '')).toUpperCase();
+  }
+
+  function matiz(nome) {
+    var h = 0;
+    for (var i = 0; i < nome.length; i++) h = (h * 31 + nome.charCodeAt(i)) % 360;
+    return h;
+  }
+
+  function formatarData(iso) {
+    if (!iso) return '';
+    var d = new Date(iso);
+    return d.toLocaleString('pt-BR', {
+      day: '2-digit', month: '2-digit', year: 'numeric',
+      hour: '2-digit', minute: '2-digit'
+    });
+  }
+
+  function montarCard(card) {
+    var html = '<div class="card-title">' + esc(card.titulo) + '</div>';
+    var busca = card.titulo;
+
+    if (dados.mostrarResponsavel) {
+      var p = card.pessoa ? dados.pessoas[card.pessoa] : null;
+      if (p) {
+        busca += ' ' + p.nome;
+        var cor = 'hsl(' + matiz(p.nome) + ', 42%, 40%)';
+        html += '<div class="card-meta">' +
+                  '<span class="assignee-name">' + esc(p.nome) + '</span>' +
+                  '<span class="avatar">' +
+                    '<img src="' + esc(p.avatar) + '" alt="" loading="lazy" ' +
+                      'onerror="this.style.display=\'none\';this.nextElementSibling.style.display=\'flex\'">' +
+                    '<span class="avatar-fallback" style="background:' + cor + '">' + iniciais(p.nome) + '</span>' +
+                  '</span>' +
+                '</div>';
+      } else {
+        html += '<div class="card-meta">' +
+                  '<span class="assignee-name empty">Sem responsável</span>' +
+                  '<span class="avatar avatar-empty"></span>' +
+                '</div>';
+      }
+    }
+
+    return '<div class="card" data-text="' + esc(busca.toLowerCase()) + '">' + html + '</div>';
+  }
+
+  function render(novosDados) {
+    if (novosDados) dados = novosDados;
+
+    var board = document.getElementById('board');
+    board.innerHTML = '';
+
+    var aviso = document.getElementById('aviso');
+    aviso.style.display = 'none';
+
+    if (dados.vazio) {
+      aviso.style.display = 'block';
+      aviso.textContent = 'Nenhum dado carregado ainda. ' + (dados.erro || '');
+      return;
+    }
+
+    document.getElementById('badgeSprint').innerHTML =
+      '<span class="dot"></span>Sprint ' + esc(dados.sprint);
+
+    if (dados.ultimoErro) {
+      aviso.style.display = 'block';
+      aviso.textContent = 'A última tentativa de atualização falhou em ' +
+        formatarData(dados.erroEm) + '. Os dados abaixo são do último carregamento bem-sucedido. (' +
+        dados.ultimoErro + ')';
+    }
+
+    var totalCards = 0;
+
+    dados.colunas.forEach(function (col) {
+      totalCards += col.cards.length;
+
+      var sec = document.createElement('section');
+      sec.className = 'column';
+      sec.style.setProperty('--col', 'var(--c-' + col.cor + ')');
+      sec.style.setProperty('--col-soft', 'var(--c-' + col.cor + '-soft)');
+
+      var corpo = col.cards.length
+        ? col.cards.map(montarCard).join('')
+        : '<div class="empty-col">Nenhum item nesta coluna</div>';
+
+      sec.innerHTML =
+        '<div class="column-head"><div class="name">' +
+          '<span class="label">' + esc(col.nome) + '</span>' +
+          '<span class="count">' + col.cards.length + '</span>' +
+        '</div></div>' +
+        '<div class="cards">' + corpo + '<div class="no-match">Nenhum resultado</div></div>';
+
+      board.appendChild(sec);
+    });
+
+    document.getElementById('rodapeEsq').textContent =
+      totalCards + ' tasks · ' + dados.colunas.length + ' colunas';
+    document.getElementById('rodapeDir').textContent =
+      'Atualizado em ' + formatarData(dados.atualizadoEm);
+  }
+
+  function carregarDados() {
+    return fetch('/api/dados', { cache: 'no-store' }).then(function (r) {
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      return r.json();
+    });
+  }
+
+  function pedirAtualizacao() {
+    return fetch('/api/atualizar', { method: 'POST' }).then(function (r) {
+      return r.json().then(function (corpo) {
+        if (!r.ok) throw new Error(corpo.erro || ('HTTP ' + r.status));
+        return corpo;
+      });
+    });
+  }
+
+  carregarDados()
+    .then(function (novosDados) { render(novosDados); })
+    .catch(function (erro) {
+      render({ vazio: true, erro: String(erro && erro.message || erro), colunas: [], pessoas: {} });
+    });
+
+  fetch('/api/eu').then(function (r) { return r.ok ? r.json() : null; }).then(function (eu) {
+    if (!eu) return;
+    document.getElementById('usuarioNome').textContent = eu.email;
+    document.getElementById('usuario').style.display = 'flex';
+  });
+
+  document.getElementById('btnSair').addEventListener('click', function () {
+    fetch('/auth/logout', { method: 'POST' }).then(function () {
+      window.location.href = '/login.html';
+    });
+  });
+
+  var btnAtualizar = document.getElementById('btnAtualizar');
+  var btnAtualizarTexto = document.getElementById('btnAtualizarTexto');
+
+  btnAtualizar.addEventListener('click', function () {
+    btnAtualizar.disabled = true;
+    btnAtualizar.classList.add('girando');
+    btnAtualizarTexto.textContent = 'Atualizando...';
+
+    pedirAtualizacao()
+      .then(function (novosDados) {
+        render(novosDados);
+        aplicarFiltro();
+      })
+      .catch(function (erro) {
+        var av = document.getElementById('aviso');
+        av.style.display = 'block';
+        av.textContent = 'Falha ao atualizar agora: ' + (erro && erro.message ? erro.message : erro);
+      })
+      .finally(function () {
+        btnAtualizar.disabled = false;
+        btnAtualizar.classList.remove('girando');
+        btnAtualizarTexto.textContent = 'Atualizar agora';
+      });
+  });
+
+  var filtro = document.getElementById('filtro');
+  var contador = document.getElementById('searchCount');
+
+  function aplicarFiltro() {
+    var q = filtro.value.trim().toLowerCase();
+    var visiveis = 0, total = 0;
+
+    document.querySelectorAll('.cards').forEach(function (colEl) {
+      var cards = colEl.querySelectorAll('.card');
+      var naColuna = 0;
+      cards.forEach(function (card) {
+        total++;
+        var bate = !q || card.getAttribute('data-text').indexOf(q) !== -1;
+        card.classList.toggle('hidden', !bate);
+        if (bate) { naColuna++; visiveis++; }
+      });
+      var nm = colEl.querySelector('.no-match');
+      if (nm) nm.style.display = (q && naColuna === 0 && cards.length > 0) ? 'block' : 'none';
+    });
+
+    contador.textContent = q ? visiveis + ' de ' + total : '';
+  }
+
+  filtro.addEventListener('input', aplicarFiltro);
+
+  // Confere o snapshot a cada 5 minutos e redesenha sozinho, sem F5.
+  var INTERVALO_AUTO_MS = 5 * 60 * 1000;
+
+  setInterval(function () {
+    carregarDados()
+      .then(function (novosDados) {
+        if (novosDados && novosDados.atualizadoEm !== dados.atualizadoEm) {
+          render(novosDados);
+          aplicarFiltro();
+        }
+      })
+      .catch(function (erro) {
+        console.warn('Falha na atualização automática em segundo plano:', erro);
+      });
+  }, INTERVALO_AUTO_MS);
+</script>
+</body>
+</html>

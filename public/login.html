@@ -1,0 +1,217 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<title>Entrar — Kanban</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  :root {
+    --bg: #F4F6F5;
+    --bg-panel: #FFFFFF;
+    --ink: #1A211F;
+    --ink-dim: #5B6B66;
+    --ink-faint: #8B9994;
+    --line: #DCE3E0;
+    --accent: #0F6B62;
+    --accent-soft: #E4F0EE;
+    --warn: #A8452E;
+    --warn-soft: #F6E9E5;
+    --ok: #0F6B62;
+    --ok-soft: #E4F0EE;
+    --shadow: 0 1px 2px rgba(26,33,31,0.06), 0 1px 1px rgba(26,33,31,0.04);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #14201C;
+      --bg-panel: #1A2723;
+      --ink: #E9F0ED;
+      --ink-dim: #9DB0AA;
+      --ink-faint: #6C8079;
+      --line: #2A3A34;
+      --accent: #4FBBAA;
+      --accent-soft: #1E3833;
+      --warn: #E08361;
+      --warn-soft: #3A281F;
+      --ok: #4FBBAA;
+      --ok-soft: #1E3833;
+      --shadow: 0 1px 3px rgba(0,0,0,0.35);
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--bg);
+    color: var(--ink);
+    font-family: -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  }
+  .card {
+    width: min(360px, 90vw);
+    background: var(--bg-panel);
+    border: 1px solid var(--line);
+    border-radius: 14px;
+    box-shadow: var(--shadow);
+    padding: 32px 28px;
+  }
+  h1 { font-size: 1.25rem; margin: 0 0 6px; text-align: center; }
+  p.sub { color: var(--ink-dim); font-size: 0.875rem; margin: 0 0 22px; text-align: center; }
+
+  .abas {
+    display: flex;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    padding: 3px;
+    margin-bottom: 20px;
+  }
+  .abas button {
+    flex: 1;
+    padding: 7px 0;
+    border: none;
+    border-radius: 6px;
+    background: transparent;
+    color: var(--ink-dim);
+    font-family: inherit;
+    font-size: 0.82rem;
+    font-weight: 600;
+    cursor: pointer;
+  }
+  .abas button.ativa { background: var(--accent); color: #fff; }
+
+  label {
+    display: block;
+    font-size: 0.78rem;
+    color: var(--ink-dim);
+    margin: 14px 0 5px;
+  }
+  input[type="email"], input[type="password"] {
+    width: 100%;
+    padding: 9px 11px;
+    border-radius: 8px;
+    border: 1px solid var(--line);
+    background: var(--bg);
+    color: var(--ink);
+    font-size: 0.9rem;
+    outline: none;
+  }
+  input:focus { border-color: var(--accent); }
+
+  button.principal {
+    width: 100%;
+    margin-top: 20px;
+    padding: 10px 0;
+    border: none;
+    border-radius: 8px;
+    background: var(--accent);
+    color: #fff;
+    font-family: inherit;
+    font-size: 0.9rem;
+    font-weight: 600;
+    cursor: pointer;
+  }
+  button.principal:disabled { opacity: 0.6; cursor: default; }
+
+  .aviso {
+    margin-top: 16px;
+    padding: 10px 12px;
+    border-radius: 8px;
+    font-size: 0.82rem;
+    display: none;
+    text-align: left;
+  }
+  .aviso.erro { background: var(--warn-soft); border: 1px solid var(--warn); color: var(--warn); }
+  .aviso.ok { background: var(--ok-soft); border: 1px solid var(--ok); color: var(--ok); }
+
+</style>
+</head>
+<body>
+  <div class="card">
+    <h1>Kanban</h1>
+
+    <div class="abas">
+      <button type="button" id="abaEntrar" class="ativa">Entrar</button>
+      <button type="button" id="abaCadastrar">Cadastrar</button>
+    </div>
+
+    <form id="formulario">
+      <label for="email">E-mail</label>
+      <input type="email" id="email" required autocomplete="username">
+
+      <label for="senha">Senha</label>
+      <input type="password" id="senha" required autocomplete="current-password" minlength="6">
+
+      <button class="principal" type="submit" id="botaoPrincipal">Entrar</button>
+    </form>
+
+    <div class="aviso" id="aviso"></div>
+  </div>
+
+  <script>
+    var modo = 'entrar'; // ou 'cadastrar'
+
+    var abaEntrar = document.getElementById('abaEntrar');
+    var abaCadastrar = document.getElementById('abaCadastrar');
+    var botaoPrincipal = document.getElementById('botaoPrincipal');
+    var campoSenha = document.getElementById('senha');
+    var aviso = document.getElementById('aviso');
+
+    function setModo(novoModo) {
+      modo = novoModo;
+      var ehEntrar = modo === 'entrar';
+      abaEntrar.classList.toggle('ativa', ehEntrar);
+      abaCadastrar.classList.toggle('ativa', !ehEntrar);
+      botaoPrincipal.textContent = ehEntrar ? 'Entrar' : 'Criar conta';
+      campoSenha.autocomplete = ehEntrar ? 'current-password' : 'new-password';
+      esconderAviso();
+    }
+
+    abaEntrar.addEventListener('click', function () { setModo('entrar'); });
+    abaCadastrar.addEventListener('click', function () { setModo('cadastrar'); });
+
+    function mostrarAviso(texto, tipo) {
+      aviso.textContent = texto;
+      aviso.className = 'aviso ' + tipo;
+      aviso.style.display = 'block';
+    }
+    function esconderAviso() {
+      aviso.style.display = 'none';
+    }
+
+    document.getElementById('formulario').addEventListener('submit', function (ev) {
+      ev.preventDefault();
+      esconderAviso();
+
+      var email = document.getElementById('email').value.trim();
+      var senha = campoSenha.value;
+      var rota = modo === 'entrar' ? '/auth/entrar' : '/auth/cadastro';
+
+      botaoPrincipal.disabled = true;
+
+      fetch(rota, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: email, senha: senha })
+      })
+        .then(function (r) {
+          return r.json().then(function (corpo) { return { ok: r.ok, corpo: corpo }; });
+        })
+        .then(function (res) {
+          if (!res.ok) {
+            mostrarAviso(res.corpo.erro || 'Não foi possível continuar.', 'erro');
+            return;
+          }
+          if (modo === 'entrar') {
+            window.location.href = '/';
+          } else {
+            mostrarAviso('Cadastro criado! Verifique seu e-mail e clique no link de confirmação antes de entrar.', 'ok');
+            setModo('entrar');
+          }
+        })
+        .catch(function () { mostrarAviso('Falha ao conversar com o servidor.', 'erro'); })
+        .finally(function () { botaoPrincipal.disabled = false; });
+    });
+  </script>
+</body>
+</html>
