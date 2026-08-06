@@ -16,7 +16,7 @@ const {
 
 const app = express();
 const PORT = process.env.PORT || 3000;
-const PUBLIC_DIR = path.join(__dirname, 'public');
+const PUBLIC_DIR = path.join(__dirname, 'paginas');
 
 app.use(express.json());
 app.use(cookieParser());
