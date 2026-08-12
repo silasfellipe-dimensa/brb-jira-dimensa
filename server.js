@@ -19,6 +19,7 @@ const {
 const app = express();
 const PORT = process.env.PORT || 3000;
 const PUBLIC_DIR = path.join(__dirname, 'paginas');
+const SENHA_MINIMA = 8;
 
 // Corpo pequeno de proposito: as rotas so recebem e-mail e senha, entao
 // nao ha motivo para aceitar payload grande (evita abuso de memoria).
@@ -30,6 +31,20 @@ app.use((req, res, next) => {
   res.setHeader('X-Frame-Options', 'DENY');
   res.setHeader('Referrer-Policy', 'no-referrer');
   res.setHeader('Permissions-Policy', 'geolocation=(), camera=(), microphone=()');
+  // 'unsafe-inline' e necessario porque o CSS e o JS das paginas sao
+  // inline. connect-src 'self' impede que a pagina mande dados para
+  // qualquer outro servidor caso algum script seja injetado.
+  res.setHeader(
+    'Content-Security-Policy',
+    "default-src 'self'; " +
+    "img-src 'self' data: https:; " +
+    "style-src 'self' 'unsafe-inline'; " +
+    "script-src 'self' 'unsafe-inline'; " +
+    "connect-src 'self'; " +
+    "frame-ancestors 'none'; " +
+    "base-uri 'none'; " +
+    "form-action 'self'"
+  );
   // Sem dados do board em cache de proxy/navegador compartilhado.
   if (req.path.startsWith('/api/')) res.setHeader('Cache-Control', 'no-store');
   next();
@@ -53,6 +68,13 @@ app.post('/auth/cadastro', limitarTentativas, async (req, res) => {
 
   if (!email || !senha) {
     return res.status(400).json({ erro: 'Informe e-mail e senha.' });
+  }
+
+  // Minimo checado aqui, no servidor: o minlength do formulario e so
+  // conveniencia e pode ser contornado. O padrao do Supabase e 6, que e
+  // fraco demais para um board com dado de cliente.
+  if (senha.length < SENHA_MINIMA) {
+    return res.status(400).json({ erro: `A senha precisa ter pelo menos ${SENHA_MINIMA} caracteres.` });
   }
 
   // 1a checagem de dominio: antes de sequer falar com o Supabase.

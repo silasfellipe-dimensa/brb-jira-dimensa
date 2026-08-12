@@ -69,8 +69,8 @@ function traduzErro(error) {
   if (msg.includes('Invalid login credentials')) {
     return 'E-mail ou senha incorretos.';
   }
-  if (msg.includes('Password should be at least')) {
-    return 'A senha precisa ter pelo menos 6 caracteres.';
+  if (msg.includes('Password should be at least') || msg.includes('Password is known to be weak')) {
+    return 'Essa senha é muito fraca ou curta. Escolha outra, com pelo menos 8 caracteres.';
   }
   // "User already registered" cai de proposito na mensagem generica abaixo:
   // dizer que a conta existe deixaria qualquer um descobrir quais e-mails
