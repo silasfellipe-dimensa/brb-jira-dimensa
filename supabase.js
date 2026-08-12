@@ -29,9 +29,21 @@ function db() {
   return _dbClient;
 }
 
-/** Cria a conta no Supabase. Ele mesmo dispara o e-mail de confirmacao. */
+/** Cria a conta no Supabase. Ele mesmo dispara o e-mail de confirmacao.
+ *
+ * O emailRedirectTo e passado explicitamente para o link do e-mail nao
+ * depender do "Site URL" configurado no painel do Supabase - que e o que
+ * fazia o link cair em localhost. A URL usada aqui precisa estar na lista
+ * de Redirect URLs do projeto no Supabase. */
 async function cadastrar(email, senha) {
-  const { data, error } = await authClient.auth.signUp({ email, password: senha });
+  const destino = (process.env.APP_URL || '').replace(/\/$/, '');
+  const opcoes = destino ? { emailRedirectTo: `${destino}/login.html?confirmado=1` } : undefined;
+
+  const { data, error } = await authClient.auth.signUp({
+    email,
+    password: senha,
+    options: opcoes
+  });
   if (error) {
     console.error('[supabase] falha no cadastro:', error.message || error);
     throw new Error(traduzErro(error));

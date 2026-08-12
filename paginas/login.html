@@ -212,6 +212,28 @@
         .catch(function () { mostrarAviso('Falha ao conversar com o servidor.', 'erro'); })
         .finally(function () { botaoPrincipal.disabled = false; });
     });
+
+    // Mensagens vindas do link de confirmacao de e-mail.
+    var params = new URLSearchParams(window.location.search);
+    if (params.get('confirmado')) {
+      mostrarAviso('E-mail confirmado. Agora é só entrar com seu e-mail e senha.', 'ok');
+    }
+
+    // O Supabase devolve erros no fragmento da URL (#error=...), nao na
+    // query string - o caso mais comum e o link de confirmacao expirado.
+    if (window.location.hash) {
+      var hash = new URLSearchParams(window.location.hash.substring(1));
+      if (hash.get('error')) {
+        var expirou = hash.get('error_code') === 'otp_expired';
+        mostrarAviso(
+          expirou
+            ? 'Esse link de confirmação expirou. Cadastre-se novamente para receber um link novo.'
+            : 'Não foi possível confirmar seu e-mail. Tente se cadastrar novamente.',
+          'erro'
+        );
+        history.replaceState(null, '', window.location.pathname);
+      }
+    }
   </script>
 </body>
 </html>
