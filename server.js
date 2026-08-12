@@ -2,6 +2,7 @@ require('dotenv').config({ path: '.env.local' });
 
 const express = require('express');
 const cookieParser = require('cookie-parser');
+const crypto = require('crypto');
 const path = require('path');
 const { buscarBoard } = require('./jira');
 const { cadastrar, entrar, lerSnapshot, gravarSnapshot } = require('./supabase');
@@ -55,6 +56,22 @@ async function executarAtualizacao(usuario) {
   await gravarSnapshot(dados);
   console.log(`[${new Date().toLocaleTimeString('pt-BR')}] Board atualizado por ${usuario}. Sprint: ${dados.sprint}`);
   return dados;
+}
+
+/** Responde erro sem vazar detalhe interno.
+ *
+ * O motivo real (status do Jira, caminho da API, mensagem do Postgres) vai
+ * so para o log do servidor, correlacionado por requestId. O cliente recebe
+ * mensagem generica + o mesmo requestId, para conseguir reportar o problema
+ * sem que a resposta entregue o funcionamento interno a quem estiver
+ * sondando. */
+function erroGenerico(res, status, erro, contexto) {
+  const requestId = crypto.randomUUID();
+  console.error(`[${requestId}] ${contexto}:`, erro && erro.stack ? erro.stack : erro);
+  return res.status(status).json({
+    erro: 'Não foi possível concluir a operação. Tente novamente em instantes.',
+    requestId
+  });
 }
 
 // ---- login / cadastro (nao exige sessao) ----
@@ -132,6 +149,10 @@ app.post('/auth/logout', (req, res) => {
 
 // ---- cron diario (nao exige sessao de usuario - exige o segredo do cron) ----
 
+// Excecao consciente: esta rota MUTA estado (grava o snapshot) via GET, o que
+// normalmente e proibido. O motivo e que o Vercel Cron so dispara GET. Nao ha
+// risco de CSRF aqui porque a rota nao autentica por cookie: exige o header
+// Authorization com o CRON_SECRET, que o navegador nunca envia sozinho.
 app.get('/api/cron-atualizar', async (req, res) => {
   const auth = req.headers.authorization || '';
   if (!segredoConfere(auth, `Bearer ${process.env.CRON_SECRET}`)) {
@@ -142,8 +163,7 @@ app.get('/api/cron-atualizar', async (req, res) => {
     const dados = await executarAtualizacao('cron diário');
     res.json({ ok: true, sprint: dados.sprint });
   } catch (erro) {
-    console.error('Falha na atualização automática (cron):', erro.message);
-    res.status(500).json({ erro: erro.message });
+    return erroGenerico(res, 500, erro, 'Falha na atualização automática (cron)');
   }
 });
 
@@ -161,13 +181,16 @@ app.get('/api/dados', exigirSessaoApi, async (req, res) => {
   res.json(await lerSnapshot());
 });
 
+// Muta estado, entao e POST (nunca GET). A protecao anti-CSRF aqui e o
+// cookie de sessao com SameSite=Lax: o navegador nao envia o cookie em POST
+// vindo de outro site, entao um formulario hostil em outro dominio nao
+// consegue disparar esta rota em nome de quem esta logado.
 app.post('/api/atualizar', exigirSessaoApi, async (req, res) => {
   try {
     const dados = await executarAtualizacao(req.usuario.email);
     res.json(dados);
   } catch (erro) {
-    console.error('Falha ao atualizar:', erro.message);
-    res.status(500).json({ erro: erro.message });
+    return erroGenerico(res, 500, erro, 'Falha ao atualizar o board');
   }
 });
 

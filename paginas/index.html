@@ -481,7 +481,11 @@
   function pedirAtualizacao() {
     return fetch('/api/atualizar', { method: 'POST' }).then(function (r) {
       return r.json().then(function (corpo) {
-        if (!r.ok) throw new Error(corpo.erro || ('HTTP ' + r.status));
+        if (!r.ok) {
+          var e = new Error(corpo.erro || ('HTTP ' + r.status));
+          e.requestId = corpo.requestId;
+          throw e;
+        }
         return corpo;
       });
     });
@@ -521,7 +525,11 @@
       .catch(function (erro) {
         var av = document.getElementById('aviso');
         av.style.display = 'block';
-        av.textContent = 'Falha ao atualizar agora: ' + (erro && erro.message ? erro.message : erro);
+        // O servidor devolve mensagem generica + requestId. O requestId e
+        // mostrado para a pessoa conseguir reportar o problema; o motivo
+        // real fica so no log do servidor.
+        av.textContent = 'Não foi possível atualizar agora. Os dados abaixo são do último carregamento.' +
+          (erro && erro.requestId ? ' (código ' + erro.requestId.slice(0, 8) + ')' : '');
       })
       .finally(function () {
         btnAtualizar.disabled = false;

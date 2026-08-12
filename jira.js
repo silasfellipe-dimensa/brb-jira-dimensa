@@ -24,13 +24,29 @@ function credenciais() {
   return { email, token };
 }
 
+// Sem timeout, uma lentidao do Jira vira indisponibilidade nossa: a funcao
+// fica presa esperando ate o limite da plataforma.
+const TIMEOUT_JIRA_MS = 10_000;
+
+// Teto de paginas na busca de issues (100 issues por pagina).
+const MAX_PAGINAS = 20;
+
 async function chamarJira(caminho) {
   const { email, token } = credenciais();
   const auth = Buffer.from(email + ':' + token).toString('base64');
 
-  const resp = await fetch(SITE + caminho, {
-    headers: { Authorization: 'Basic ' + auth, Accept: 'application/json' }
-  });
+  let resp;
+  try {
+    resp = await fetch(SITE + caminho, {
+      headers: { Authorization: 'Basic ' + auth, Accept: 'application/json' },
+      signal: AbortSignal.timeout(TIMEOUT_JIRA_MS)
+    });
+  } catch (erro) {
+    if (erro.name === 'TimeoutError' || erro.name === 'AbortError') {
+      throw new Error(`Jira não respondeu em ${TIMEOUT_JIRA_MS}ms (${caminho})`);
+    }
+    throw erro;
+  }
 
   if (!resp.ok) {
     let dica = '';
@@ -62,17 +78,26 @@ async function buscarBoard() {
   }
   const sprint = sprints.values[0];
 
+  // O laco e dirigido pelo "total" que vem da resposta do Jira. Sem teto,
+  // uma resposta anomala (total gigante, maxResults zerado) vira laco
+  // infinito. O teto e generoso para o tamanho real do board (~300 issues)
+  // e ainda assim finito.
   let issues = [];
   let inicio = 0;
   let total = 1;
-  while (inicio < total) {
+  let paginas = 0;
+  while (inicio < total && paginas < MAX_PAGINAS) {
+    paginas++;
     const pagina = await chamarJira(
       `/rest/agile/1.0/board/${BOARD_ID}/sprint/${sprint.id}/issue` +
       `?fields=summary,status,assignee&maxResults=100&startAt=${inicio}`
     );
+    if (!Array.isArray(pagina.issues) || pagina.issues.length === 0) break;
     issues = issues.concat(pagina.issues);
-    total = pagina.total;
-    inicio += pagina.maxResults;
+    total = Number(pagina.total) || issues.length;
+    // Avanca pelo que realmente veio: se o Jira devolvesse maxResults=0,
+    // o cursor nunca andaria e o laco so pararia no teto de paginas.
+    inicio += pagina.issues.length;
   }
 
   const pessoas = {};
