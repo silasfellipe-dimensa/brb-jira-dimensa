@@ -59,18 +59,53 @@ async function chamarJira(caminho) {
   return resp.json();
 }
 
-async function buscarBoard() {
-  const cfg = await chamarJira(`/rest/agile/1.0/board/${BOARD_ID}/configuration`);
-
+/** Le a configuracao de colunas do board e devolve a ordem visivel e o
+ * mapa status -> coluna. Funcao pura: recebe a resposta do Jira, nao a
+ * busca - e o que permite testar o agrupamento sem tocar na rede. */
+function mapearColunas(cfg) {
   const statusParaColuna = {};
   const ordemColunas = [];
-  for (const col of cfg.columnConfig.columns) {
+  const colunas = (cfg && cfg.columnConfig && cfg.columnConfig.columns) || [];
+
+  for (const col of colunas) {
     if (COLUNAS_OCULTAS.includes(col.name)) continue;
     ordemColunas.push(col.name);
     for (const st of col.statuses || []) {
       statusParaColuna[String(st.id)] = col.name;
     }
   }
+  return { statusParaColuna, ordemColunas };
+}
+
+/** Distribui as issues nas colunas. Pura, pelo mesmo motivo acima. */
+function montarColunas(ordemColunas, statusParaColuna, issues, mostrarResponsavel) {
+  const pessoas = {};
+
+  function idPessoa(assignee) {
+    if (!assignee || !mostrarResponsavel) return null;
+    const id = assignee.accountId;
+    if (!pessoas[id]) {
+      pessoas[id] = {
+        nome: assignee.displayName,
+        avatar: (assignee.avatarUrls && assignee.avatarUrls['48x48']) || ''
+      };
+    }
+    return id;
+  }
+
+  const colunas = ordemColunas.map((nome) => {
+    const cards = issues
+      .filter((it) => statusParaColuna[String(it.fields.status.id)] === nome)
+      .map((it) => ({ titulo: it.fields.summary, pessoa: idPessoa(it.fields.assignee) }));
+    return { nome, cor: CORES[nome] || 'concluido', cards };
+  });
+
+  return { colunas, pessoas };
+}
+
+async function buscarBoard() {
+  const cfg = await chamarJira(`/rest/agile/1.0/board/${BOARD_ID}/configuration`);
+  const { statusParaColuna, ordemColunas } = mapearColunas(cfg);
 
   const sprints = await chamarJira(`/rest/agile/1.0/board/${BOARD_ID}/sprint?state=active`);
   if (!sprints.values || !sprints.values.length) {
@@ -100,28 +135,9 @@ async function buscarBoard() {
     inicio += pagina.issues.length;
   }
 
-  const pessoas = {};
-  function idPessoa(assignee) {
-    if (!assignee || !MOSTRAR_RESPONSAVEL) return null;
-    const id = assignee.accountId;
-    if (!pessoas[id]) {
-      pessoas[id] = {
-        nome: assignee.displayName,
-        avatar: (assignee.avatarUrls && assignee.avatarUrls['48x48']) || ''
-      };
-    }
-    return id;
-  }
-
-  const colunas = ordemColunas.map((nome) => {
-    const cards = issues
-      .filter((it) => statusParaColuna[String(it.fields.status.id)] === nome)
-      .map((it) => ({
-        titulo: it.fields.summary,
-        pessoa: idPessoa(it.fields.assignee)
-      }));
-    return { nome, cor: CORES[nome] || 'concluido', cards };
-  });
+  const { colunas, pessoas } = montarColunas(
+    ordemColunas, statusParaColuna, issues, MOSTRAR_RESPONSAVEL
+  );
 
   return {
     vazio: false,
@@ -133,4 +149,4 @@ async function buscarBoard() {
   };
 }
 
-module.exports = { buscarBoard };
+module.exports = { buscarBoard, mapearColunas, montarColunas };
