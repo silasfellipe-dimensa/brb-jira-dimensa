@@ -9,17 +9,31 @@ const {
   COOKIE_NAME,
   SESSAO_DIAS,
   emailPermitido,
+  segredoConfere,
   criarSessao,
   exigirSessaoPagina,
-  exigirSessaoApi
+  exigirSessaoApi,
+  limitarTentativas
 } = require('./auth');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 const PUBLIC_DIR = path.join(__dirname, 'paginas');
 
-app.use(express.json());
+// Corpo pequeno de proposito: as rotas so recebem e-mail e senha, entao
+// nao ha motivo para aceitar payload grande (evita abuso de memoria).
+app.use(express.json({ limit: '10kb' }));
 app.use(cookieParser());
+
+app.use((req, res, next) => {
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('X-Frame-Options', 'DENY');
+  res.setHeader('Referrer-Policy', 'no-referrer');
+  res.setHeader('Permissions-Policy', 'geolocation=(), camera=(), microphone=()');
+  // Sem dados do board em cache de proxy/navegador compartilhado.
+  if (req.path.startsWith('/api/')) res.setHeader('Cache-Control', 'no-store');
+  next();
+});
 
 async function executarAtualizacao(usuario) {
   const dados = await buscarBoard();
@@ -34,7 +48,7 @@ app.get('/login.html', (req, res) => {
   res.sendFile(path.join(PUBLIC_DIR, 'login.html'));
 });
 
-app.post('/auth/cadastro', async (req, res) => {
+app.post('/auth/cadastro', limitarTentativas, async (req, res) => {
   const { email, senha } = req.body;
 
   if (!email || !senha) {
@@ -57,7 +71,7 @@ app.post('/auth/cadastro', async (req, res) => {
   }
 });
 
-app.post('/auth/entrar', async (req, res) => {
+app.post('/auth/entrar', limitarTentativas, async (req, res) => {
   const { email, senha } = req.body;
 
   if (!email || !senha) {
@@ -98,7 +112,7 @@ app.post('/auth/logout', (req, res) => {
 
 app.get('/api/cron-atualizar', async (req, res) => {
   const auth = req.headers.authorization || '';
-  if (auth !== `Bearer ${process.env.CRON_SECRET}`) {
+  if (!segredoConfere(auth, `Bearer ${process.env.CRON_SECRET}`)) {
     return res.status(401).json({ erro: 'Não autorizado.' });
   }
 

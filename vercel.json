@@ -1,4 +1,10 @@
 {
+  "outputDirectory": "static",
+  "functions": {
+    "api/index.js": {
+      "includeFiles": "paginas/**"
+    }
+  },
   "rewrites": [
     { "source": "/(.*)", "destination": "/api/index" }
   ],

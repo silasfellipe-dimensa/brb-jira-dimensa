@@ -1,6 +1,18 @@
 const jwt = require('jsonwebtoken');
+const crypto = require('crypto');
 
 const SESSION_SECRET = process.env.SESSION_SECRET;
+
+/** Comparacao de string em tempo constante, para o segredo do cron.
+ * Um "===" comum vaza, pelo tempo de resposta, quantos caracteres iniciais
+ * o atacante acertou - o que permite descobrir o segredo por tentativa. */
+function segredoConfere(recebido, esperado) {
+  if (!recebido || !esperado) return false;
+  const a = Buffer.from(String(recebido));
+  const b = Buffer.from(String(esperado));
+  if (a.length !== b.length) return false;
+  return crypto.timingSafeEqual(a, b);
+}
 const COOKIE_NAME = 'sessao';
 const SESSAO_DIAS = 7;
 
@@ -49,12 +61,47 @@ function exigirSessaoApi(req, res, next) {
   next();
 }
 
+/** Limite de tentativas por IP, para nao deixar a senha ser adivinhada
+ * por forca bruta. Em memoria: numa funcao serverless cada instancia tem
+ * a sua contagem, entao isso atrasa um ataque, nao o impede por completo.
+ * Barreira definitiva seria um contador compartilhado (ex: no Supabase). */
+const tentativas = new Map();
+const JANELA_MS = 15 * 60 * 1000;
+const MAX_TENTATIVAS = 10;
+
+function limitarTentativas(req, res, next) {
+  const ip = (req.headers['x-forwarded-for'] || '').split(',')[0].trim() || req.ip || 'desconhecido';
+  const agora = Date.now();
+
+  const registro = tentativas.get(ip);
+  if (registro && agora - registro.desde < JANELA_MS) {
+    if (registro.contagem >= MAX_TENTATIVAS) {
+      console.warn(`Excesso de tentativas de ${ip} - bloqueado temporariamente.`);
+      return res.status(429).json({ erro: 'Muitas tentativas. Aguarde alguns minutos e tente de novo.' });
+    }
+    registro.contagem++;
+  } else {
+    tentativas.set(ip, { contagem: 1, desde: agora });
+  }
+
+  // Limpeza preguicosa, para o Map nao crescer sem limite.
+  if (tentativas.size > 5000) {
+    for (const [chave, valor] of tentativas) {
+      if (agora - valor.desde > JANELA_MS) tentativas.delete(chave);
+    }
+  }
+
+  next();
+}
+
 module.exports = {
   COOKIE_NAME,
   SESSAO_DIAS,
   emailPermitido,
+  segredoConfere,
   criarSessao,
   lerSessao,
   exigirSessaoPagina,
-  exigirSessaoApi
+  exigirSessaoApi,
+  limitarTentativas
 };
