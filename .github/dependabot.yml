@@ -1,0 +1,23 @@
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: "/"
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    groups:
+      minor-and-patch:
+        update-types: ["minor", "patch"]
+    # Espera a versao maturar antes de propor a atualizacao. Os grandes
+    # comprometimentos de pacotes npm de 2025 foram detectados e removidos
+    # em horas - quem instalou no dia zero foi atingido, quem esperou nao.
+    cooldown:
+      default-days: 3
+      semver-major-days: 7
+
+  # Mantem as proprias actions do CI atualizadas (elas tambem sao codigo de
+  # terceiro rodando com as permissoes do repositorio).
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: monthly

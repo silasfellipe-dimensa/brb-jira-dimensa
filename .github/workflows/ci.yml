@@ -1,0 +1,49 @@
+name: ci
+
+on: [push, pull_request]
+
+# Permissao minima para todo o workflow: os jobs abaixo so precisam ler o
+# codigo. Nada aqui escreve no repositorio nem usa secret do projeto.
+permissions:
+  contents: read
+
+jobs:
+  testes:
+    name: Testes e auditoria de dependencias
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      # npm ci (nao npm install): respeita o lockfile exatamente, entao o CI
+      # instala as mesmas versoes que foram revisadas.
+      - name: Instalar dependencias
+        run: npm ci
+
+      # Falha em vulnerabilidade high/critical com correcao disponivel.
+      - name: Auditar dependencias
+        run: npm audit --audit-level=high
+
+      # Os 43 testes: portao de acesso, barreira de dominio, cron, erros que
+      # nao vazam, cabecalhos, rate limit e agrupamento de cards.
+      - name: Rodar testes
+        run: npm test
+
+  segredos:
+    name: Varredura de segredos
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # Historico completo: sem isso a varredura olha so o ultimo commit
+          # e deixa passar segredo que entrou semanas atras.
+          fetch-depth: 0
+
+      - uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITLEAKS_CONFIG: .gitleaks.toml

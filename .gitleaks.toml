@@ -1,0 +1,23 @@
+# Configuracao do gitleaks. Estende as regras padrao (nao as substitui).
+[extend]
+useDefault = true
+
+# O .env.local.example existe para documentar os NOMES das variaveis, com
+# valores obviamente falsos. Sem esta excecao, o placeholder
+# "sb_secret_xxxxxxxx" seria acusado como chave real do Supabase.
+#
+# A excecao e por PADRAO DO VALOR, nao pelo arquivo inteiro: so ignora
+# valores que sao claramente placeholder. Um segredo de verdade colado
+# nesse arquivo por engano continua sendo detectado.
+[allowlist]
+description = "Placeholders do arquivo de exemplo"
+regexes = [
+  '''x{8,}''',
+  '''cole_aqui_o_token_da_atlassian''',
+  '''troque_por_uma_string_aleatoria_longa''',
+  '''troque_por_outra_string_aleatoria''',
+  '''seu\.email@dimensa\.com\.br''',
+]
+paths = [
+  '''\.env\.local\.example$''',
+]
