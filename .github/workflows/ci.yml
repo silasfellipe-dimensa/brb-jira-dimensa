@@ -12,9 +12,9 @@ jobs:
     name: Testes e auditoria de dependencias
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
           node-version: 22
           cache: npm
@@ -37,7 +37,7 @@ jobs:
     name: Varredura de segredos
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           # Historico completo: sem isso a varredura olha so o ultimo commit
           # e deixa passar segredo que entrou semanas atras.
