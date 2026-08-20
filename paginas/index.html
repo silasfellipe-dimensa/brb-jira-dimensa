@@ -251,6 +251,34 @@
     display: flex; align-items: center; justify-content: space-between; gap: 8px;
   }
 
+  /* Ícone por coluna, na cor da própria coluna. O rótulo é monoespaçado e
+   * todo em caixa alta, então cinco cabeçalhos empilhados viram cinco blocos
+   * de texto de mesma forma - o ícone é o que dá para reconhecer de longe,
+   * antes de ler. */
+  .column-head .titulo { display: flex; align-items: center; gap: 8px; min-width: 0; }
+  .column-head .acoes { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
+  .column-head .icone svg {
+    width: 15px; height: 15px; display: block; color: var(--col);
+    stroke: currentColor; fill: none; stroke-width: 1.8;
+    stroke-linecap: round; stroke-linejoin: round;
+  }
+
+  /* Recolher: existe só na coluna de concluídos. É a única que cresce sem
+   * limite (25 itens contra 1 ou 2 das outras) e a única que ninguém precisa
+   * ver para tocar o dia - as demais são trabalho em aberto, esconder seria
+   * esconder o que importa. */
+  .column-head .colapsar {
+    background: none; border: none; padding: 0; cursor: pointer;
+    color: var(--ink-faint); font-family: inherit; display: flex; align-items: center;
+  }
+  .column-head .colapsar:hover { color: var(--col); }
+  .column-head .colapsar svg {
+    width: 15px; height: 15px; stroke: currentColor; fill: none; stroke-width: 2;
+    stroke-linecap: round; stroke-linejoin: round; transition: transform 0.15s ease;
+  }
+  .column.recolhida .cards { display: none; }
+  .column.recolhida .colapsar svg { transform: rotate(180deg); }
+
   .column-head .label {
     font-family: ui-monospace, "Cascadia Mono", Consolas, monospace;
     font-size: 0.72rem;
@@ -321,6 +349,14 @@
     font-size: 0.8rem;
   }
 
+  /* Uma coluna vazia com só uma frase cinza no meio parecia coluna que não
+   * carregou. O ícone diz "está vazia mesmo" sem precisar de mais texto. */
+  .empty-col svg {
+    width: 34px; height: 34px; display: block; margin: 0 auto 10px;
+    stroke: currentColor; fill: none; stroke-width: 1.3;
+    stroke-linecap: round; stroke-linejoin: round; opacity: 0.55;
+  }
+
   .no-match { display: none; }
 
   footer {
@@ -367,7 +403,7 @@
       <div class="search-count" id="searchCount"></div>
       <div class="search">
         <svg viewBox="0 0 24 24" stroke-linecap="round"><circle cx="11" cy="11" r="7"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
-        <input type="text" id="filtro" placeholder="Filtrar tasks..." autocomplete="off">
+        <input type="text" id="filtro" placeholder="Filtrar tarefas..." autocomplete="off">
       </div>
     </div>
   </div>
@@ -389,6 +425,29 @@
       return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
     });
   }
+
+  /* Ícones como literais fechados, escolhidos por chave — nada que venha da
+   * API vira markup. A chave é col.cor, que o servidor já usa para escolher
+   * a variável de cor da coluna. */
+  var ICONES_COLUNA = {
+    andamento: '<svg viewBox="0 0 24 24"><path d="M8 6h13M8 12h13M8 18h13"></path>' +
+      '<path d="M3.5 6h.01M3.5 12h.01M3.5 18h.01"></path></svg>',
+    dev: '<svg viewBox="0 0 24 24"><path d="M9 17l-5-5 5-5M15 7l5 5-5 5"></path></svg>',
+    teste: '<svg viewBox="0 0 24 24"><path d="M9.5 3v6.2L4.8 17.4A2 2 0 0 0 6.5 20.5h11a2 2 0 0 0 1.7-3.1L14.5 9.2V3"></path>' +
+      '<path d="M8 3h8M7.4 14h9.2"></path></svg>',
+    terceiros: '<svg viewBox="0 0 24 24"><circle cx="9" cy="8" r="3"></circle>' +
+      '<path d="M3.5 20c0-3 2.5-4.7 5.5-4.7s5.5 1.7 5.5 4.7"></path>' +
+      '<path d="M16.5 5.5a3 3 0 0 1 0 5.6M18 20c0-2.2-.8-3.7-2-4.6"></path></svg>',
+    concluido: '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"></circle>' +
+      '<path d="M8.2 12.3l2.6 2.6 5-5.2"></path></svg>'
+  };
+
+  var ICONE_VAZIO = '<svg viewBox="0 0 24 24" aria-hidden="true">' +
+    '<path d="M3 13h4l1.4 2.5h7.2L17 13h4"></path>' +
+    '<path d="M4.6 6.6L3 13v5a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-5l-1.6-6.4A2 2 0 0 0 17.5 5h-11a2 2 0 0 0-1.9 1.6z"></path></svg>';
+
+  var ICONE_CHEVRON = '<svg viewBox="0 0 24 24" aria-hidden="true">' +
+    '<path d="M6 15l6-6 6 6"></path></svg>';
 
   function iniciais(nome) {
     var p = nome.trim().split(/\s+/);
@@ -475,12 +534,27 @@
 
       var corpo = col.cards.length
         ? col.cards.map(montarCard).join('')
-        : '<div class="empty-col">Nenhum item nesta coluna</div>';
+        : '<div class="empty-col">' + ICONE_VAZIO + 'Nenhum item nesta coluna</div>';
+
+      // col.cor vem do servidor, mas só serve de chave num mapa fechado: um
+      // valor inesperado cai no '' e o cabeçalho fica sem ícone, nunca vira
+      // markup. Mesmo motivo do esc() no nome da coluna logo abaixo.
+      var icone = ICONES_COLUNA[col.cor] || '';
+      var podeRecolher = col.cor === 'concluido';
 
       sec.innerHTML =
         '<div class="column-head"><div class="name">' +
-          '<span class="label">' + esc(col.nome) + '</span>' +
-          '<span class="count">' + col.cards.length + '</span>' +
+          '<span class="titulo">' +
+            (icone ? '<span class="icone">' + icone + '</span>' : '') +
+            '<span class="label">' + esc(col.nome) + '</span>' +
+          '</span>' +
+          '<span class="acoes">' +
+            '<span class="count">' + col.cards.length + '</span>' +
+            (podeRecolher
+              ? '<button type="button" class="colapsar" aria-expanded="true" ' +
+                'title="Recolher coluna">' + ICONE_CHEVRON + '</button>'
+              : '') +
+          '</span>' +
         '</div></div>' +
         '<div class="cards">' + corpo + '<div class="no-match">Nenhum resultado</div></div>';
 
@@ -488,7 +562,7 @@
     });
 
     document.getElementById('rodapeEsq').textContent =
-      totalCards + ' tasks · ' + dados.colunas.length + ' colunas';
+      totalCards + ' tarefas · ' + dados.colunas.length + ' colunas';
     document.getElementById('rodapeDir').textContent =
       'Atualizado em ' + formatarData(dados.atualizadoEm);
   }
@@ -589,6 +663,20 @@
   }
 
   filtro.addEventListener('input', aplicarFiltro);
+
+  /* Delegado no board, não no botão: o render() reconstrói as colunas a cada
+   * atualização (manual e a automática de 5 em 5 minutos), então um listener
+   * preso ao botão morreria no primeiro refresh. O estado recolhido também
+   * não sobrevive ao redesenho — e é o certo aqui: se a coluna mudou de
+   * conteúdo, esconder a mudança seria o oposto do que o quadro serve. */
+  document.getElementById('board').addEventListener('click', function (e) {
+    var botao = e.target.closest ? e.target.closest('.colapsar') : null;
+    if (!botao) return;
+    var coluna = botao.closest('.column');
+    var recolhida = coluna.classList.toggle('recolhida');
+    botao.setAttribute('aria-expanded', recolhida ? 'false' : 'true');
+    botao.title = recolhida ? 'Expandir coluna' : 'Recolher coluna';
+  });
 
   // Confere o snapshot a cada 5 minutos e redesenha sozinho, sem F5.
   var INTERVALO_AUTO_MS = 5 * 60 * 1000;
