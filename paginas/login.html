@@ -5,35 +5,37 @@
 <title>Entrar — Kanban</title>
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <style>
+  @import url('https://fonts.googleapis.com/css2?family=Lato:wght@400;600;700;900&display=swap');
+
   :root {
-    --bg: #F4F6F5;
+    --bg: #F5F5F5;
     --bg-panel: #FFFFFF;
-    --ink: #1A211F;
-    --ink-dim: #5B6B66;
-    --ink-faint: #8B9994;
-    --line: #DCE3E0;
-    --accent: #0F6B62;
-    --accent-soft: #E4F0EE;
+    --ink: #1E212C;
+    --ink-dim: #4B5A68;
+    --ink-faint: #7C8894;
+    --line: #E5E6E7;
+    --accent: #FF6C0C;
+    --accent-soft: #FFE8D9;
     --warn: #A8452E;
     --warn-soft: #F6E9E5;
-    --ok: #0F6B62;
-    --ok-soft: #E4F0EE;
-    --shadow: 0 1px 2px rgba(26,33,31,0.06), 0 1px 1px rgba(26,33,31,0.04);
+    --ok: #0DD3AD;
+    --ok-soft: #E4FFFB;
+    --shadow: 0 1px 2px rgba(30,33,44,0.06), 0 1px 1px rgba(30,33,44,0.04);
   }
   @media (prefers-color-scheme: dark) {
     :root {
-      --bg: #14201C;
-      --bg-panel: #1A2723;
-      --ink: #E9F0ED;
-      --ink-dim: #9DB0AA;
-      --ink-faint: #6C8079;
-      --line: #2A3A34;
-      --accent: #4FBBAA;
-      --accent-soft: #1E3833;
-      --warn: #E08361;
-      --warn-soft: #3A281F;
-      --ok: #4FBBAA;
-      --ok-soft: #1E3833;
+      --bg: #1E212C;
+      --bg-panel: #262B38;
+      --ink: #F5F5F5;
+      --ink-dim: #A7B0BC;
+      --ink-faint: #78838F;
+      --line: #333846;
+      --accent: #FF8A3D;
+      --accent-soft: #3A2A1C;
+      --warn: #E2725B;
+      --warn-soft: #3A241C;
+      --ok: #3EE8C4;
+      --ok-soft: #123832;
       --shadow: 0 1px 3px rgba(0,0,0,0.35);
     }
   }
@@ -46,7 +48,7 @@
     justify-content: center;
     background: var(--bg);
     color: var(--ink);
-    font-family: -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    font-family: Lato, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
   }
   .card {
     width: min(360px, 90vw);
@@ -123,6 +125,7 @@
   }
   .aviso.erro { background: var(--warn-soft); border: 1px solid var(--warn); color: var(--warn); }
   .aviso.ok { background: var(--ok-soft); border: 1px solid var(--ok); color: var(--ok); }
+  .obrig { color: var(--warn); font-weight: 700; margin-left: 2px; }
 
 </style>
 </head>
@@ -136,10 +139,10 @@
     </div>
 
     <form id="formulario">
-      <label for="email">E-mail</label>
+      <label for="email">E-mail<span class="obrig">*</span></label>
       <input type="email" id="email" required autocomplete="username">
 
-      <label for="senha">Senha</label>
+      <label for="senha">Senha<span class="obrig">*</span></label>
       <input type="password" id="senha" required autocomplete="current-password" minlength="8">
 
       <button class="principal" type="submit" id="botaoPrincipal">Entrar</button>

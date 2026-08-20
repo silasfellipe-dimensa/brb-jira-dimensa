@@ -39,7 +39,8 @@ app.use((req, res, next) => {
     'Content-Security-Policy',
     "default-src 'self'; " +
     "img-src 'self' data: https:; " +
-    "style-src 'self' 'unsafe-inline'; " +
+    "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; " +
+    "font-src 'self' https://fonts.gstatic.com; " +
     "script-src 'self' 'unsafe-inline'; " +
     "connect-src 'self'; " +
     "frame-ancestors 'none'; " +
@@ -174,7 +175,7 @@ app.get('/', exigirSessaoPagina, (req, res) => {
 });
 
 app.get('/api/eu', exigirSessaoApi, (req, res) => {
-  res.json(req.usuario);
+  res.json({ ...req.usuario, hubUrl: process.env.HUB_URL || null });
 });
 
 app.get('/api/dados', exigirSessaoApi, async (req, res) => {
