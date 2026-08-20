@@ -7,3 +7,7 @@ data/
 corp-ca-bundle.pem
 .idea/
 .vscode/
+
+# Arquivo avulso com token da Atlassian, colado manualmente durante
+# troca de credencial. Segredo nao entra no repositorio.
+api_jira.txt
