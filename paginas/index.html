@@ -374,7 +374,7 @@
    * da coluna ele seria cortado pelo overflow do board. */
   .popover {
     position: fixed; z-index: 60;
-    max-width: 420px; width: max-content;
+    max-width: 520px; width: max-content;
     background: var(--bg-panel); color: var(--ink);
     border: 1px solid var(--line); border-radius: 10px;
     box-shadow: 0 10px 28px rgba(30,33,44,0.18), 0 2px 6px rgba(30,33,44,0.10);
@@ -386,21 +386,28 @@
     font-size: 0.7rem; font-weight: 600; color: var(--ink-dim);
     margin-bottom: 9px; letter-spacing: 0.03em;
   }
-  .popover ul { list-style: none; display: flex; flex-direction: column; gap: 8px; }
-  .popover li { display: flex; gap: 8px; align-items: flex-start; font-size: 0.78rem; line-height: 1.35; }
-  .popover li.sub { padding-left: 14px; font-size: 0.73rem; }
+  .popover ul { list-style: none; display: flex; flex-direction: column; gap: 11px; }
+  .popover li { display: flex; gap: 8px; align-items: flex-start; font-size: 0.78rem; line-height: 1.4; }
+  .popover li.sub { padding-left: 16px; font-size: 0.74rem; }
   .popover .marca { flex-shrink: 0; width: 7px; height: 7px; border-radius: 50%; margin-top: 5px; }
-  .popover .chave {
-    flex-shrink: 0;
-    font-family: ui-monospace, Consolas, monospace;
-    font-size: 0.68rem;
-    color: var(--ink-faint);
+
+  /* Chave e status em cima, título embaixo ocupando a linha inteira. Com os
+   * três lado a lado, o título ficava espremido entre dois blocos de largura
+   * fixa e quebrava em quatro linhas. */
+  .popover .corpo { flex: 1; min-width: 0; }
+  .popover .meta {
+    display: flex; align-items: baseline; justify-content: space-between;
+    gap: 14px; margin-bottom: 2px;
   }
-  .popover .txt { flex: 1; }
-  .popover .quem { color: var(--ink-faint); font-size: 0.7rem; }
+  .popover .chave {
+    font-family: ui-monospace, Consolas, monospace;
+    font-size: 0.68rem; color: var(--ink-faint);
+  }
+  .popover .txt { display: block; }
+  .popover .quem { color: var(--ink-faint); font-size: 0.72rem; }
   .popover .onde {
     flex-shrink: 0; font-size: 0.62rem; text-transform: uppercase;
-    letter-spacing: 0.05em; color: var(--ink-faint); padding-top: 2px;
+    letter-spacing: 0.05em; color: var(--ink-faint); white-space: nowrap;
   }
   .popover li.feito .txt { color: var(--ink-faint); text-decoration: line-through; }
 
@@ -822,11 +829,15 @@
       var p = t.pessoa ? dados.pessoas[t.pessoa] : null;
       h += '<li class="' + (t.subtarefa ? 'sub' : '') + (t.concluida ? ' feito' : '') + '">' +
              '<span class="marca" style="background:var(--c-' + corDaColuna(t.coluna) + ')"></span>' +
-             (t.chave ? '<span class="chave">' + esc(t.chave) + '</span>' : '') +
-             '<span class="txt">' + esc(t.titulo) +
-               (p ? ' <span class="quem">· ' + esc(p.nome) + '</span>' : '') +
-             '</span>' +
-             '<span class="onde">' + esc(t.coluna) + '</span>' +
+             '<div class="corpo">' +
+               '<div class="meta">' +
+                 '<span class="chave">' + esc(t.chave || '') + '</span>' +
+                 '<span class="onde">' + esc(t.coluna) + '</span>' +
+               '</div>' +
+               '<span class="txt">' + esc(t.titulo) +
+                 (p ? ' <span class="quem">· ' + esc(p.nome) + '</span>' : '') +
+               '</span>' +
+             '</div>' +
            '</li>';
     });
     return h + '</ul>';
