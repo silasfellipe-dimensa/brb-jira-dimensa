@@ -342,6 +342,62 @@
 
   .avatar-empty { border: 1.5px dashed var(--line); }
 
+  .card-chave {
+    font-family: ui-monospace, Consolas, monospace;
+    font-size: 0.66rem; font-weight: 600;
+    color: var(--ink-faint);
+    letter-spacing: 0.02em;
+    margin-bottom: 4px;
+  }
+
+  .card-topo { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; }
+
+  .card-progresso {
+    flex-shrink: 0;
+    font-family: ui-monospace, Consolas, monospace;
+    font-size: 0.66rem; font-weight: 600;
+    color: var(--col); background: var(--col-soft);
+    padding: 1px 7px; border-radius: 100px;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .card-barra {
+    height: 3px; margin-top: 9px;
+    border-radius: 2px; background: var(--line-soft); overflow: hidden;
+  }
+  .card-barra i { display: block; height: 100%; background: var(--col); }
+
+  .card.tem-detalhe { cursor: default; }
+  .mais-gente { font-size: 0.68rem; color: var(--ink-faint); }
+
+  /* Painel de detalhe do épico. Fica no <body> e posicionado por JS: dentro
+   * da coluna ele seria cortado pelo overflow do board. */
+  .popover {
+    position: fixed; z-index: 60;
+    max-width: 420px; width: max-content;
+    background: var(--bg-panel); color: var(--ink);
+    border: 1px solid var(--line); border-radius: 10px;
+    box-shadow: 0 10px 28px rgba(30,33,44,0.18), 0 2px 6px rgba(30,33,44,0.10);
+    padding: 12px 14px; display: none;
+    max-height: 70vh; overflow-y: auto;
+  }
+  .popover.on { display: block; }
+  .popover h4 {
+    font-size: 0.7rem; font-weight: 600; color: var(--ink-dim);
+    margin-bottom: 9px; letter-spacing: 0.03em;
+  }
+  .popover ul { list-style: none; display: flex; flex-direction: column; gap: 8px; }
+  .popover li { display: flex; gap: 8px; align-items: flex-start; font-size: 0.78rem; line-height: 1.35; }
+  .popover li.sub { padding-left: 14px; font-size: 0.73rem; }
+  .popover .marca { flex-shrink: 0; width: 7px; height: 7px; border-radius: 50%; margin-top: 5px; }
+  .popover .txt { flex: 1; }
+  .popover .quem { color: var(--ink-faint); font-size: 0.7rem; }
+  .popover .onde {
+    flex-shrink: 0; font-size: 0.62rem; text-transform: uppercase;
+    letter-spacing: 0.05em; color: var(--ink-faint); padding-top: 2px;
+  }
+  .popover li.feito .txt { color: var(--ink-faint); text-decoration: line-through; }
+
   .empty-col, .no-match {
     padding: 26px 14px;
     text-align: center;
@@ -469,16 +525,64 @@
     });
   }
 
-  function montarCard(card) {
-    var html = '<div class="card-title">' + esc(card.titulo) + '</div>';
+  /* Chave fechada, igual ao ICONES_COLUNA: col.cor vem do servidor, mas só
+   * serve de índice num mapa conhecido - nunca entra no CSS como texto livre. */
+  var CORES_OK = { andamento: 1, dev: 1, teste: 1, terceiros: 1, concluido: 1 };
+
+  function corDaColuna(nome) {
+    for (var i = 0; i < (dados.colunas || []).length; i++) {
+      if (dados.colunas[i].nome === nome) {
+        return CORES_OK[dados.colunas[i].cor] ? dados.colunas[i].cor : 'concluido';
+      }
+    }
+    return 'concluido';
+  }
+
+  function montarCard(card, iCol, iCard) {
+    var tarefas = card.tarefas || [];
+
+    /* Chave do Jira (JDCBEPIC-192 / JDCBBRB-259). O nome já traz o número da
+     * demanda; a chave é o que serve para achar o item no Jira.
+     *
+     * Card de épico mostra a chave do épico. Card sem épico mostra a chave da
+     * própria task - senão a linha apareceria em uns cards e não em outros,
+     * sem motivo visível para quem lê. */
+    var chave = card.epico ||
+      (tarefas.length === 1 && tarefas[0].chave ? tarefas[0].chave : null);
+
+    var html = chave ? '<div class="card-chave">' + esc(chave) + '</div>' : '';
+
+    html += '<div class="card-topo">' +
+              '<div class="card-title">' + esc(card.titulo) + '</div>';
+
+    // Progresso só quando o épico tem mais de uma tarefa - em card de uma
+    // tarefa só, "0/1" não informa nada.
+    if (card.total > 1) {
+      html += '<span class="card-progresso">' + card.concluidas + '/' + card.total + '</span>';
+    }
+    html += '</div>';
+
     var busca = card.titulo;
+    tarefas.forEach(function (t) { busca += ' ' + t.titulo + ' ' + (t.chave || ''); });
+    if (card.epico) busca += ' ' + card.epico;
 
     if (dados.mostrarResponsavel) {
       var p = card.pessoa ? dados.pessoas[card.pessoa] : null;
+
+      // Quantas pessoas distintas o épico envolve, para o "+N".
+      var ids = {}, extras = 0;
+      tarefas.forEach(function (t) { if (t.pessoa) ids[t.pessoa] = 1; });
+      extras = Object.keys(ids).length - 1;
+
+      tarefas.forEach(function (t) {
+        var q = t.pessoa ? dados.pessoas[t.pessoa] : null;
+        if (q) busca += ' ' + q.nome;
+      });
+
       if (p) {
-        busca += ' ' + p.nome;
         var cor = 'hsl(' + matiz(p.nome) + ', 42%, 40%)';
         html += '<div class="card-meta">' +
+                  (extras > 0 ? '<span class="mais-gente">+' + extras + '</span>' : '') +
                   '<span class="assignee-name">' + esc(p.nome) + '</span>' +
                   '<span class="avatar">' +
                     '<img src="' + esc(p.avatar) + '" alt="" loading="lazy" ' +
@@ -494,11 +598,19 @@
       }
     }
 
-    return '<div class="card" data-text="' + esc(busca.toLowerCase()) + '">' + html + '</div>';
+    if (card.total > 1) {
+      var pct = Math.round((card.concluidas / card.total) * 100);
+      html += '<div class="card-barra"><i style="width:' + pct + '%"></i></div>';
+    }
+
+    return '<div class="card' + (tarefas.length ? ' tem-detalhe' : '') + '" ' +
+             'data-col="' + iCol + '" data-i="' + iCard + '" ' +
+             'data-text="' + esc(busca.toLowerCase()) + '">' + html + '</div>';
   }
 
   function render(novosDados) {
     if (novosDados) dados = novosDados;
+    fecharPopover();
 
     var board = document.getElementById('board');
     board.innerHTML = '';
@@ -524,7 +636,7 @@
 
     var totalCards = 0;
 
-    dados.colunas.forEach(function (col) {
+    dados.colunas.forEach(function (col, iCol) {
       totalCards += col.cards.length;
 
       var sec = document.createElement('section');
@@ -533,7 +645,7 @@
       sec.style.setProperty('--col-soft', 'var(--c-' + col.cor + '-soft)');
 
       var corpo = col.cards.length
-        ? col.cards.map(montarCard).join('')
+        ? col.cards.map(function (c, i) { return montarCard(c, iCol, i); }).join('')
         : '<div class="empty-col">' + ICONE_VAZIO + 'Nenhum item nesta coluna</div>';
 
       // col.cor vem do servidor, mas só serve de chave num mapa fechado: um
@@ -561,8 +673,17 @@
       board.appendChild(sec);
     });
 
-    document.getElementById('rodapeEsq').textContent =
-      totalCards + ' tarefas · ' + dados.colunas.length + ' colunas';
+    var nEpicos = 0, nTarefas = 0;
+    dados.colunas.forEach(function (col) {
+      col.cards.forEach(function (card) {
+        if (card.epico) nEpicos++;
+        nTarefas += (card.tarefas ? card.tarefas.length : 1);
+      });
+    });
+
+    document.getElementById('rodapeEsq').textContent = nEpicos
+      ? nEpicos + ' épicos · ' + totalCards + ' cards · ' + nTarefas + ' tarefas'
+      : totalCards + ' tarefas · ' + dados.colunas.length + ' colunas';
     document.getElementById('rodapeDir').textContent =
       'Atualizado em ' + formatarData(dados.atualizadoEm);
   }
@@ -663,6 +784,160 @@
   }
 
   filtro.addEventListener('input', aplicarFiltro);
+
+  /* ---- detalhe do épico ----
+   * O card mostra o épico; o que o time está tocando de fato vive aqui.
+   * Hover no desktop e clique também: em toque não existe hover, e sem o
+   * clique o detalhe ficaria inacessível no celular. */
+  var popover = document.createElement('div');
+  popover.className = 'popover';
+  popover.setAttribute('role', 'tooltip');
+  document.body.appendChild(popover);
+
+  var cardAberto = null;
+
+  function cardDe(el) {
+    var col = dados.colunas && dados.colunas[Number(el.getAttribute('data-col'))];
+    return col ? col.cards[Number(el.getAttribute('data-i'))] : null;
+  }
+
+  function conteudoPopover(card) {
+    // Tarefas de verdade primeiro, subtarefas depois: a ordem do Jira mistura
+    // as duas e o que interessa a quem lê é a tarefa, não a etapa interna.
+    var tarefas = (card.tarefas || []).slice().sort(function (a, b) {
+      return (a.subtarefa ? 1 : 0) - (b.subtarefa ? 1 : 0);
+    });
+
+    var titulo = card.epico ? esc(card.epico) : 'Item sem épico';
+    if (card.total > 1) titulo += ' · ' + card.concluidas + ' de ' + card.total + ' concluídas';
+
+    var h = '<h4>' + titulo + '</h4><ul>';
+    tarefas.forEach(function (t) {
+      var p = t.pessoa ? dados.pessoas[t.pessoa] : null;
+      h += '<li class="' + (t.subtarefa ? 'sub' : '') + (t.concluida ? ' feito' : '') + '">' +
+             '<span class="marca" style="background:var(--c-' + corDaColuna(t.coluna) + ')"></span>' +
+             '<span class="txt">' + esc(t.titulo) +
+               (p ? ' <span class="quem">· ' + esc(p.nome) + '</span>' : '') +
+             '</span>' +
+             '<span class="onde">' + esc(t.coluna) + '</span>' +
+           '</li>';
+    });
+    return h + '</ul>';
+  }
+
+  function abrirPopover(el) {
+    var card = cardDe(el);
+    if (!card || !card.tarefas || !card.tarefas.length) return;
+
+    popover.innerHTML = conteudoPopover(card);
+    popover.style.visibility = 'hidden';
+    popover.classList.add('on');
+
+    // Mede depois de renderizar para caber na tela: ao lado do card quando dá,
+    // do outro lado quando não dá, e sempre dentro da janela.
+    var r = el.getBoundingClientRect();
+    var pr = popover.getBoundingClientRect();
+
+    var esq = r.right + 10;
+    if (esq + pr.width > window.innerWidth - 8) esq = r.left - pr.width - 10;
+    if (esq < 8) esq = 8;
+
+    var topo = r.top;
+    if (topo + pr.height > window.innerHeight - 8) topo = window.innerHeight - pr.height - 8;
+    if (topo < 8) topo = 8;
+
+    popover.style.left = esq + 'px';
+    popover.style.top = topo + 'px';
+    popover.style.visibility = '';
+    cardAberto = el;
+  }
+
+  function fecharPopover() {
+    cancelarTimers();
+    popover.classList.remove('on');
+    cardAberto = null;
+  }
+
+  /* O painel abre ao lado do card, então levar o mouse até ele obriga a passar
+   * por cima de outros cards. Sem intenção de hover, cada card no caminho
+   * roubava o painel e trocava o conteúdo no meio da leitura.
+   *
+   * Por isso: trocar de épico exige PARAR sobre o outro card; sair do card dá
+   * um tempo antes de fechar, e entrar no painel cancela o fechamento. Passar
+   * por cima de raspão não muda nada. */
+  var ESPERA_TROCA_MS = 240;   // parada mínima sobre outro card para ele assumir
+  var ESPERA_SAIDA_MS = 280;   // folga para o mouse atravessar até o painel
+  var ESPERA_1A_MS = 60;       // sem painel aberto, responde quase na hora
+
+  var timerAbrir = null;
+  var timerFechar = null;
+
+  function cancelarTimers() {
+    if (timerAbrir) { clearTimeout(timerAbrir); timerAbrir = null; }
+    if (timerFechar) { clearTimeout(timerFechar); timerFechar = null; }
+  }
+
+  function agendarAbertura(el) {
+    if (timerFechar) { clearTimeout(timerFechar); timerFechar = null; }
+    if (el === cardAberto) return;
+    if (timerAbrir) clearTimeout(timerAbrir);
+    timerAbrir = setTimeout(function () {
+      timerAbrir = null;
+      abrirPopover(el);
+    }, cardAberto ? ESPERA_TROCA_MS : ESPERA_1A_MS);
+  }
+
+  function agendarFechamento() {
+    if (timerAbrir) { clearTimeout(timerAbrir); timerAbrir = null; }
+    if (timerFechar) clearTimeout(timerFechar);
+    timerFechar = setTimeout(function () {
+      timerFechar = null;
+      fecharPopover();
+    }, ESPERA_SAIDA_MS);
+  }
+
+  var boardEl = document.getElementById('board');
+
+  boardEl.addEventListener('mouseover', function (e) {
+    var el = e.target.closest ? e.target.closest('.card') : null;
+    if (!el) return;
+    agendarAbertura(el);
+  });
+
+  boardEl.addEventListener('mouseout', function (e) {
+    var el = e.target.closest ? e.target.closest('.card') : null;
+    if (!el || (e.relatedTarget && el.contains(e.relatedTarget))) return;
+    agendarFechamento();
+  });
+
+  // Dentro do painel ele fica: é onde a pessoa está lendo.
+  popover.addEventListener('mouseenter', cancelarTimers);
+  popover.addEventListener('mouseleave', agendarFechamento);
+
+  // Clique é imediato, sem espera - e serve de acesso no celular, onde
+  // hover não existe.
+  boardEl.addEventListener('click', function (e) {
+    var el = e.target.closest ? e.target.closest('.card') : null;
+    if (!el) return;
+    cancelarTimers();
+    if (el === cardAberto) fecharPopover(); else abrirPopover(el);
+  });
+
+  // Clique fora de card e fora do painel fecha na hora.
+  document.addEventListener('click', function (e) {
+    if (!e.target.closest) return;
+    if (e.target.closest('.popover') || e.target.closest('.card')) return;
+    fecharPopover();
+  });
+
+  // O painel é posicionado em coordenadas fixas: qualquer rolagem ou resize
+  // o deixaria apontando para o lugar errado. Rolagem dentro dele não conta.
+  window.addEventListener('scroll', function (e) {
+    if (e.target && e.target.closest && e.target.closest('.popover')) return;
+    fecharPopover();
+  }, true);
+  window.addEventListener('resize', fecharPopover);
+
 
   /* Delegado no board, não no botão: o render() reconstrói as colunas a cada
    * atualização (manual e a automática de 5 em 5 minutos), então um listener
