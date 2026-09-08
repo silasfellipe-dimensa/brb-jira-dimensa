@@ -390,6 +390,12 @@
   .popover li { display: flex; gap: 8px; align-items: flex-start; font-size: 0.78rem; line-height: 1.35; }
   .popover li.sub { padding-left: 14px; font-size: 0.73rem; }
   .popover .marca { flex-shrink: 0; width: 7px; height: 7px; border-radius: 50%; margin-top: 5px; }
+  .popover .chave {
+    flex-shrink: 0;
+    font-family: ui-monospace, Consolas, monospace;
+    font-size: 0.68rem;
+    color: var(--ink-faint);
+  }
   .popover .txt { flex: 1; }
   .popover .quem { color: var(--ink-faint); font-size: 0.7rem; }
   .popover .onde {
@@ -816,6 +822,7 @@
       var p = t.pessoa ? dados.pessoas[t.pessoa] : null;
       h += '<li class="' + (t.subtarefa ? 'sub' : '') + (t.concluida ? ' feito' : '') + '">' +
              '<span class="marca" style="background:var(--c-' + corDaColuna(t.coluna) + ')"></span>' +
+             (t.chave ? '<span class="chave">' + esc(t.chave) + '</span>' : '') +
              '<span class="txt">' + esc(t.titulo) +
                (p ? ' <span class="quem">· ' + esc(p.nome) + '</span>' : '') +
              '</span>' +
