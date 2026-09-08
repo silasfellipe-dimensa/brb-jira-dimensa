@@ -405,9 +405,12 @@
   }
   .popover .txt { display: block; }
   .popover .quem { color: var(--ink-faint); font-size: 0.72rem; }
+  /* A cor vem inline, da coluna da tarefa - a mesma da bolinha, do cabeçalho
+   * da coluna e da barra de progresso. Antes o status era cinza igual à
+   * chave, e os dois na mesma linha viravam um bloco só. */
   .popover .onde {
-    flex-shrink: 0; font-size: 0.62rem; text-transform: uppercase;
-    letter-spacing: 0.05em; color: var(--ink-faint); white-space: nowrap;
+    flex-shrink: 0; font-size: 0.62rem; font-weight: 600;
+    text-transform: uppercase; letter-spacing: 0.05em; white-space: nowrap;
   }
   .popover li.feito .txt { color: var(--ink-faint); text-decoration: line-through; }
 
@@ -814,6 +817,10 @@
     return col ? col.cards[Number(el.getAttribute('data-i'))] : null;
   }
 
+  /* O nome da coluna agrupa vários itens ("Itens concluídos"); como status de
+   * UMA tarefa, o plural fica errado. */
+  var ROTULO_STATUS = { 'Itens concluídos': 'Concluído' };
+
   function conteudoPopover(card) {
     // Tarefas de verdade primeiro, subtarefas depois: a ordem do Jira mistura
     // as duas e o que interessa a quem lê é a tarefa, não a etapa interna.
@@ -827,12 +834,14 @@
     var h = '<h4>' + titulo + '</h4><ul>';
     tarefas.forEach(function (t) {
       var p = t.pessoa ? dados.pessoas[t.pessoa] : null;
+      var cor = corDaColuna(t.coluna);
       h += '<li class="' + (t.subtarefa ? 'sub' : '') + (t.concluida ? ' feito' : '') + '">' +
-             '<span class="marca" style="background:var(--c-' + corDaColuna(t.coluna) + ')"></span>' +
+             '<span class="marca" style="background:var(--c-' + cor + ')"></span>' +
              '<div class="corpo">' +
                '<div class="meta">' +
                  '<span class="chave">' + esc(t.chave || '') + '</span>' +
-                 '<span class="onde">' + esc(t.coluna) + '</span>' +
+                 '<span class="onde" style="color:var(--c-' + cor + ')">' +
+                   esc(ROTULO_STATUS[t.coluna] || t.coluna) + '</span>' +
                '</div>' +
                '<span class="txt">' + esc(t.titulo) +
                  (p ? ' <span class="quem">· ' + esc(p.nome) + '</span>' : '') +
