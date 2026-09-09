@@ -368,7 +368,6 @@
   .card-barra i { display: block; height: 100%; background: var(--col); }
 
   .card.tem-detalhe { cursor: default; }
-  .mais-gente { font-size: 0.68rem; color: var(--ink-faint); }
 
   /* Painel de detalhe do épico. Fica no <body> e posicionado por JS: dentro
    * da coluna ele seria cortado pelo overflow do board. */
@@ -585,11 +584,9 @@
     if (dados.mostrarResponsavel) {
       var p = card.pessoa ? dados.pessoas[card.pessoa] : null;
 
-      // Quantas pessoas distintas o épico envolve, para o "+N".
-      var ids = {}, extras = 0;
-      tarefas.forEach(function (t) { if (t.pessoa) ids[t.pessoa] = 1; });
-      extras = Object.keys(ids).length - 1;
-
+      // O card mostra só quem está com a demanda agora - quem mais passou pelo
+      // épico é assunto do painel de detalhe. A busca, essa, continua achando
+      // por qualquer um dos envolvidos.
       tarefas.forEach(function (t) {
         var q = t.pessoa ? dados.pessoas[t.pessoa] : null;
         if (q) busca += ' ' + q.nome;
@@ -598,7 +595,6 @@
       if (p) {
         var cor = 'hsl(' + matiz(p.nome) + ', 42%, 40%)';
         html += '<div class="card-meta">' +
-                  (extras > 0 ? '<span class="mais-gente">+' + extras + '</span>' : '') +
                   '<span class="assignee-name">' + esc(p.nome) + '</span>' +
                   '<span class="avatar">' +
                     '<img src="' + esc(p.avatar) + '" alt="" loading="lazy" ' +
