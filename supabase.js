@@ -99,4 +99,44 @@ async function gravarSnapshot(dados) {
   if (error) throw new Error('Falha ao gravar snapshot: ' + error.message);
 }
 
-module.exports = { cadastrar, entrar, lerSnapshot, gravarSnapshot };
+/** Grava a foto do dia na tabela historico.
+ *
+ * Uma linha por dia, sobrescrita se o mesmo dia carregar de novo - a ultima
+ * carga do dia e a que vale. E o que permite CFD, burndown e tendencia, que a
+ * tabela `snapshot` (linha unica, sobrescrita) nunca poderia sustentar.
+ *
+ * Falha aqui NAO derruba a atualizacao do board: o historico e acessorio, o
+ * snapshot e o que a tela precisa. Por isso o erro e registrado e engolido. */
+async function gravarHistorico(resumo) {
+  const dia = new Date().toISOString().slice(0, 10);
+  try {
+    const { error } = await db()
+      .from('historico')
+      .upsert({ dia, dados: resumo, gravado_em: new Date().toISOString() }, { onConflict: 'dia' });
+    if (error) throw new Error(error.message);
+    return true;
+  } catch (erro) {
+    console.error('[supabase] falha ao gravar historico (board segue normal):', erro.message);
+    return false;
+  }
+}
+
+/** Le os ultimos N dias de historico, do mais antigo para o mais novo. */
+async function lerHistorico(limiteDias = 60) {
+  try {
+    const { data, error } = await db()
+      .from('historico')
+      .select('dia,dados')
+      .order('dia', { ascending: false })
+      .limit(limiteDias);
+    if (error) throw new Error(error.message);
+    return (data || []).reverse();
+  } catch (erro) {
+    console.error('[supabase] falha ao ler historico:', erro.message);
+    return [];
+  }
+}
+
+module.exports = {
+  cadastrar, entrar, lerSnapshot, gravarSnapshot, gravarHistorico, lerHistorico
+};

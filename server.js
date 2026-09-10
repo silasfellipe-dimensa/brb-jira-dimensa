@@ -5,7 +5,9 @@ const cookieParser = require('cookie-parser');
 const crypto = require('crypto');
 const path = require('path');
 const { buscarBoard } = require('./jira');
-const { cadastrar, entrar, lerSnapshot, gravarSnapshot } = require('./supabase');
+const {
+  cadastrar, entrar, lerSnapshot, gravarSnapshot, gravarHistorico, lerHistorico
+} = require('./supabase');
 const {
   COOKIE_NAME,
   SESSAO_DIAS,
@@ -55,6 +57,23 @@ app.use((req, res, next) => {
 async function executarAtualizacao(usuario) {
   const dados = await buscarBoard();
   await gravarSnapshot(dados);
+
+  // Foto do dia para o histórico. Só o resumo - contagem por coluna é o que os
+  // gráficos de fluxo precisam, e mantém a tabela pequena. Se falhar, o board
+  // segue: gravarHistorico registra o erro e devolve false, sem lançar.
+  const m = dados.metricas;
+  if (m) {
+    const colunas = {};
+    m.wip.forEach((w) => { colunas[w.coluna] = w.qtd; });
+    await gravarHistorico({
+      sprint: dados.sprint,
+      colunas,
+      total: m.itens.total,
+      concluidos: m.itens.concluidos,
+      abertos: m.itens.abertos
+    });
+  }
+
   console.log(`[${new Date().toLocaleTimeString('pt-BR')}] Board atualizado por ${usuario}. Sprint: ${dados.sprint}`);
   return dados;
 }
@@ -180,6 +199,26 @@ app.get('/api/eu', exigirSessaoApi, (req, res) => {
 
 app.get('/api/dados', exigirSessaoApi, async (req, res) => {
   res.json(await lerSnapshot());
+});
+
+app.get('/dashboard', exigirSessaoPagina, (req, res) => {
+  res.sendFile(path.join(PUBLIC_DIR, 'dashboard.html'));
+});
+
+/** Métricas do sprint + série histórica para os gráficos de fluxo.
+ *
+ * As métricas saem do snapshot, calculadas na carga - não refazemos conta a
+ * cada visita, nem chamamos o Jira aqui. O histórico é lido à parte porque
+ * mora em outra tabela, uma linha por dia. */
+app.get('/api/metricas', exigirSessaoApi, async (req, res) => {
+  const snapshot = await lerSnapshot();
+  const historico = await lerHistorico(60);
+  res.json({
+    sprint: snapshot.sprint || null,
+    atualizadoEm: snapshot.atualizadoEm || null,
+    metricas: snapshot.metricas || null,
+    historico
+  });
 });
 
 // Muta estado, entao e POST (nunca GET). A protecao anti-CSRF aqui e o

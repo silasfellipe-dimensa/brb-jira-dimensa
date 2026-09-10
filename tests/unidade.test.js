@@ -9,7 +9,9 @@ const { test, describe } = require('node:test');
 const assert = require('node:assert');
 
 const { emailPermitido, segredoConfere, criarSessao, lerSessao } = require('../auth');
-const { mapearColunas, montarColunas, epicoDe, ehSubtarefa } = require('../jira');
+const {
+  mapearColunas, montarColunas, montarMetricas, epicoDe, ehSubtarefa
+} = require('../jira');
 
 describe('emailPermitido — quem pode entrar', () => {
   // Bug: alguem de fora dos dominios da equipe cria conta e le o board.
@@ -299,5 +301,253 @@ describe('epicoDe / ehSubtarefa — leitura dos campos do Jira', () => {
     assert.ok(ehSubtarefa({ fields: { issuetype: { subtask: true } } }));
     assert.ok(!ehSubtarefa({ fields: { issuetype: { subtask: false } } }));
     assert.ok(!ehSubtarefa({ fields: {} }));
+  });
+});
+
+/* ---------------------------------------------------------------------------
+ * Metricas do dashboard.
+ *
+ * Cenario montado com as caracteristicas reais do board 2587: item antigo que
+ * atravessa sprints, escopo entrando no meio, subtarefa que nao deve inflar a
+ * lista, e `updated` recente num item parado ha meses (o campo que robo de
+ * apontamento de horas mexe).
+ * ------------------------------------------------------------------------- */
+describe('montarMetricas — numeros do sprint', () => {
+  const ordem = ['Em andamento', 'TESTE', 'Itens concluídos'];
+  const mapa = { '3': 'Em andamento', '5': 'TESTE', '9': 'Itens concluídos' };
+  const AGORA = new Date('2026-09-10T12:00:00.000Z');
+  const sprint = { startDate: '2026-09-01T00:00:00.000Z', endDate: '2026-09-30T00:00:00.000Z' };
+
+  const task = { name: 'História', subtask: false };
+  const sub = { name: 'Code Review', subtask: true };
+
+  function it_(key, statusId, opts) {
+    opts = opts || {};
+    return {
+      key,
+      fields: {
+        summary: opts.titulo || key,
+        status: { id: statusId },
+        issuetype: opts.sub ? sub : task,
+        assignee: opts.quem ? { displayName: opts.quem } : null,
+        created: opts.criado || '2026-08-01T10:00:00.000Z',
+        updated: opts.mexido || '2026-09-09T10:00:00.000Z',
+        resolutiondate: opts.fim || null,
+        statuscategorychangedate: opts.fase || null
+      }
+    };
+  }
+
+  const issues = [
+    // Zumbi: parado desde junho, mas com `updated` de ontem (robô de horas).
+    it_('Z-1', 3, { criado: '2026-06-21T10:00:00.000Z', fase: '2026-06-21T10:00:00.000Z', quem: 'Ana' }),
+    it_('N-1', 5, { criado: '2026-09-05T10:00:00.000Z', quem: 'Bia' }),   // entrou no meio
+    it_('S-1', 9, { sub: true, fim: '2026-09-08T10:00:00.000Z' }),        // subtarefa pronta
+    it_('P-1', 9, { fim: '2026-09-02T10:00:00.000Z', quem: 'Ana' }),
+    it_('P-2', 9, { fim: '2026-09-03T10:00:00.000Z', quem: 'Bia' })
+  ];
+
+  const m = montarMetricas(ordem, mapa, issues, sprint, AGORA, true);
+
+  test('conta o relogio do sprint a partir das datas do Jira', () => {
+    assert.strictEqual(m.relogio.totalDias, 29);
+    assert.strictEqual(m.relogio.corridos, 9);
+    // 10/09 12:00 -> 30/09 00:00 sao 19,5 dias, truncados para 19: dia contado
+    // e dia inteiro disponivel, entao arredondar para cima prometeria tempo
+    // que nao existe.
+    assert.strictEqual(m.relogio.restantes, 19);
+  });
+
+  test('separa aberto de concluido pela ultima coluna', () => {
+    assert.strictEqual(m.itens.total, 5);
+    assert.strictEqual(m.itens.concluidos, 3);
+    assert.strictEqual(m.itens.abertos, 2);
+  });
+
+  // O denominador crescendo no meio do caminho e o que faz "% concluido" andar
+  // para tras sem ninguem errar nada.
+  test('acusa escopo criado depois do inicio do sprint', () => {
+    assert.strictEqual(m.escopoNovo.qtd, 1);
+    assert.strictEqual(m.escopoNovo.itens[0].chave, 'N-1');
+  });
+
+  test('mede idade pelo created, ignorando o updated contaminado', () => {
+    const zumbi = m.aging.find((a) => a.chave === 'Z-1');
+    assert.strictEqual(zumbi.diasAberto, 81);   // desde 21/06, nao desde ontem
+    assert.strictEqual(zumbi.diasNaFase, 81);   // statuscategorychangedate
+  });
+
+  /* Ordenar por idade poria no topo um item que nasceu ha meses e comecou
+   * ontem - que nao e problema nenhum. O que urge e tempo TRAVADO na fase. */
+  test('ordena pelo tempo na fase, nao pela idade do item', () => {
+    const velhoParado = it_('V-1', 3, {
+      criado: '2026-06-01T10:00:00.000Z', fase: '2026-06-01T10:00:00.000Z'
+    });
+    const velhoRecemComecado = it_('V-2', 3, {
+      criado: '2026-05-01T10:00:00.000Z', fase: '2026-09-09T10:00:00.000Z'
+    });
+    const r = montarMetricas(ordem, mapa, [velhoRecemComecado, velhoParado], sprint, AGORA, true);
+
+    assert.strictEqual(r.aging[0].chave, 'V-1');   // 101 dias travado
+    assert.strictEqual(r.aging[1].chave, 'V-2');   // mais antigo, mas so 1 dia na fase
+    assert.ok(r.aging[1].diasAberto > r.aging[0].diasAberto);
+  });
+
+  test('cai para a idade quando o Jira nao manda a data da fase', () => {
+    const semFase = it_('F-1', 3, { criado: '2026-08-01T10:00:00.000Z' });
+    const r = montarMetricas(ordem, mapa, [semFase], sprint, AGORA, true);
+    assert.strictEqual(r.aging[0].diasNaFase, null);
+    assert.strictEqual(r.aging[0].diasAberto, 40);
+  });
+
+  test('marca subtarefa, para o dashboard poder deixar de fora', () => {
+    const abertos = m.aging.map((a) => a.chave);
+    assert.ok(!abertos.includes('S-1'));  // ela esta concluida, nem entra
+    const todas = montarMetricas(ordem, mapa, [it_('S-9', 3, { sub: true })], sprint, AGORA, true);
+    assert.strictEqual(todas.aging[0].subtarefa, true);
+  });
+
+  test('agrupa a vazao por semana de conclusao', () => {
+    const total = m.vazao.reduce((s, x) => s + x.qtd, 0);
+    assert.strictEqual(total, 3);
+    assert.ok(m.vazao.every((x) => /^\d{4}-\d{2}-\d{2}$/.test(x.semana)));
+  });
+
+  test('preve pela vazao, nunca por story point (que ninguem preenche)', () => {
+    assert.ok(m.previsao.vazaoMedia > 0);
+    assert.strictEqual(m.previsao.devemFechar + m.previsao.escorregam, m.itens.abertos);
+  });
+
+  test('nao promete fechar mais itens do que existem em aberto', () => {
+    const rapido = montarMetricas(ordem, mapa, issues.concat([
+      it_('X-1', 9, { fim: '2026-09-01T10:00:00.000Z' }),
+      it_('X-2', 9, { fim: '2026-09-01T11:00:00.000Z' }),
+      it_('X-3', 9, { fim: '2026-09-01T12:00:00.000Z' })
+    ]), sprint, AGORA, true);
+    assert.ok(rapido.previsao.devemFechar <= rapido.itens.abertos);
+    assert.ok(rapido.previsao.escorregam >= 0);
+  });
+
+  test('conta a fila de cada coluna, inclusive as vazias', () => {
+    assert.deepStrictEqual(m.wip.map((w) => w.coluna), ordem);
+    assert.strictEqual(m.wip.find((w) => w.coluna === 'Em andamento').qtd, 1);
+  });
+
+  // Mesma regra de privacidade do board: virou a chave, nao sai nome nenhum.
+  test('com mostrarResponsavel=false nao expoe pessoa alguma', () => {
+    const sem = montarMetricas(ordem, mapa, issues, sprint, AGORA, false);
+    assert.deepStrictEqual(sem.carga, []);
+    assert.ok(sem.aging.every((a) => a.pessoa === null));
+  });
+
+  test('aguenta sprint sem datas sem quebrar', () => {
+    const semData = montarMetricas(ordem, mapa, issues, {}, AGORA, true);
+    assert.strictEqual(semData.relogio, null);
+    assert.strictEqual(semData.escopoNovo.qtd, 0);
+  });
+});
+
+describe('serieEscopo — curva de crescimento do sprint', () => {
+  const ordem = ['Em andamento'];
+  const mapa = { '3': 'Em andamento' };
+  const sprint = { startDate: '2026-09-01T00:00:00.000Z', endDate: '2026-09-30T00:00:00.000Z' };
+  const tipo = { name: 'História', subtask: false };
+  const mk = (k, criado) => ({
+    key: k,
+    fields: { summary: k, status: { id: 3 }, issuetype: tipo, assignee: null, created: criado }
+  });
+
+  const issues = [
+    mk('velha-1', '2026-08-20T10:00:00.000Z'),
+    mk('velha-2', '2026-08-21T10:00:00.000Z'),
+    mk('nova-1', '2026-09-03T10:00:00.000Z'),
+    mk('nova-2', '2026-09-03T15:00:00.000Z'),
+    mk('nova-3', '2026-09-07T10:00:00.000Z')
+  ];
+  const m = montarMetricas(ordem, mapa, issues, sprint, new Date('2026-09-08T12:00:00.000Z'), true);
+  const s = m.escopoNovo.serie;
+
+  test('parte do que o sprint ja tinha ao comecar', () => {
+    assert.strictEqual(m.escopoNovo.base, 2);
+    assert.strictEqual(s[0].total, 2);
+  });
+
+  test('acumula: a curva so sobe, nunca desce', () => {
+    for (let i = 1; i < s.length; i++) assert.ok(s[i].total >= s[i - 1].total);
+    assert.strictEqual(s[s.length - 1].total, 5);
+  });
+
+  test('marca em que dia cada item entrou', () => {
+    const dia3 = s.find((x) => x.dia === '2026-09-03');
+    assert.strictEqual(dia3.entraram, 2);
+    assert.strictEqual(s.find((x) => x.dia === '2026-09-04').entraram, 0);
+  });
+
+  // Bug real: somar 24h a partir da meia-noite passava de "hoje" quando agora
+  // era de manha, e a curva ganhava um dia no futuro.
+  test('para em hoje, nunca desenha dia futuro', () => {
+    assert.strictEqual(s[s.length - 1].dia, '2026-09-08');
+  });
+
+  test('sprint sem data nao gera serie, em vez de quebrar', () => {
+    const sem = montarMetricas(ordem, mapa, issues, {}, new Date(), true);
+    assert.deepStrictEqual(sem.escopoNovo.serie, []);
+  });
+
+  test('lista os itens novos do mais recente para o mais antigo', () => {
+    assert.deepStrictEqual(m.escopoNovo.itens.map((i) => i.chave), ['nova-3', 'nova-2', 'nova-1']);
+  });
+});
+
+/* Bug real do sprint Setembro: 22 itens nasceram depois do inicio, mas 16 eram
+ * Codificacao / Code Review / Documento Tecnico de demandas que JA estavam no
+ * sprint. Contar os 22 juntos transformava 6 demandas em um alarme de 25%. */
+describe('escopoNovo — demanda pactuada vs desdobramento interno', () => {
+  const ordem = ['Em andamento'];
+  const mapa = { '3': 'Em andamento' };
+  const sprint = { startDate: '2026-09-01T00:00:00.000Z', endDate: '2026-09-30T00:00:00.000Z' };
+  const AGORA = new Date('2026-09-10T12:00:00.000Z');
+  const task = { name: 'História', subtask: false };
+  const sub = { name: 'Code Review', subtask: true };
+
+  const mk = (k, criado, ehSub) => ({
+    key: k,
+    fields: {
+      summary: k, status: { id: 3 }, assignee: null,
+      issuetype: ehSub ? sub : task, created: criado
+    }
+  });
+
+  const issues = [
+    mk('base-1', '2026-08-10T10:00:00.000Z', false),
+    mk('base-2', '2026-08-11T10:00:00.000Z', false),
+    mk('nova-1', '2026-09-05T10:00:00.000Z', false),
+    mk('sub-1', '2026-09-06T10:00:00.000Z', true),
+    mk('sub-2', '2026-09-06T11:00:00.000Z', true),
+    mk('sub-3', '2026-09-07T10:00:00.000Z', true)
+  ];
+  const e = montarMetricas(ordem, mapa, issues, sprint, AGORA, true).escopoNovo;
+
+  test('conta demanda e desdobramento separadamente', () => {
+    assert.strictEqual(e.qtd, 4);            // tudo que nasceu depois
+    assert.strictEqual(e.demandas, 1);       // so a de nivel 0
+    assert.strictEqual(e.desdobramentos, 3);
+  });
+
+  // 4 de 6 seriam 67%; a demanda nova e 1 de 3, isto e, 33%.
+  test('mede o percentual sobre demandas, nao sobre tudo', () => {
+    assert.strictEqual(e.pctDemandas, 33);
+    assert.notStrictEqual(e.pctDemandas, e.pct);
+  });
+
+  test('marca cada item como subtarefa ou nao, com o tipo do Jira', () => {
+    const s1 = e.itens.find((i) => i.chave === 'sub-1');
+    assert.strictEqual(s1.subtarefa, true);
+    assert.strictEqual(s1.tipo, 'Code Review');
+    assert.strictEqual(e.itens.find((i) => i.chave === 'nova-1').subtarefa, false);
+  });
+
+  test('a curva segue contando tudo: o volume de trabalho cresceu de fato', () => {
+    assert.strictEqual(e.serie[e.serie.length - 1].total, 6);
   });
 });

@@ -238,6 +238,189 @@ function montarColunas(ordemColunas, statusParaColuna, issues, mostrarResponsave
   return { colunas, pessoas };
 }
 
+/** Tamanho do sprint dia a dia, do início até hoje.
+ *
+ * O ponto de partida é quanto o sprint já tinha ao começar; cada item criado
+ * depois empurra a linha para cima no dia em que nasceu. É uma aproximação
+ * consciente: item que existia antes e foi PUXADO para o sprint no meio do
+ * caminho entra na base, porque a data de entrada no sprint só existe no
+ * changelog, que custaria uma chamada por issue. A curva erra para baixo,
+ * nunca para cima - o crescimento real é igual ou maior que o desenhado. */
+function serieEscopo(issues, novos, inicio, agora) {
+  if (!inicio) return [];
+  const DIA = 86400000;
+  const base = issues.length - novos.length;
+
+  const porDia = {};
+  for (const i of novos) {
+    const dia = new Date(i.fields.created).toISOString().slice(0, 10);
+    porDia[dia] = (porDia[dia] || 0) + 1;
+  }
+
+  // Compara por data (string), nao por milissegundo: somar 24h a partir da
+  // meia-noite do inicio ultrapassa "hoje" quando agora e de manha, e a serie
+  // ganhava um dia no futuro.
+  const serie = [];
+  const hoje = agora.toISOString().slice(0, 10);
+  let total = base;
+  for (let t = inicio.getTime(); serie.length < 120; t += DIA) {
+    const dia = new Date(t).toISOString().slice(0, 10);
+    if (dia > hoje) break;
+    total += (porDia[dia] || 0);
+    serie.push({ dia, total, entraram: porDia[dia] || 0 });
+  }
+  return serie;
+}
+
+/** Métricas do sprint. Pura: recebe as issues e o sprint, não busca nada.
+ *
+ * Só usa campo que o board 2587 preenche de verdade. Ficaram de fora, por
+ * verificação e não por esquecimento: story points (0% preenchido), due date
+ * (0%), estimativa (0%) e priority (100% preenchido, mas 100% "Medium" - não
+ * discrimina nada).
+ *
+ * E NÃO usa `updated` para medir parada: nesse board ele é mexido por robô de
+ * apontamento de horas e por operação de sprint. O JDCBBRB-137 marcava
+ * "atualizado há 10 dias" com a última mudança real em 21/06. Para idade vale
+ * `created`; para tempo na fase atual, `statuscategorychangedate`. */
+function montarMetricas(ordemColunas, statusParaColuna, issues, sprint, agora, mostrarResponsavel) {
+  const DIA = 86400000;
+  const dias = (de, ate) => Math.floor((ate - new Date(de)) / DIA);
+  const colunaFinal = ordemColunas[ordemColunas.length - 1];
+
+  const visiveis = [];
+  for (const it of issues) {
+    const coluna = statusParaColuna[String(it.fields.status.id)];
+    if (!coluna || !ordemColunas.includes(coluna)) continue;
+    visiveis.push({ issue: it, coluna });
+  }
+
+  const abertos = visiveis.filter((v) => v.coluna !== colunaFinal);
+  const prontos = visiveis.filter((v) => v.coluna === colunaFinal);
+
+  // ---- relogio do sprint ----
+  const inicio = sprint && sprint.startDate ? new Date(sprint.startDate) : null;
+  const fim = sprint && sprint.endDate ? new Date(sprint.endDate) : null;
+  const relogio = inicio && fim ? {
+    inicio: sprint.startDate,
+    fim: sprint.endDate,
+    totalDias: dias(inicio, fim),
+    corridos: Math.max(0, dias(inicio, agora)),
+    restantes: Math.max(0, dias(agora, fim))
+  } : null;
+
+  // ---- escopo que entrou com o sprint em andamento ----
+  const novos = inicio ? issues.filter((i) => new Date(i.fields.created) > inicio) : [];
+
+  // ---- fila por coluna ----
+  const wip = ordemColunas.map((nome) => ({
+    coluna: nome,
+    qtd: visiveis.filter((v) => v.coluna === nome).length
+  }));
+
+  // ---- envelhecimento dos itens em aberto ----
+  const aging = abertos.map(({ issue, coluna }) => ({
+    chave: issue.key,
+    titulo: issue.fields.summary,
+    coluna,
+    subtarefa: !!(issue.fields.issuetype && issue.fields.issuetype.subtask),
+    epico: issue.fields.epic ? issue.fields.epic.summary : null,
+    diasAberto: dias(issue.fields.created, agora),
+    diasNaFase: issue.fields.statuscategorychangedate
+      ? dias(issue.fields.statuscategorychangedate, agora) : null,
+    pessoa: mostrarResponsavel && issue.fields.assignee
+      ? issue.fields.assignee.displayName : null
+  }))
+    // Ordena pelo tempo NA FASE, não pela idade: um item criado há 3 meses que
+    // entrou em progresso ontem não é urgente; um criado semana passada e
+    // travado há 10 dias é.
+    .sort((a, b) => {
+      const ta = a.diasNaFase === null ? a.diasAberto : a.diasNaFase;
+      const tb = b.diasNaFase === null ? b.diasAberto : b.diasNaFase;
+      return tb - ta;
+    });
+
+  // ---- vazao por semana (segunda a domingo) ----
+  const porSemana = {};
+  for (const i of issues) {
+    if (!i.fields.resolutiondate) continue;
+    const d = new Date(i.fields.resolutiondate);
+    const seg = new Date(d);
+    seg.setDate(d.getDate() - ((d.getDay() + 6) % 7));
+    const chave = seg.toISOString().slice(0, 10);
+    porSemana[chave] = (porSemana[chave] || 0) + 1;
+  }
+  const vazao = Object.keys(porSemana).sort().map((semana) => ({ semana, qtd: porSemana[semana] }));
+
+  // ---- previsao por vazao, unico caminho possivel sem story points ----
+  // Descarta a semana corrente: ela esta incompleta e puxaria a media para baixo.
+  const fechadas = vazao.slice(0, -1);
+  const base = fechadas.length ? fechadas : vazao;
+  const media = base.length ? base.reduce((s, x) => s + x.qtd, 0) / base.length : 0;
+  const semanas = relogio ? relogio.restantes / 7 : 0;
+  const devemFechar = Math.min(abertos.length, Math.round(media * semanas));
+  const previsao = {
+    vazaoMedia: Number(media.toFixed(1)),
+    semanasRestantes: Number(semanas.toFixed(1)),
+    devemFechar,
+    escorregam: Math.max(0, abertos.length - devemFechar)
+  };
+
+  // ---- carga por pessoa: so interna, nunca na tela do cliente ----
+  const porPessoa = {};
+  if (mostrarResponsavel) {
+    for (const { issue } of abertos) {
+      const nome = issue.fields.assignee ? issue.fields.assignee.displayName : '(sem responsável)';
+      porPessoa[nome] = (porPessoa[nome] || 0) + 1;
+    }
+  }
+  const carga = Object.keys(porPessoa)
+    .map((nome) => ({ pessoa: nome, qtd: porPessoa[nome] }))
+    .sort((a, b) => b.qtd - a.qtd);
+
+  return {
+    relogio,
+    itens: { total: visiveis.length, concluidos: prontos.length, abertos: abertos.length },
+    escopoNovo: (() => {
+      // Separar e essencial para o numero nao mentir. No sprint Setembro, 22
+      // itens nasceram depois do inicio - mas 16 sao Codificacao, Code Review,
+      // Documento Tecnico e afins, criados ao DETALHAR uma demanda que ja
+      // estava no sprint. Chamar os 22 de "escopo novo" transforma 6 demandas
+      // negociadas em um alarme de 25%.
+      const demandas = novos.filter((i) => !ehSubtarefa(i));
+      const desdobramentos = novos.length - demandas.length;
+      const baseDemandas = issues.filter((i) => !ehSubtarefa(i)).length - demandas.length;
+      return {
+        qtd: novos.length,
+        pct: issues.length ? Math.round((novos.length / issues.length) * 100) : 0,
+        base: issues.length - novos.length,
+        demandas: demandas.length,
+        desdobramentos,
+        // Percentual sobre demandas, nao sobre tudo: e o numero que responde
+        // "quanto de trabalho novo foi pactuado depois de comecar".
+        pctDemandas: (baseDemandas + demandas.length)
+          ? Math.round((demandas.length / (baseDemandas + demandas.length)) * 100) : 0,
+        serie: serieEscopo(issues, novos, inicio, agora),
+        itens: novos
+          .slice()
+          .sort((a, b) => new Date(b.fields.created) - new Date(a.fields.created))
+          .map((i) => ({
+            chave: i.key,
+            titulo: i.fields.summary,
+            criadoEm: i.fields.created,
+            subtarefa: ehSubtarefa(i),
+            tipo: i.fields.issuetype ? i.fields.issuetype.name : null
+          }))
+      };
+    })(),
+    wip,
+    aging,
+    vazao,
+    previsao,
+    carga
+  };
+}
+
 async function buscarBoard() {
   const cfg = await chamarJira(`/rest/agile/1.0/board/${BOARD_ID}/configuration`);
   const { statusParaColuna, ordemColunas } = mapearColunas(cfg);
@@ -260,7 +443,8 @@ async function buscarBoard() {
     paginas++;
     const pagina = await chamarJira(
       `/rest/agile/1.0/board/${BOARD_ID}/sprint/${sprint.id}/issue` +
-      `?fields=summary,status,assignee,issuetype,parent,epic&maxResults=100&startAt=${inicio}`
+      `?fields=summary,status,assignee,issuetype,parent,epic,created,` +
+      `resolutiondate,statuscategorychangedate&maxResults=100&startAt=${inicio}`
     );
     if (!Array.isArray(pagina.issues) || pagina.issues.length === 0) break;
     issues = issues.concat(pagina.issues);
@@ -274,7 +458,12 @@ async function buscarBoard() {
     ordemColunas, statusParaColuna, issues, MOSTRAR_RESPONSAVEL
   );
 
+  const metricas = montarMetricas(
+    ordemColunas, statusParaColuna, issues, sprint, new Date(), MOSTRAR_RESPONSAVEL
+  );
+
   return {
+    metricas,
     vazio: false,
     sprint: sprint.name,
     atualizadoEm: new Date().toISOString(),
@@ -284,4 +473,6 @@ async function buscarBoard() {
   };
 }
 
-module.exports = { buscarBoard, mapearColunas, montarColunas, epicoDe, ehSubtarefa };
+module.exports = {
+  buscarBoard, mapearColunas, montarColunas, montarMetricas, epicoDe, ehSubtarefa
+};

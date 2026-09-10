@@ -1,0 +1,605 @@
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Dashboard · Kanban BRB</title>
+
+<style>
+  :root {
+    --bg: #F5F5F5;
+    --bg-panel: #FFFFFF;
+    --ink: #1E212C;
+    --ink-dim: #4B5A68;
+    --ink-faint: #7C8894;
+    --line: #E5E6E7;
+    --line-soft: #EFEFEF;
+    --accent: #FF6C0C;
+    --accent-soft: #FFE8D9;
+    --warn: #A8452E;
+    --warn-soft: #F6E9E5;
+
+    --c-andamento: #FF6C0C;  --c-andamento-soft: #FFE8D9;
+    --c-dev:       #3A7CA5;  --c-dev-soft:       #E4EEF3;
+    --c-teste:     #0DD3AD;  --c-teste-soft:     #E4FFFB;
+    --c-terceiros: #A8452E;  --c-terceiros-soft: #F6E9E5;
+    --c-concluido: #4B5A68;  --c-concluido-soft: #EAEDEC;
+
+    --shadow: 0 1px 2px rgba(30,33,44,0.06), 0 1px 1px rgba(30,33,44,0.04);
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #1E212C;
+      --bg-panel: #262B38;
+      --ink: #F5F5F5;
+      --ink-dim: #A7B0BC;
+      --ink-faint: #78838F;
+      --line: #333846;
+      --line-soft: #2A2E3A;
+      --accent: #FF8A3D;
+      --accent-soft: #3A2A1C;
+      --warn: #E2725B;
+      --warn-soft: #3A241C;
+
+      --c-andamento: #FF8A3D;  --c-andamento-soft: #3A2A1C;
+      --c-dev:       #6FA8C9;  --c-dev-soft:       #1E2E38;
+      --c-teste:     #3EE8C4;  --c-teste-soft:     #123832;
+      --c-terceiros: #E2725B;  --c-terceiros-soft: #3A241C;
+      --c-concluido: #A7B0BC;  --c-concluido-soft: #2A2E3A;
+
+      --shadow: 0 1px 3px rgba(0,0,0,0.35);
+    }
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--ink);
+    font-family: Lato, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  header.top { background: var(--bg); border-bottom: 1px solid var(--line); padding: 22px 28px 0; }
+  .top-row {
+    display: flex; align-items: flex-end; justify-content: space-between;
+    gap: 24px; flex-wrap: wrap; max-width: 1400px; margin: 0 auto;
+  }
+  .titles h1 { margin: 0 0 4px; font-size: 1.5rem; font-weight: 700; letter-spacing: -0.01em; }
+  .titles p { margin: 0; color: var(--ink-dim); font-size: 0.875rem; }
+
+  .acoes-topo { display: flex; align-items: center; gap: 14px; }
+  .link-board {
+    display: inline-flex; align-items: center; gap: 6px;
+    font-size: 0.8rem; color: var(--ink-dim); text-decoration: none;
+    border: 1px solid var(--line); border-radius: 7px; padding: 7px 12px;
+    background: var(--bg-panel);
+  }
+  .link-board:hover { border-color: var(--accent); color: var(--accent); }
+  .link-board svg { width: 14px; height: 14px; fill: none; stroke: currentColor; stroke-width: 2; }
+  .quem { font-size: 0.78rem; color: var(--ink-faint); }
+
+  /* abas: cliente e time olham coisas diferentes */
+  .abas { display: flex; gap: 2px; max-width: 1400px; margin: 18px auto 0; }
+  .aba {
+    border: 0; background: none; cursor: pointer; font: inherit;
+    font-size: 0.83rem; font-weight: 600; color: var(--ink-faint);
+    padding: 9px 16px; border-bottom: 2px solid transparent;
+  }
+  .aba[aria-selected="true"] { color: var(--accent); border-bottom-color: var(--accent); }
+
+  main { max-width: 1400px; margin: 0 auto; padding: 22px 28px 60px; }
+  .painel[hidden] { display: none; }
+
+  .kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 12px; margin-bottom: 22px; }
+  .kpi {
+    background: var(--bg-panel); border: 1px solid var(--line-soft);
+    border-radius: 10px; padding: 14px 16px; box-shadow: var(--shadow);
+  }
+  .kpi .rot { font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.06em; color: var(--ink-faint); }
+  .kpi .val { font-size: 1.8rem; font-weight: 700; line-height: 1.15; margin-top: 4px; font-variant-numeric: tabular-nums; }
+  .kpi .sub { font-size: 0.74rem; color: var(--ink-dim); margin-top: 2px; }
+  .kpi.alerta .val { color: var(--warn); }
+  .kpi.bom .val { color: var(--c-teste); }
+
+  .cartao {
+    background: var(--bg-panel); border: 1px solid var(--line-soft);
+    border-radius: 10px; padding: 16px 18px 18px; box-shadow: var(--shadow); margin-bottom: 18px;
+  }
+  .cartao h2 { margin: 0 0 3px; font-size: 0.95rem; font-weight: 700; }
+  .cartao .ajuda { margin: 0 0 14px; font-size: 0.76rem; color: var(--ink-faint); line-height: 1.45; }
+
+  .linha-barra { display: flex; align-items: center; gap: 10px; margin-bottom: 7px; font-size: 0.78rem; }
+  .linha-barra .nome { width: 210px; flex-shrink: 0; color: var(--ink-dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .linha-barra .trilho { flex: 1; height: 16px; background: var(--line-soft); border-radius: 4px; overflow: hidden; display: flex; }
+  .linha-barra .trilho i { display: block; height: 100%; }
+  .linha-barra .num { width: 62px; text-align: right; flex-shrink: 0; font-variant-numeric: tabular-nums; color: var(--ink-dim); }
+
+  .demanda { margin-bottom: 12px; }
+  .demanda-topo { display: flex; align-items: baseline; gap: 10px; margin-bottom: 4px; }
+  .demanda-chave {
+    flex-shrink: 0;
+    font-family: ui-monospace, Consolas, monospace;
+    font-size: 0.7rem; font-weight: 600; color: var(--ink-faint);
+  }
+  .demanda-nome { flex: 1; min-width: 0; font-size: 0.79rem; color: var(--ink); }
+  .demanda-num { flex-shrink: 0; font-size: 0.75rem; color: var(--ink-dim); font-variant-numeric: tabular-nums; }
+  .demanda .trilho { display: block; height: 14px; background: var(--line-soft); border-radius: 4px; overflow: hidden; }
+  .demanda .trilho i { display: block; height: 100%; }
+
+  .colunas-vazao { display: flex; align-items: flex-end; gap: 10px; height: 130px; padding-top: 8px; }
+  .colunas-vazao .col { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 6px; height: 100%; justify-content: flex-end; }
+  .colunas-vazao .barra { width: 100%; max-width: 54px; background: var(--c-teste); border-radius: 4px 4px 0 0; min-height: 3px; }
+  .colunas-vazao .rot { font-size: 0.66rem; color: var(--ink-faint); white-space: nowrap; }
+  .colunas-vazao .qtd { font-size: 0.78rem; font-weight: 700; font-variant-numeric: tabular-nums; }
+
+  .aging-item { display: flex; align-items: center; gap: 10px; padding: 6px 0; border-bottom: 1px solid var(--line-soft); font-size: 0.78rem; }
+  .aging-item:last-child { border-bottom: 0; }
+  .aging-item .dias { width: 52px; flex-shrink: 0; text-align: right; font-weight: 700; font-variant-numeric: tabular-nums; }
+  .aging-item .trilho { width: 130px; flex-shrink: 0; height: 8px; background: var(--line-soft); border-radius: 3px; overflow: hidden; }
+  .aging-item .trilho i { display: block; height: 100%; }
+  .aging-item .chave { width: 108px; flex-shrink: 0; font-family: ui-monospace, Consolas, monospace; font-size: 0.7rem; color: var(--ink-faint); }
+  .aging-item .txt { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .aging-item .onde { flex-shrink: 0; font-size: 0.62rem; text-transform: uppercase; letter-spacing: 0.05em; font-weight: 600; }
+  .aging-item.velho .dias { color: var(--warn); }
+
+  .legenda { display: flex; flex-wrap: wrap; gap: 14px; margin-top: 12px; font-size: 0.72rem; color: var(--ink-dim); }
+  .legenda span { display: inline-flex; align-items: center; gap: 5px; }
+  .legenda i { width: 10px; height: 10px; border-radius: 3px; display: block; }
+
+  .sub-titulo { margin: 20px 0 3px; font-size: 0.82rem; font-weight: 700; }
+  .dia-cab {
+    display: flex; align-items: baseline; gap: 10px;
+    margin: 14px 0 4px; padding-bottom: 4px; border-bottom: 1px solid var(--line);
+  }
+  .dia-cab:first-child { margin-top: 4px; }
+  .dia-data { font-size: 0.8rem; font-weight: 700; font-variant-numeric: tabular-nums; }
+  .dia-tag {
+    font-size: 0.7rem; font-weight: 700; color: var(--c-andamento);
+    background: var(--c-andamento-soft); border-radius: 100px; padding: 1px 8px;
+  }
+  .dia-det { font-size: 0.7rem; color: var(--ink-faint); }
+  .aging-item.recuado { padding-left: 20px; opacity: 0.72; }
+  .aging-item.recuado .txt { font-size: 0.74rem; }
+
+  .proporcao { margin-bottom: 16px; }
+  .trilho-prop { display: flex; height: 20px; border-radius: 5px; overflow: hidden; background: var(--line-soft); }
+  .trilho-prop i { display: block; height: 100%; }
+  .lista-escopo { max-height: 330px; overflow-y: auto; margin-top: 6px; }
+
+  .vazio { padding: 22px; text-align: center; color: var(--ink-faint); font-size: 0.8rem; line-height: 1.5; }
+  .nota {
+    margin-top: 14px; padding: 10px 12px; border-left: 3px solid var(--accent);
+    background: var(--accent-soft); border-radius: 0 6px 6px 0;
+    font-size: 0.74rem; color: var(--ink-dim); line-height: 1.5;
+  }
+  .duas { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
+  @media (max-width: 900px) { .duas { grid-template-columns: 1fr; } .linha-barra .nome { width: 120px; } }
+
+  footer { max-width: 1400px; margin: 0 auto; padding: 0 28px 30px; color: var(--ink-faint); font-size: 0.72rem; }
+</style>
+
+<header class="top">
+  <div class="top-row">
+    <div class="titles">
+      <h1>Dashboard</h1>
+      <p id="subtitulo">Carregando…</p>
+    </div>
+    <div class="acoes-topo">
+      <a class="link-board" href="/">
+        <svg viewBox="0 0 24 24"><path d="M15 18l-6-6 6-6"/></svg>
+        Voltar ao board
+      </a>
+      <span class="quem" id="quem"></span>
+    </div>
+  </div>
+
+  <div class="abas" role="tablist">
+    <button class="aba" id="abaCliente" role="tab" aria-selected="true" aria-controls="painelCliente">Entrega</button>
+    <button class="aba" id="abaTime" role="tab" aria-selected="false" aria-controls="painelTime">Fluxo do time</button>
+  </div>
+</header>
+
+<main>
+  <section class="painel" id="painelCliente" role="tabpanel"></section>
+  <section class="painel" id="painelTime" role="tabpanel" hidden></section>
+</main>
+
+<footer id="rodape"></footer>
+
+<script>
+  function esc(s) {
+    return String(s).replace(/[&<>"']/g, function (c) {
+      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+    });
+  }
+
+  /* Chave fechada: a cor vem do nome da coluna, nunca de texto livre. */
+  var COR = {
+    'Em andamento': 'andamento',
+    'DEV CONCLUÍDO': 'dev',
+    'TESTE': 'teste',
+    'AGUARDANDO TERCEIROS': 'terceiros',
+    'Itens concluídos': 'concluido'
+  };
+  function cor(coluna) { return COR[coluna] || 'concluido'; }
+
+  /* "2026-09-01" sozinho e lido como meia-noite UTC; em Brasilia isso vira
+   * 31/08 as 21h e o eixo inteiro aparecia deslocado um dia para tras. Data
+   * pura e montada como data LOCAL; timestamp com hora segue o caminho normal. */
+  function dataCurta(iso) {
+    if (!iso) return '';
+    var m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso);
+    var d = m ? new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3])) : new Date(iso);
+    return d.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' });
+  }
+
+  var dados = null, met = null, hist = [];
+
+  function kpis() {
+    var m = met;
+    var r = m.relogio || { restantes: 0, totalDias: 0, corridos: 0 };
+    var p = m.previsao || {};
+    var pctTempo = r.totalDias ? Math.round(r.corridos / r.totalDias * 100) : 0;
+    var pctFeito = m.itens.total ? Math.round(m.itens.concluidos / m.itens.total * 100) : 0;
+
+    var h = '<div class="kpis">';
+    h += '<div class="kpi"><div class="rot">Dias restantes</div><div class="val">' + r.restantes + '</div>' +
+         '<div class="sub">' + pctTempo + '% do sprint já correu</div></div>';
+    h += '<div class="kpi"><div class="rot">Concluído</div><div class="val">' + pctFeito + '%</div>' +
+         '<div class="sub">' + m.itens.concluidos + ' de ' + m.itens.total + ' itens</div></div>';
+
+    var classe = p.escorregam > 0 ? ' alerta' : ' bom';
+    h += '<div class="kpi' + classe + '"><div class="rot">Devem fechar até o fim</div>' +
+         '<div class="val">' + (p.devemFechar || 0) + ' de ' + m.itens.abertos + '</div>' +
+         '<div class="sub">No ritmo de ' + (p.vazaoMedia || 0) + ' por semana, ' +
+         (p.escorregam > 0
+           ? '<strong>' + p.escorregam + ' item(ns) ficam para o próximo sprint</strong>'
+           : 'tudo que está aberto cabe no prazo') + '.</div></div>';
+
+    var e = m.escopoNovo || { qtd: 0, pct: 0, demandas: 0, desdobramentos: 0, pctDemandas: 0 };
+    h += '<div class="kpi' + (e.pctDemandas >= 15 ? ' alerta' : '') + '">' +
+         '<div class="rot">Demandas novas</div>' +
+         '<div class="val">' + e.demandas + '</div>' +
+         '<div class="sub">entraram depois do início (' + e.pctDemandas + '%)' +
+         (e.desdobramentos ? ' · +' + e.desdobramentos + ' subtarefas de demandas que já estavam' : '') +
+         '</div></div>';
+    return h + '</div>';
+  }
+
+  function progressoEpicos() {
+    if (!dados || !dados.colunas) return '';
+    var cards = [];
+    dados.colunas.forEach(function (c) {
+      c.cards.forEach(function (k) { if (k.epico && k.total > 1) cards.push({ k: k, col: c.nome }); });
+    });
+    cards.sort(function (a, b) { return (b.k.concluidas / b.k.total) - (a.k.concluidas / a.k.total); });
+
+    if (!cards.length) return '';
+    var h = '<div class="cartao"><h2>Progresso por demanda</h2>' +
+            '<p class="ajuda">Quanto de cada épico já foi concluído. A cor é a coluna em que a demanda está hoje.</p>';
+    cards.forEach(function (x) {
+      var pct = Math.round(x.k.concluidas / x.k.total * 100);
+      // Mesma chave que identifica o card no board, para cruzar as duas telas
+      // sem precisar caçar pelo texto.
+      h += '<div class="demanda">' +
+             '<div class="demanda-topo">' +
+               '<span class="demanda-chave">' + esc(x.k.epico) + '</span>' +
+               '<span class="demanda-nome">' + esc(x.k.titulo) + '</span>' +
+               '<span class="demanda-num">' + x.k.concluidas + '/' + x.k.total + '</span>' +
+             '</div>' +
+             '<span class="trilho"><i style="width:' + pct + '%;background:var(--c-' + cor(x.col) + ')"></i></span>' +
+           '</div>';
+    });
+    return h + '</div>';
+  }
+
+  function vazao() {
+    var v = (met.vazao || []).slice(-8);
+    if (!v.length) return '';
+    var max = Math.max.apply(null, v.map(function (x) { return x.qtd; }));
+    var h = '<div class="cartao"><h2>Entregas por semana</h2>' +
+            '<p class="ajuda">Itens concluídos a cada semana. É daqui que sai a previsão — sem story points, ' +
+            'o ritmo real é o único jeito honesto de estimar o que ainda cabe no sprint.</p>' +
+            '<div class="colunas-vazao">';
+    v.forEach(function (x) {
+      var alt = max ? Math.round(x.qtd / max * 100) : 0;
+      h += '<div class="col"><span class="qtd">' + x.qtd + '</span>' +
+           '<div class="barra" style="height:' + alt + '%"></div>' +
+           '<span class="rot">' + dataCurta(x.semana) + '</span></div>';
+    });
+    return h + '</div></div>';
+  }
+
+  function bolaComQuem() {
+    var itens = (met.aging || []).filter(function (a) { return a.coluna === 'AGUARDANDO TERCEIROS'; });
+    var h = '<div class="cartao"><h2>Parado com terceiros</h2>' +
+            '<p class="ajuda">Itens que não dependem mais do time de desenvolvimento. ' +
+            'O número é há quantos dias estão nessa situação.</p>';
+    if (!itens.length) return h + '<div class="vazio">Nada travado com terceiros agora.</div></div>';
+    itens.forEach(function (a) { h += linhaAging(a, tempoNaFase(itens[0])); });
+    return h + '</div>';
+  }
+
+  /* O numero grande e o tempo NA FASE atual - e ele que diz se algo travou.
+   * A idade total entra so como sombra, porque um item pode ter nascido ha
+   * meses e ter entrado em progresso ontem. */
+  function tempoNaFase(a) {
+    return a.diasNaFase === null || a.diasNaFase === undefined ? a.diasAberto : a.diasNaFase;
+  }
+
+  function linhaAging(a, max) {
+    var t = tempoNaFase(a);
+    var pct = max ? Math.round(t / max * 100) : 0;
+    var c = cor(a.coluna);
+    var idade = a.diasAberto !== t
+      ? '<span style="color:var(--ink-faint)"> · aberto há ' + a.diasAberto + 'd</span>' : '';
+    return '<div class="aging-item' + (t >= 30 ? ' velho' : '') + '">' +
+             '<span class="dias">' + t + 'd</span>' +
+             '<span class="trilho"><i style="width:' + pct + '%;background:var(--c-' + c + ')"></i></span>' +
+             '<span class="chave">' + esc(a.chave || '') + '</span>' +
+             '<span class="txt" title="' + esc(a.titulo) + '">' + esc(a.titulo) +
+               (a.pessoa ? ' <span style="color:var(--ink-faint)">· ' + esc(a.pessoa) + '</span>' : '') +
+               idade +
+             '</span>' +
+             '<span class="onde" style="color:var(--c-' + c + ')">' + esc(a.coluna) + '</span>' +
+           '</div>';
+  }
+
+  function aging() {
+    var itens = (met.aging || []).filter(function (a) { return !a.subtarefa; });
+    if (!itens.length) return '';
+    var max = tempoNaFase(itens[0]);
+    var h = '<div class="cartao"><h2>Envelhecimento dos itens abertos</h2>' +
+            '<p class="ajuda">Há quantos dias cada item está na fase atual, do mais travado para o mais novo. ' +
+            'É o gráfico que mostra o problema <em>antes</em> de virar crise: item que envelhece parado ' +
+            'raramente melhora sozinho. Subtarefas ficam de fora para não inflar a lista.</p>';
+    itens.forEach(function (a) { h += linhaAging(a, max); });
+    h += '<div class="nota"><strong>De onde vem o número:</strong> é a data em que o item mudou de ' +
+         'etapa no Jira (a fazer → em progresso → concluído). Não usamos “dias sem atualização” porque ' +
+         'neste board esse campo é mexido por robô de apontamento de horas e por operação de sprint — ' +
+         'ele mostraria como “ativos” itens que não andam há meses. ' +
+         '<em>Ressalva:</em> mover de “Em andamento” para “TESTE” não reinicia a contagem, porque para o ' +
+         'Jira as duas são a mesma etapa. Quando o histórico diário acumular, passamos a medir o tempo ' +
+         'em cada coluna com precisão.</div>';
+    return h + '</div>';
+  }
+
+  function wip() {
+    var w = met.wip || [];
+    var max = Math.max.apply(null, w.map(function (x) { return x.qtd; }).concat([1]));
+    var h = '<div class="cartao"><h2>Fila por coluna</h2>' +
+            '<p class="ajuda">Quantos itens em cada etapa agora. Coluna que engorda é gargalo; ' +
+            'coluna sempre vazia é etapa que o processo real não usa.</p>';
+    w.forEach(function (x) {
+      h += '<div class="linha-barra">' +
+             '<span class="nome">' + esc(x.coluna) + '</span>' +
+             '<span class="trilho"><i style="width:' + Math.round(x.qtd / max * 100) + '%;' +
+               'background:var(--c-' + cor(x.coluna) + ')"></i></span>' +
+             '<span class="num">' + x.qtd + '</span>' +
+           '</div>';
+    });
+    return h + '</div>';
+  }
+
+  function carga() {
+    var c = met.carga || [];
+    if (!c.length) return '';
+    var max = c[0].qtd;
+    var h = '<div class="cartao"><h2>Carga por pessoa</h2>' +
+            '<p class="ajuda">Itens em aberto por responsável. Serve para equilibrar trabalho — ' +
+            'não para ranquear gente.</p>';
+    c.forEach(function (x) {
+      h += '<div class="linha-barra">' +
+             '<span class="nome">' + esc(x.pessoa) + '</span>' +
+             '<span class="trilho"><i style="width:' + Math.round(x.qtd / max * 100) + '%;background:var(--c-andamento)"></i></span>' +
+             '<span class="num">' + x.qtd + '</span>' +
+           '</div>';
+    });
+    return h + '</div>';
+  }
+
+  /* Crescimento do sprint em duas faixas: o que estava planejado e o que entrou
+   * depois. A escala comeca em ZERO de proposito - com o eixo cortado, 22 itens
+   * novos sobre 67 pareceriam dobrar o sprint. A fronteira entre as faixas e o
+   * tamanho original, entao nao precisa de linha marcando. */
+  function graficoEscopo(e) {
+    var s = e.serie || [];
+    if (s.length < 2) return '';
+
+    var larg = 900, alt = 210, padE = 34, padB = 26, padT = 16;
+    var teto = Math.max.apply(null, s.map(function (x) { return x.total; }));
+    teto = Math.ceil(teto * 1.08);
+    var px = function (i) { return padE + i * ((larg - padE - 10) / (s.length - 1)); };
+    var py = function (v) { return padT + (1 - v / teto) * (alt - padB - padT); };
+    var base = alt - padB;
+
+    function area(pega) {
+      var sobe = 'M' + px(0) + ' ' + py(pega(s[0]).de);
+      s.forEach(function (x, i) { sobe += ' L' + px(i) + ' ' + py(pega(x).ate); });
+      for (var i = s.length - 1; i >= 0; i--) sobe += ' L' + px(i) + ' ' + py(pega(s[i]).de);
+      return sobe + ' Z';
+    }
+
+    var g = '<svg viewBox="0 0 ' + larg + ' ' + alt + '" style="width:100%;height:auto">';
+
+    // eixo: so duas referencias, para nao virar grade
+    [0, teto].forEach(function (v) {
+      g += '<line x1="' + padE + '" y1="' + py(v) + '" x2="' + (larg - 10) + '" y2="' + py(v) +
+           '" stroke="var(--line)" stroke-width="1"></line>';
+      g += '<text x="' + (padE - 6) + '" y="' + (py(v) + 3) + '" font-size="10" ' +
+           'fill="var(--ink-faint)" text-anchor="end">' + v + '</text>';
+    });
+
+    // faixa de baixo: o que o sprint tinha ao comecar
+    g += '<path d="' + area(function () { return { de: 0, ate: e.base }; }) +
+         '" fill="var(--c-concluido)" opacity="0.45"></path>';
+    // faixa de cima: tudo que entrou depois
+    g += '<path d="' + area(function (x) { return { de: e.base, ate: x.total }; }) +
+         '" fill="var(--c-andamento)" opacity="0.75"></path>';
+
+    var linha = 'M' + px(0) + ' ' + py(s[0].total);
+    s.forEach(function (x, i) { linha += ' L' + px(i) + ' ' + py(x.total); });
+    g += '<path d="' + linha + '" fill="none" stroke="var(--c-andamento)" stroke-width="2" ' +
+         'stroke-linejoin="round"></path>';
+
+    var passo = Math.ceil(s.length / 12);
+    s.forEach(function (x, i) {
+      if (x.entraram) {
+        g += '<circle cx="' + px(i) + '" cy="' + py(x.total) + '" r="3.5" fill="var(--c-andamento)"></circle>';
+        g += '<text x="' + px(i) + '" y="' + (py(x.total) - 8) + '" font-size="10" font-weight="700" ' +
+             'fill="var(--c-andamento)" text-anchor="middle">+' + x.entraram + '</text>';
+      }
+      if (i % passo === 0 || i === s.length - 1) {
+        g += '<text x="' + px(i) + '" y="' + (alt - 8) + '" font-size="10" fill="var(--ink-faint)" ' +
+             'text-anchor="middle">' + dataCurta(x.dia) + '</text>';
+      }
+    });
+    return g + '</svg>' +
+      '<div class="legenda">' +
+        '<span><i style="background:var(--c-concluido);opacity:0.45"></i>Já estava no início — ' + e.base + ' itens</span>' +
+        '<span><i style="background:var(--c-andamento);opacity:0.75"></i>Nasceu depois — ' + e.qtd + ' itens ' +
+          '(' + e.demandas + ' demandas + ' + e.desdobramentos + ' subtarefas)</span>' +
+      '</div>';
+  }
+
+  function escopo() {
+    var e = met.escopoNovo || { qtd: 0, itens: [] };
+    var h = '<div class="cartao"><h2>Escopo que entrou depois do início</h2>' +
+            '<p class="ajuda">Itens criados com o sprint já em andamento. É o que faz o denominador ' +
+            'crescer e o “% concluído” andar para trás sem ninguém errar nada.</p>';
+    if (!e.qtd) return h + '<div class="vazio">Nenhum item novo depois do início.</div></div>';
+
+    h += graficoEscopo(e);
+
+    h += '<h3 class="sub-titulo">Os ' + e.qtd + ' itens, dia a dia</h3>' +
+         '<p class="ajuda">Cada bloco abaixo é um dos marcadores <strong>+N</strong> do gráfico. ' +
+         'As linhas recuadas são subtarefas — etapas internas de uma demanda que já estava no sprint, ' +
+         'não trabalho novo pactuado.</p>';
+
+    // Agrupa por dia na mesma ordem do gráfico, para a lista ser a leitura
+    // detalhada dele - e não uma tabela solta que ninguém liga a nada.
+    var porDia = [];
+    e.itens.forEach(function (i) {
+      var dia = String(i.criadoEm).slice(0, 10);
+      var g = porDia[porDia.length - 1];
+      if (!g || g.dia !== dia) { g = { dia: dia, itens: [] }; porDia.push(g); }
+      g.itens.push(i);
+    });
+
+    h += '<div class="lista-escopo">';
+    porDia.forEach(function (g) {
+      var nDemandas = g.itens.filter(function (i) { return !i.subtarefa; }).length;
+      h += '<div class="dia-cab">' +
+             '<span class="dia-data">' + dataCurta(g.dia) + '</span>' +
+             '<span class="dia-tag">+' + g.itens.length + '</span>' +
+             '<span class="dia-det">' + nDemandas + ' demanda(s) · ' +
+               (g.itens.length - nDemandas) + ' subtarefa(s)</span>' +
+           '</div>';
+      g.itens.forEach(function (i) {
+        h += '<div class="aging-item' + (i.subtarefa ? ' recuado' : '') + '">' +
+               '<span class="chave">' + esc(i.chave || '') + '</span>' +
+               '<span class="txt" title="' + esc(i.titulo) + '">' + esc(i.titulo) + '</span>' +
+               (i.tipo ? '<span class="onde" style="color:var(--ink-faint)">' + esc(i.tipo) + '</span>' : '') +
+             '</div>';
+      });
+    });
+    return h + '</div></div>';
+  }
+
+  /* Fluxo acumulado: só existe com histórico, que começou a ser gravado agora.
+   * Cada dia de carga vira uma faixa; com poucos dias o desenho não diz nada,
+   * então a gente avisa em vez de mostrar um gráfico vazio fingindo informação. */
+  function cfd() {
+    var h = '<div class="cartao"><h2>Fluxo acumulado (CFD)</h2>' +
+            '<p class="ajuda">Como a fila de cada etapa evolui dia a dia. Faixa que engorda ao longo ' +
+            'do tempo é acúmulo; faixa estável é fluxo saudável.</p>';
+    if (hist.length < 3) {
+      return h + '<div class="vazio">O histórico começou a ser gravado agora — ' +
+        'hoje temos <strong>' + hist.length + ' dia(s)</strong>.<br>' +
+        'O gráfico aparece a partir de 3 dias de carga, e fica útil de verdade depois de duas semanas.</div></div>';
+    }
+
+    var colunas = Object.keys(hist[hist.length - 1].dados.colunas || {});
+    var larg = 900, alt = 260, padE = 38, padB = 22;
+    var maxTotal = Math.max.apply(null, hist.map(function (d) {
+      return Object.keys(d.dados.colunas || {}).reduce(function (s, k) { return s + d.dados.colunas[k]; }, 0);
+    }).concat([1]));
+    var px = function (i) { return padE + i * ((larg - padE - 8) / Math.max(1, hist.length - 1)); };
+    var py = function (v) { return (alt - padB) - (v / maxTotal) * (alt - padB - 8); };
+
+    var svg = '<svg viewBox="0 0 ' + larg + ' ' + alt + '" style="width:100%;height:auto">';
+    var acumulado = hist.map(function () { return 0; });
+    colunas.slice().reverse().forEach(function (nome) {
+      var base = acumulado.slice();
+      acumulado = acumulado.map(function (v, i) { return v + ((hist[i].dados.colunas || {})[nome] || 0); });
+      var d = 'M' + px(0) + ' ' + py(base[0]);
+      acumulado.forEach(function (v, i) { d += ' L' + px(i) + ' ' + py(v); });
+      for (var i = base.length - 1; i >= 0; i--) d += ' L' + px(i) + ' ' + py(base[i]);
+      svg += '<path d="' + d + ' Z" fill="var(--c-' + cor(nome) + ')" opacity="0.85"></path>';
+    });
+    hist.forEach(function (d, i) {
+      if (hist.length > 10 && i % 2) return;
+      svg += '<text x="' + px(i) + '" y="' + (alt - 6) + '" font-size="10" fill="var(--ink-faint)" ' +
+             'text-anchor="middle">' + dataCurta(d.dia) + '</text>';
+    });
+    svg += '</svg>';
+
+    var leg = '<div class="legenda">';
+    colunas.forEach(function (n) {
+      leg += '<span><i style="background:var(--c-' + cor(n) + ')"></i>' + esc(n) + '</span>';
+    });
+    return h + svg + leg + '</div></div>';
+  }
+
+  function render() {
+    document.getElementById('painelCliente').innerHTML =
+      kpis() + progressoEpicos() + '<div class="duas">' + vazao() + bolaComQuem() + '</div>';
+
+    document.getElementById('painelTime').innerHTML =
+      kpis() + aging() + '<div class="duas">' + wip() + carga() + '</div>' + cfd() + escopo();
+
+    var periodo = met.relogio
+      ? ' · ' + dataCurta(met.relogio.inicio) + ' a ' + dataCurta(met.relogio.fim) : '';
+    document.getElementById('subtitulo').textContent = 'Sprint ' + (window.__sprint || '') + periodo;
+
+    document.getElementById('rodape').textContent =
+      'Métricas calculadas na última carga do board · ' + hist.length + ' dia(s) de histórico';
+  }
+
+  function trocarAba(qual) {
+    var c = qual === 'cliente';
+    document.getElementById('abaCliente').setAttribute('aria-selected', c ? 'true' : 'false');
+    document.getElementById('abaTime').setAttribute('aria-selected', c ? 'false' : 'true');
+    document.getElementById('painelCliente').hidden = !c;
+    document.getElementById('painelTime').hidden = c;
+  }
+  document.getElementById('abaCliente').addEventListener('click', function () { trocarAba('cliente'); });
+  document.getElementById('abaTime').addEventListener('click', function () { trocarAba('time'); });
+
+  fetch('/api/eu').then(function (r) { return r.ok ? r.json() : null; }).then(function (eu) {
+    if (eu && eu.email) document.getElementById('quem').textContent = eu.email;
+  }).catch(function () {});
+
+  Promise.all([
+    fetch('/api/dados', { cache: 'no-store' }).then(function (r) { return r.json(); }),
+    fetch('/api/metricas', { cache: 'no-store' }).then(function (r) { return r.json(); })
+  ]).then(function (res) {
+    dados = res[0];
+    met = res[1].metricas;
+    hist = res[1].historico || [];
+    window.__sprint = res[1].sprint || '';
+
+    if (!met) {
+      document.getElementById('painelCliente').innerHTML =
+        '<div class="cartao"><div class="vazio">As métricas ainda não foram calculadas.<br>' +
+        'Elas nascem junto com a carga do board: clique em <strong>“Atualizar agora”</strong> no board uma vez.</div></div>';
+      document.getElementById('subtitulo').textContent = 'Sem métricas ainda';
+      return;
+    }
+    render();
+  }).catch(function (erro) {
+    document.getElementById('painelCliente').innerHTML =
+      '<div class="cartao"><div class="vazio">Não foi possível carregar os dados.</div></div>';
+    console.error(erro);
+  });
+</script>
