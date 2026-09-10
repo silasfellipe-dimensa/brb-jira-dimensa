@@ -141,6 +141,7 @@
   .aging-item .txt { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .aging-item .onde { flex-shrink: 0; font-size: 0.62rem; text-transform: uppercase; letter-spacing: 0.05em; font-weight: 600; }
   .aging-item.velho .dias { color: var(--warn); }
+  .aging-item .entrega-data { color: var(--c-teste); font-weight: 600; }
 
   .legenda { display: flex; flex-wrap: wrap; gap: 14px; margin-top: 12px; font-size: 0.72rem; color: var(--ink-dim); }
   .legenda span { display: inline-flex; align-items: center; gap: 5px; }
@@ -310,8 +311,30 @@
     return h + '</div></div>';
   }
 
+  /* Contraponto ao aging e ao "parado com terceiros": os dois so mostram
+   * problema. Sem isto, quem olha o dashboard nunca ve o que de fato saiu. */
+  function entregues() {
+    var itens = met.entregues || [];
+    var h = '<div class="cartao"><h2>Entregue recentemente</h2>' +
+            '<p class="ajuda">Demandas que chegaram ao fim do board, da mais recente para a mais antiga.</p>';
+    if (!itens.length) return h + '<div class="vazio">Nada concluído ainda neste sprint.</div></div>';
+    itens.slice(0, 15).forEach(function (a) {
+      h += '<div class="aging-item">' +
+             '<span class="dias entrega-data">' + (a.resolvidoEm ? dataCurta(a.resolvidoEm) : '—') + '</span>' +
+             '<span class="chave">' + esc(a.chave || '') + '</span>' +
+             '<span class="txt" title="' + esc(a.titulo) + '">' + esc(a.titulo) +
+               (a.pessoa ? ' <span style="color:var(--ink-faint)">· ' + esc(a.pessoa) + '</span>' : '') +
+             '</span>' +
+           '</div>';
+    });
+    if (itens.length > 15) h += '<div class="vazio">… e mais ' + (itens.length - 15) + ' entregue(s).</div>';
+    return h + '</div>';
+  }
+
   function bolaComQuem() {
-    var itens = (met.aging || []).filter(function (a) { return a.coluna === 'AGUARDANDO TERCEIROS'; });
+    var itens = (met.aging || []).filter(function (a) {
+      return a.coluna === 'AGUARDANDO TERCEIROS' && !a.subtarefa;
+    });
     var h = '<div class="cartao"><h2>Parado com terceiros</h2>' +
             '<p class="ajuda">Itens que não dependem mais do time de desenvolvimento. ' +
             'O número é há quantos dias estão nessa situação.</p>';
@@ -553,7 +576,7 @@
 
   function render() {
     document.getElementById('painelCliente').innerHTML =
-      kpis() + progressoEpicos() + '<div class="duas">' + vazao() + bolaComQuem() + '</div>';
+      kpis() + progressoEpicos() + '<div class="duas">' + vazao() + entregues() + '</div>' + bolaComQuem();
 
     document.getElementById('painelTime').innerHTML =
       kpis() + aging() + '<div class="duas">' + wip() + carga() + '</div>' + cfd() + escopo();

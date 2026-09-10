@@ -51,6 +51,16 @@ app.use((req, res, next) => {
   );
   // Sem dados do board em cache de proxy/navegador compartilhado.
   if (req.path.startsWith('/api/')) res.setHeader('Cache-Control', 'no-store');
+
+  // As páginas são HTML com o CSS e o JS embutidos: quando o app é atualizado,
+  // o arquivo muda por inteiro e não há hash no nome para o navegador perceber.
+  // Sem isto ele reaproveita a versão antiga e o deploy "não aparece" - o que
+  // já custou vários hard refresh. no-cache não proíbe guardar, obriga a
+  // revalidar: com o ETag do Express, resposta igual continua saindo 304.
+  if (req.path === '/' || req.path.endsWith('.html') || req.path === '/dashboard') {
+    res.setHeader('Cache-Control', 'no-cache');
+  }
+
   next();
 });
 

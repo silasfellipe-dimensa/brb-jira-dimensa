@@ -198,6 +198,27 @@
     text-decoration: none;
   }
   .link-portal:hover { color: var(--accent); }
+
+  /* Peso proprio, nao o apagado do .link-portal: aquele foi pensado para um
+   * link secundario e opcional (so aparece com HUB_URL configurada); o
+   * Dashboard e recurso de verdade e sempre visivel, merece se destacar. */
+  .link-dashboard {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 7px 13px;
+    margin-right: 6px;
+    border-radius: 8px;
+    border: 1px solid var(--accent);
+    background: var(--accent-soft);
+    color: var(--accent);
+    font-size: 0.8rem;
+    font-weight: 600;
+    text-decoration: none;
+    transition: opacity 0.15s ease;
+  }
+  .link-dashboard:hover { opacity: 0.8; }
+  .link-dashboard svg { width: 14px; height: 14px; stroke: currentColor; fill: none; stroke-width: 2; }
   .link-portal svg { width: 13px; height: 13px; stroke: currentColor; fill: none; stroke-width: 2; }
 
   .btn-refresh.girando svg { animation: girar 0.8s linear infinite; }
@@ -459,7 +480,7 @@
       <p id="subtitulo">Equipe Exclusiva — Tarefas Dimensa</p>
     </div>
     <div class="controls">
-      <a class="link-portal" href="/dashboard" title="Métricas e andamento do sprint">
+      <a class="link-dashboard" href="/dashboard" title="Métricas e andamento do sprint">
         <svg viewBox="0 0 24 24" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19V10M10 19V5M16 19v-6M22 19H2"></path></svg>
         Dashboard
       </a>

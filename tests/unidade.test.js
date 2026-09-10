@@ -551,3 +551,60 @@ describe('escopoNovo — demanda pactuada vs desdobramento interno', () => {
     assert.strictEqual(e.serie[e.serie.length - 1].total, 6);
   });
 });
+
+describe('montarMetricas — entregues (contraponto ao aging)', () => {
+  const ordem = ['Em andamento', 'Itens concluídos'];
+  const mapa = { '3': 'Em andamento', '9': 'Itens concluídos' };
+  const sprint = { startDate: '2026-09-01T00:00:00.000Z', endDate: '2026-09-30T00:00:00.000Z' };
+  const AGORA = new Date('2026-09-10T12:00:00.000Z');
+  const task = { name: 'História', subtask: false };
+  const sub = { name: 'Code Review', subtask: true };
+
+  const mk = (k, statusId, opts) => ({
+    key: k,
+    fields: {
+      summary: opts.titulo || k, status: { id: statusId },
+      issuetype: opts.sub ? sub : task, assignee: opts.quem ? { displayName: opts.quem } : null,
+      created: '2026-08-20T10:00:00.000Z',
+      resolutiondate: opts.resolvido || null,
+      statuscategorychangedate: opts.fase || null
+    }
+  });
+
+  const issues = [
+    mk('D-1', 9, { resolvido: '2026-09-08T10:00:00.000Z', quem: 'Ana' }),
+    mk('D-2', 9, { resolvido: '2026-09-05T10:00:00.000Z' }),
+    mk('S-1', 9, { sub: true, resolvido: '2026-09-09T10:00:00.000Z' }),  // subtarefa, nao e entrega
+    mk('D-3', 9, { fase: '2026-09-02T10:00:00.000Z' }),                  // sem resolutiondate
+    mk('A-1', 3, { quem: 'Bia' })                                        // ainda aberta
+  ];
+  const m = montarMetricas(ordem, mapa, issues, sprint, AGORA, true);
+
+  test('so conta demanda concluida, subtarefa fica de fora', () => {
+    const chaves = m.entregues.map((e) => e.chave);
+    assert.ok(!chaves.includes('S-1'));
+    assert.ok(!chaves.includes('A-1'));  // nem entra, nao esta concluida
+    assert.strictEqual(chaves.length, 3);
+  });
+
+  test('ordena da entrega mais recente para a mais antiga', () => {
+    assert.deepStrictEqual(m.entregues.map((e) => e.chave), ['D-1', 'D-2', 'D-3']);
+  });
+
+  test('sem resolutiondate, cai para statuscategorychangedate', () => {
+    const d3 = m.entregues.find((e) => e.chave === 'D-3');
+    assert.strictEqual(d3.resolvidoEm, '2026-09-02T10:00:00.000Z');
+  });
+
+  test('sem nenhuma data, fica no fim da lista mas nao quebra', () => {
+    const semData = mk('D-9', 9, {});
+    const r = montarMetricas(ordem, mapa, issues.concat([semData]), sprint, AGORA, true);
+    assert.strictEqual(r.entregues[r.entregues.length - 1].chave, 'D-9');
+    assert.strictEqual(r.entregues[r.entregues.length - 1].resolvidoEm, null);
+  });
+
+  test('respeita a privacidade: sem mostrarResponsavel, sem nome', () => {
+    const sem = montarMetricas(ordem, mapa, issues, sprint, AGORA, false);
+    assert.ok(sem.entregues.every((e) => e.pessoa === null));
+  });
+});

@@ -366,6 +366,28 @@ function montarMetricas(ordemColunas, statusParaColuna, issues, sprint, agora, m
     escorregam: Math.max(0, abertos.length - devemFechar)
   };
 
+  // ---- entregas: contraponto ao aging/terceiros, que so mostram problema ----
+  // So demanda (nao subtarefa): a subtarefa "Code Review" concluida nao e uma
+  // entrega para quem olha de fora, e inflaria a lista com ruido interno -
+  // mesmo raciocinio que separou demanda de desdobramento no escopo novo.
+  const entregues = prontos
+    .filter(({ issue }) => !ehSubtarefa(issue))
+    .map(({ issue }) => ({
+      chave: issue.key,
+      titulo: issue.fields.summary,
+      epico: issue.fields.epic ? issue.fields.epic.summary : null,
+      resolvidoEm: issue.fields.resolutiondate || issue.fields.statuscategorychangedate || null,
+      pessoa: mostrarResponsavel && issue.fields.assignee ? issue.fields.assignee.displayName : null
+    }))
+    .sort((a, b) => {
+      // Sem data vai para o fim, nunca para o topo: nao ha como afirmar que
+      // um item sem data e o mais recente.
+      if (!a.resolvidoEm && !b.resolvidoEm) return 0;
+      if (!a.resolvidoEm) return 1;
+      if (!b.resolvidoEm) return -1;
+      return new Date(b.resolvidoEm) - new Date(a.resolvidoEm);
+    });
+
   // ---- carga por pessoa: so interna, nunca na tela do cliente ----
   const porPessoa = {};
   if (mostrarResponsavel) {
@@ -415,6 +437,7 @@ function montarMetricas(ordemColunas, statusParaColuna, issues, sprint, agora, m
     })(),
     wip,
     aging,
+    entregues,
     vazao,
     previsao,
     carga
