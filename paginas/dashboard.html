@@ -144,6 +144,17 @@
   .barra-semana { width: 100%; max-width: 40px; border-radius: 4px 4px 0 0; min-height: 3px; display: flex; flex-direction: column-reverse; overflow: hidden; }
   .barra-semana-prazo { width: 100%; background: var(--c-teste); }
   .barra-semana-atraso { width: 100%; background: var(--warn); }
+  #planejamentoSerie .coluna-planejamento { cursor: pointer; border-radius: 6px; padding: 4px; margin: -4px; }
+  #planejamentoSerie .coluna-planejamento:hover { background: var(--line-soft); }
+  #planejamentoSerie .coluna-planejamento.selecionada .coluna-planejamento-legenda { color: var(--accent); font-weight: 700; }
+  .detalhe-planejamento-grupo { margin-top: 16px; }
+  .detalhe-planejamento-grupo h4 {
+    margin: 0 0 6px; font-size: 0.76rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em;
+  }
+  .detalhe-planejamento-grupo.no-prazo h4 { color: var(--c-teste); }
+  .detalhe-planejamento-grupo.atrasado h4 { color: var(--warn); }
+  .detalhe-planejamento-grupo.aberto h4 { color: var(--ink-faint); }
+  .detalhe-planejamento-grupo.carry-over h4 { color: var(--c-dev); }
 
   .aging-item { display: flex; align-items: center; gap: 10px; padding: 6px 0; border-bottom: 1px solid var(--line-soft); font-size: 0.78rem; }
   .aging-item:last-child { border-bottom: 0; }
@@ -491,6 +502,7 @@
       '<div id="planejamentoNumeros"><div class="vazio">Carregando…</div></div>' +
       '<div id="planejamentoPorSemana"></div>' +
       '<div id="planejamentoSerie"></div>' +
+      '<div id="planejamentoDetalheItens"></div>' +
     '</div>';
   }
 
@@ -563,15 +575,98 @@
     serie.forEach(function (s) {
       var alt = maxPlanejado ? Math.round((s.planejado / maxPlanejado) * 100) : 0;
       var altEntregue = maxPlanejado ? Math.round(((s.entregueNoPrazo + s.entregueAtrasado) / maxPlanejado) * 100) : 0;
-      h += '<div class="coluna-planejamento" title="' + esc(s.sprintOrigem || '') + ': ' + s.planejado + ' planejado(s), ' +
-        (s.entregueNoPrazo + s.entregueAtrasado) + ' entregue(s), ' + s.naoEntregue + ' em aberto">' +
+      // Total entregue de VERDADE inclui carry-over (item que nasceu numa
+      // sprint anterior e só saiu nesta) - sem somar isso aqui, o texto
+      // contradiz o "Histórico de entregas" logo abaixo, que conta tudo que
+      // fechou na sprint, não só quem nasceu nela.
+      var totalEntregue = s.entregueNoPrazo + s.entregueAtrasado + (s.carryOverEntregue || 0);
+      h += '<div class="coluna-planejamento" data-sprint-id="' + (s.sprintOrigemId || '') + '" ' +
+        'data-sprint-nome="' + esc(s.sprintOrigem || '') + '" ' +
+        'title="' + esc(s.sprintOrigem || '') + ': ' + totalEntregue + ' entregue(s) de ' + s.planejado + ' planejado(s) nascido(s) aqui' +
+        (s.naoEntregue ? ', ' + s.naoEntregue + ' ainda em aberto' : '') + ' — clique para detalhar">' +
         '<div class="barra-planejamento" style="height:' + alt + '%">' +
           '<div class="barra-planejamento-entregue" style="height:' + (alt ? Math.round(altEntregue / alt * 100) : 0) + '%"></div>' +
         '</div>' +
         '<span class="coluna-planejamento-legenda">' + esc(s.sprintOrigem || '?') + '</span>' +
       '</div>';
     });
-    return alvo.innerHTML = h + '</div>';
+    alvo.innerHTML = h + '</div>';
+
+    alvo.querySelectorAll('.coluna-planejamento').forEach(function (col) {
+      col.addEventListener('click', function () {
+        var jaSelecionada = col.classList.contains('selecionada');
+        alvo.querySelectorAll('.coluna-planejamento.selecionada').forEach(function (c) { c.classList.remove('selecionada'); });
+        var destino = document.getElementById('planejamentoDetalheItens');
+        if (jaSelecionada) { if (destino) destino.innerHTML = ''; return; }
+        col.classList.add('selecionada');
+        carregarItensPlanejamento(col.getAttribute('data-sprint-id'), col.getAttribute('data-sprint-nome'));
+      });
+    });
+  }
+
+  /** Detalhe item a item por trás de uma barra do histórico: quais épicos ou
+   * tasks avulsas nasceram naquela sprint, agrupados na mesma leitura do
+   * resumo (no prazo / atrasado / ainda aberto) - pra responder "quais" sem
+   * precisar abrir o Jira. */
+  function carregarItensPlanejamento(sprintId, sprintNome) {
+    var destino = document.getElementById('planejamentoDetalheItens');
+    if (!sprintId || !destino) return;
+    destino.innerHTML = '<div class="vazio">Carregando…</div>';
+    fetch('/api/planejamento/itens?sprintId=' + encodeURIComponent(sprintId), { cache: 'no-store' })
+      .then(function (r) { return r.json(); })
+      .then(function (res) { renderItensPlanejamento(sprintNome, res.itens || [], res.carryOver || []); })
+      .catch(function () { destino.innerHTML = '<div class="vazio">Não foi possível carregar o detalhe.</div>'; });
+  }
+
+  function linhaItemPlanejamento(item) {
+    var status = item.situacao === 'aberto'
+      ? '<span class="onde" style="color:var(--ink-faint)">' + item.concluidas + '/' + item.total + ' concluído</span>'
+      : '<span class="dias entrega-data">' + (item.resolvidoEm ? dataCurta(item.resolvidoEm) : '—') + '</span>';
+    var origem = item.situacao === 'carry-over' && item.sprintOrigemDoItem
+      ? '<span class="onde" style="color:var(--ink-faint)">nasceu em ' + esc(item.sprintOrigemDoItem) + '</span>' : '';
+    return '<div class="aging-item">' +
+      (item.situacao === 'aberto' ? '' : status) +
+      '<span class="chave">' + esc(item.chave || '') + '</span>' +
+      '<span class="txt" title="' + esc(item.titulo || '') + '">' + esc(item.titulo || '') +
+        (item.pessoa ? ' <span style="color:var(--ink-faint)">· ' + esc(item.pessoa) + '</span>' : '') +
+      '</span>' +
+      (item.situacao === 'aberto' ? status : '') + origem +
+    '</div>';
+  }
+
+  function renderItensPlanejamento(sprintNome, itens, carryOver) {
+    var destino = document.getElementById('planejamentoDetalheItens');
+    if (!destino) return;
+    if (!itens.length && !carryOver.length) {
+      destino.innerHTML = '<div class="vazio">Nada encontrado para ' + esc(sprintNome || '') + '.</div>';
+      return;
+    }
+
+    var grupos = {
+      'no-prazo': itens.filter(function (i) { return i.situacao === 'no-prazo'; }),
+      'atrasado': itens.filter(function (i) { return i.situacao === 'atrasado'; }),
+      'aberto': itens.filter(function (i) { return i.situacao === 'aberto'; }),
+      'carry-over': carryOver
+    };
+    var titulos = {
+      'no-prazo': 'Nasceu e foi entregue nessa sprint',
+      'atrasado': 'Nasceu nessa sprint, saiu atrasado (sprint posterior)',
+      'aberto': 'Nasceu nessa sprint, ainda não entregue',
+      'carry-over': 'Entregue nessa sprint, mas nasceu antes'
+    };
+
+    var h = '<h3 class="sub-titulo">' + esc(sprintNome || '') + '</h3>' +
+      '<p class="ajuda">Os 3 primeiros grupos olham pela origem (o que nasceu nessa sprint). ' +
+      'O último olha pela conclusão: itens de sprint anterior que só saíram agora — sem eles, ' +
+      'o total de entregas da sprint parece menor do que realmente foi.</p>';
+    ['no-prazo', 'atrasado', 'aberto', 'carry-over'].forEach(function (chave) {
+      var lista = grupos[chave];
+      if (!lista.length) return;
+      h += '<div class="detalhe-planejamento-grupo ' + chave + '"><h4>' + titulos[chave] + ' (' + lista.length + ')</h4>';
+      lista.forEach(function (item) { h += linhaItemPlanejamento(item); });
+      h += '</div>';
+    });
+    destino.innerHTML = h;
   }
 
   function carregarPlanejamentoSerie() {

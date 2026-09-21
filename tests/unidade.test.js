@@ -17,7 +17,10 @@ const {
   mapearColunas, montarColunas, montarMetricas, epicoDe, ehSubtarefa,
   sprintsDaIssue, montarEntregas, montarPlanejamento, statusFechamento
 } = require('../jira');
-const { resumirPlanejamento, porSemanaPlanejamento } = require('../supabase');
+const {
+  resumirPlanejamento, porSemanaPlanejamento, classificarItensPlanejamento, montarItensCarryOver,
+  contarCarryOverPorSprint
+} = require('../supabase');
 
 describe('emailPermitido — quem pode entrar', () => {
   // Bug: alguem de fora dos dominios da equipe cria conta e le o board.
@@ -473,6 +476,87 @@ describe('porSemanaPlanejamento — quebra semanal do "Planejado x Entregue"', (
 
   test('sem nenhum item, retorna lista vazia sem quebrar', () => {
     assert.deepStrictEqual(porSemanaPlanejamento([], SPRINT_JULHO), []);
+  });
+});
+
+describe('classificarItensPlanejamento — detalhe por trás do clique na barra', () => {
+  const SPRINT_JULHO = 10;
+  const SPRINT_AGOSTO = 11;
+
+  test('marca cada item como no-prazo, atrasado ou aberto, mesmo critério do resumo', () => {
+    const linhas = [
+      { chave: 'A-1', entregue: true, sprint_conclusao_id: SPRINT_JULHO, dados: { chave: 'A-1', titulo: 'Zebra' } },
+      { chave: 'A-2', entregue: true, sprint_conclusao_id: SPRINT_AGOSTO, dados: { chave: 'A-2', titulo: 'Abacaxi' } },
+      { chave: 'A-3', entregue: false, sprint_conclusao_id: null, dados: { chave: 'A-3', titulo: 'Manga' } }
+    ];
+    const itens = classificarItensPlanejamento(linhas, SPRINT_JULHO);
+    assert.deepStrictEqual(itens.map((i) => i.situacao), ['atrasado', 'aberto', 'no-prazo']);
+  });
+
+  test('ordena por título, não pela ordem que chegou do banco', () => {
+    const linhas = [
+      { entregue: true, sprint_conclusao_id: SPRINT_JULHO, dados: { titulo: 'Zebra' } },
+      { entregue: true, sprint_conclusao_id: SPRINT_JULHO, dados: { titulo: 'Abacaxi' } }
+    ];
+    const itens = classificarItensPlanejamento(linhas, SPRINT_JULHO);
+    assert.deepStrictEqual(itens.map((i) => i.titulo), ['Abacaxi', 'Zebra']);
+  });
+
+  test('sem nenhuma linha, retorna lista vazia sem quebrar', () => {
+    assert.deepStrictEqual(classificarItensPlanejamento([], SPRINT_JULHO), []);
+  });
+});
+
+describe('montarItensCarryOver — o que saiu na sprint mas nasceu antes', () => {
+  // Bug real (sessao 2026-09-21): so 3 dos 10 itens entregues em Setembro
+  // nasceram em Setembro - os outros 7 eram carry-over de Agosto/Julho e
+  // sumiam do detalhe por trás do clique na barra, porque a query original
+  // filtrava só por sprint de origem.
+  test('marca cada item como carry-over e guarda de onde ele nasceu', () => {
+    const linhas = [
+      { sprint_origem: 'Agosto', dados: { chave: 'JDCBBRB-223', titulo: 'Zebra' } },
+      { sprint_origem: 'Julho', dados: { chave: 'JDCBEPIC-192', titulo: 'Abacaxi' } }
+    ];
+    const itens = montarItensCarryOver(linhas);
+    assert.strictEqual(itens.length, 2);
+    assert.ok(itens.every((i) => i.situacao === 'carry-over'));
+    assert.deepStrictEqual(itens.map((i) => i.sprintOrigemDoItem), ['Julho', 'Agosto']);
+  });
+
+  test('ordena por título', () => {
+    const linhas = [
+      { sprint_origem: 'Agosto', dados: { titulo: 'Zebra' } },
+      { sprint_origem: 'Agosto', dados: { titulo: 'Abacaxi' } }
+    ];
+    assert.deepStrictEqual(montarItensCarryOver(linhas).map((i) => i.titulo), ['Abacaxi', 'Zebra']);
+  });
+
+  test('sem carry-over, retorna lista vazia sem quebrar', () => {
+    assert.deepStrictEqual(montarItensCarryOver([]), []);
+  });
+});
+
+describe('contarCarryOverPorSprint — total entregue de verdade na série histórica', () => {
+  const SPRINT_JULHO = 10;
+  const SPRINT_AGOSTO = 11;
+  const SPRINT_SETEMBRO = 12;
+
+  // Bug real (sessao 2026-09-21): a serie historica so contava quem nasceu
+  // na propria sprint, entao Setembro aparecia com 3 entregues quando na
+  // real saiu 10 (3 nascidos ali + 7 de Agosto/Julho).
+  test('conta só entregue de OUTRA sprint de origem, concluído nesta', () => {
+    const todasLinhas = [
+      { entregue: true, sprint_origem_id: SPRINT_SETEMBRO, sprint_conclusao_id: SPRINT_SETEMBRO }, // nasceu e saiu aqui
+      { entregue: true, sprint_origem_id: SPRINT_AGOSTO, sprint_conclusao_id: SPRINT_SETEMBRO }, // carry-over
+      { entregue: true, sprint_origem_id: SPRINT_JULHO, sprint_conclusao_id: SPRINT_SETEMBRO }, // carry-over
+      { entregue: true, sprint_origem_id: SPRINT_AGOSTO, sprint_conclusao_id: SPRINT_AGOSTO }, // de outra sprint, ignora
+      { entregue: false, sprint_origem_id: SPRINT_AGOSTO, sprint_conclusao_id: null } // aberto, ignora
+    ];
+    assert.strictEqual(contarCarryOverPorSprint(todasLinhas, SPRINT_SETEMBRO), 2);
+  });
+
+  test('sem carry-over pra essa sprint, retorna zero', () => {
+    assert.strictEqual(contarCarryOverPorSprint([], SPRINT_SETEMBRO), 0);
   });
 });
 

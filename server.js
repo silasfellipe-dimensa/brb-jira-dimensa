@@ -8,7 +8,8 @@ const { buscarBoard } = require('./jira');
 const {
   cadastrar, entrar, lerSnapshot, gravarSnapshot, gravarHistorico, lerHistorico,
   gravarEntregas, lerEntregas, listarSprintsEntregas, listarMesesEntregas,
-  lerPlanejamentoSprint, lerCarryOverEntregue, listarPlanejamentoPorSprint
+  lerPlanejamentoSprint, lerCarryOverEntregue, listarPlanejamentoPorSprint, listarItensPlanejamento,
+  listarItensCarryOver
 } = require('./supabase');
 const {
   COOKIE_NAME,
@@ -282,6 +283,24 @@ app.get('/api/planejamento/serie', exigirSessaoApi, async (req, res) => {
   const serie = await listarPlanejamentoPorSprint();
   serie.sort((a, b) => (a.sprintOrigemId || 0) - (b.sprintOrigemId || 0));
   res.json({ serie });
+});
+
+/** Detalhe item a item de UMA sprint - o que o clique na barra do grafico
+ * historico abre: quais épicos/tasks avulsas nasceram ali, entregue ou não,
+ * no prazo ou atrasado. `carryOver` é o complemento: itens nascidos em
+ * sprint ANTERIOR mas entregues durante esta - sem isso, quem clica achava
+ * que só saiu o que nasceu ali (bug reportado: "setembro teve mais de 3
+ * entregues", e tinha - 7 eram carry-over de agosto/julho). */
+app.get('/api/planejamento/itens', exigirSessaoApi, async (req, res) => {
+  const sprintId = Number(req.query.sprintId);
+  if (!req.query.sprintId || Number.isNaN(sprintId)) {
+    return res.status(400).json({ erro: 'sprintId é obrigatório e deve ser numérico.' });
+  }
+  const [itens, carryOver] = await Promise.all([
+    listarItensPlanejamento(sprintId),
+    listarItensCarryOver(sprintId)
+  ]);
+  res.json({ itens, carryOver });
 });
 
 // Muta estado, entao e POST (nunca GET). A protecao anti-CSRF aqui e o

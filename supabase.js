@@ -298,6 +298,36 @@ async function lerPlanejamentoSprint(sprintOrigemId) {
   }
 }
 
+/** Lista item a item (épico ou task avulsa) do "Planejado x Entregue" de UMA
+ * sprint - o detalhe por trás dos 4 números do resumo. `dados` guarda o
+ * objeto inteiro que `descreverGrupo` (jira.js) monta, então dá pra mostrar
+ * chave, título, quantas subtarefas concluídas e quando saiu sem precisar
+ * voltar no Jira. `situacao` replica exatamente o critério de
+ * `resumirPlanejamento`, pra lista e resumo nunca contarem coisas diferentes. */
+async function listarItensPlanejamento(sprintOrigemId) {
+  try {
+    const { data, error } = await db().from('planejamento_sprints')
+      .select('chave,dados,entregue,sprint_conclusao_id')
+      .eq('sprint_origem_id', sprintOrigemId).limit(10000);
+    if (error) throw new Error(error.message);
+    return classificarItensPlanejamento(data || [], sprintOrigemId);
+  } catch (erro) {
+    console.error('[supabase] falha ao listar itens do planejamento:', erro.message);
+    return [];
+  }
+}
+
+/** Pura: junta o objeto salvo em `dados` com a `situacao` calculada, mesmo
+ * critério de resumirPlanejamento. Separada pra ser testável sem banco. */
+function classificarItensPlanejamento(linhas, sprintOrigemId) {
+  return linhas.map((linha) => ({
+    ...linha.dados,
+    situacao: !linha.entregue
+      ? 'aberto'
+      : (linha.sprint_conclusao_id === sprintOrigemId ? 'no-prazo' : 'atrasado')
+  })).sort((a, b) => (a.titulo || '').localeCompare(b.titulo || ''));
+}
+
 /** Quantos itens de OUTRAS sprints (carry-over) foram entregues DURANTE a
  * sprint informada - o contraponto do "planejado": nao so "o que era pra
  * sair, saiu", mas tambem "quanto do que saiu veio de atraso anterior". */
@@ -315,6 +345,33 @@ async function lerCarryOverEntregue(sprintConclusaoId) {
   }
 }
 
+/** Item a item do carry-over: o que a lista de `listarItensPlanejamento`
+ * nao mostra, porque filtra por sprint de ORIGEM - um item nascido em
+ * Agosto e entregue em Setembro nunca aparece no detalhe de Setembro sem
+ * isto. Confirmado com dados reais (sessao 2026-09-21): so 3 dos 10 itens
+ * entregues em Setembro nasceram em Setembro; os outros 7 sao carry-over. */
+async function listarItensCarryOver(sprintConclusaoId) {
+  try {
+    const { data, error } = await db().from('planejamento_sprints')
+      .select('dados,sprint_origem')
+      .eq('sprint_conclusao_id', sprintConclusaoId).eq('entregue', true)
+      .neq('sprint_origem_id', sprintConclusaoId).limit(10000);
+    if (error) throw new Error(error.message);
+    return montarItensCarryOver(data || []);
+  } catch (erro) {
+    console.error('[supabase] falha ao listar itens de carry-over:', erro.message);
+    return [];
+  }
+}
+
+/** Pura: mesma transformação de montarItensCarryOver, separada pra ser
+ * testável sem banco. */
+function montarItensCarryOver(linhas) {
+  return linhas
+    .map((linha) => ({ ...linha.dados, situacao: 'carry-over', sprintOrigemDoItem: linha.sprint_origem }))
+    .sort((a, b) => (a.titulo || '').localeCompare(b.titulo || ''));
+}
+
 /** Serie historica: um resumo por sprint de origem, mais antiga primeiro -
  * para o grafico comparar varias sprints. */
 async function listarPlanejamentoPorSprint() {
@@ -323,20 +380,36 @@ async function listarPlanejamentoPorSprint() {
       .select('sprint_origem,sprint_origem_id,entregue,sprint_conclusao_id')
       .not('sprint_origem_id', 'is', null).limit(10000);
     if (error) throw new Error(error.message);
+    const todasLinhas = data || [];
     const porSprint = new Map();
-    for (const linha of data || []) {
+    for (const linha of todasLinhas) {
       if (!porSprint.has(linha.sprint_origem_id)) porSprint.set(linha.sprint_origem_id, []);
       porSprint.get(linha.sprint_origem_id).push(linha);
     }
     const resultado = [];
     for (const [sprintOrigemId, linhas] of porSprint) {
-      resultado.push(resumirPlanejamento(linhas, sprintOrigemId));
+      const resumo = resumirPlanejamento(linhas, sprintOrigemId);
+      resumo.carryOverEntregue = contarCarryOverPorSprint(todasLinhas, sprintOrigemId);
+      resultado.push(resumo);
     }
     return resultado;
   } catch (erro) {
     console.error('[supabase] falha ao listar planejamento por sprint:', erro.message);
     return [];
   }
+}
+
+/** Pura: quantos itens de OUTRAS sprints de origem foram entregues DURANTE
+ * a sprint informada. Mesmo critério de lerCarryOverEntregue, só que aqui
+ * roda sobre o dataset inteiro já carregado (a série histórica busca todas
+ * as sprints de uma vez, não faz sentido repetir a query por sprint). Sem
+ * isso, o total "entregue" da série contava só quem nasceu ali - e sumia
+ * o que a sprint recebeu de atraso anterior (bug real da sessão 2026-09-21:
+ * setembro parecia ter entregue 3, e entregou 10). */
+function contarCarryOverPorSprint(todasLinhas, sprintConclusaoId) {
+  return todasLinhas.filter((linha) =>
+    linha.entregue && linha.sprint_conclusao_id === sprintConclusaoId && linha.sprint_origem_id !== sprintConclusaoId
+  ).length;
 }
 
 /** Reduz as linhas cruas de uma sprint de origem aos 4 numeros do card:
@@ -389,5 +462,6 @@ module.exports = {
   cadastrar, entrar, lerSnapshot, gravarSnapshot, gravarHistorico, lerHistorico,
   gravarEntregas, lerEntregas, listarSprintsEntregas, listarMesesEntregas, limparEntregas,
   gravarPlanejamento, limparPlanejamento, lerPlanejamentoSprint, lerCarryOverEntregue,
-  listarPlanejamentoPorSprint, resumirPlanejamento, porSemanaPlanejamento
+  listarPlanejamentoPorSprint, resumirPlanejamento, porSemanaPlanejamento, listarItensPlanejamento,
+  classificarItensPlanejamento, listarItensCarryOver, montarItensCarryOver, contarCarryOverPorSprint
 };
