@@ -6,7 +6,9 @@ const crypto = require('crypto');
 const path = require('path');
 const { buscarBoard } = require('./jira');
 const {
-  cadastrar, entrar, lerSnapshot, gravarSnapshot, gravarHistorico, lerHistorico
+  cadastrar, entrar, lerSnapshot, gravarSnapshot, gravarHistorico, lerHistorico,
+  gravarEntregas, lerEntregas, listarSprintsEntregas, listarMesesEntregas,
+  lerPlanejamentoSprint, lerCarryOverEntregue, listarPlanejamentoPorSprint
 } = require('./supabase');
 const {
   COOKIE_NAME,
@@ -67,6 +69,7 @@ app.use((req, res, next) => {
 async function executarAtualizacao(usuario) {
   const dados = await buscarBoard();
   await gravarSnapshot(dados);
+  await gravarEntregas(dados.entregas);
 
   // Foto do dia para o histórico. Só o resumo - contagem por coluna é o que os
   // gráficos de fluxo precisam, e mantém a tabela pequena. Se falhar, o board
@@ -225,10 +228,60 @@ app.get('/api/metricas', exigirSessaoApi, async (req, res) => {
   const historico = await lerHistorico(60);
   res.json({
     sprint: snapshot.sprint || null,
+    sprintId: snapshot.sprintId || null,
     atualizadoEm: snapshot.atualizadoEm || null,
     metricas: snapshot.metricas || null,
     historico
   });
+});
+
+app.get('/api/entregas', exigirSessaoApi, async (req, res) => {
+  const { sprint, mes, inicio, fim } = req.query;
+  if (mes && !/^\d{4}-\d{2}$/.test(mes)) {
+    return res.status(400).json({ erro: 'Mês inválido. Use o formato AAAA-MM.' });
+  }
+  if (inicio && !/^\d{4}-\d{2}-\d{2}$/.test(inicio)) {
+    return res.status(400).json({ erro: 'Data inicial inválida. Use o formato AAAA-MM-DD.' });
+  }
+  if (fim && !/^\d{4}-\d{2}-\d{2}$/.test(fim)) {
+    return res.status(400).json({ erro: 'Data final inválida. Use o formato AAAA-MM-DD.' });
+  }
+  const entregas = await lerEntregas({
+    sprint: sprint || undefined,
+    mes: mes || undefined,
+    inicio: inicio || undefined,
+    fim: fim ? `${fim}T23:59:59.999Z` : undefined
+  });
+  res.json({ entregas });
+});
+
+app.get('/api/entregas/sprints', exigirSessaoApi, async (req, res) => {
+  res.json({
+    sprints: await listarSprintsEntregas(),
+    meses: await listarMesesEntregas()
+  });
+});
+
+/** Planejado x Entregue de UMA sprint: quantos itens nasceram nela
+ * (sprintId = sprint de ORIGEM) e o que aconteceu com cada um - entregue no
+ * prazo, entregue atrasado (saiu so numa sprint posterior) ou ainda aberto
+ * hoje. `carryOverEntregue` é o contraponto: quanto do que saiu NESSA
+ * sprint na verdade veio de atraso de sprints anteriores. */
+app.get('/api/planejamento', exigirSessaoApi, async (req, res) => {
+  const sprintId = Number(req.query.sprintId);
+  if (!req.query.sprintId || Number.isNaN(sprintId)) {
+    return res.status(400).json({ erro: 'sprintId é obrigatório e deve ser numérico.' });
+  }
+  const planejamento = await lerPlanejamentoSprint(sprintId);
+  const carryOverEntregue = await lerCarryOverEntregue(sprintId);
+  res.json({ planejamento, carryOverEntregue });
+});
+
+/** Serie historica (uma sprint por ponto) para o grafico comparativo. */
+app.get('/api/planejamento/serie', exigirSessaoApi, async (req, res) => {
+  const serie = await listarPlanejamentoPorSprint();
+  serie.sort((a, b) => (a.sprintOrigemId || 0) - (b.sprintOrigemId || 0));
+  res.json({ serie });
 });
 
 // Muta estado, entao e POST (nunca GET). A protecao anti-CSRF aqui e o
