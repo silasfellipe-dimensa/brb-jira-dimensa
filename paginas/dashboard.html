@@ -141,6 +141,9 @@
   .barra-planejamento { width: 100%; max-width: 40px; background: var(--line); border-radius: 4px 4px 0 0; min-height: 3px; display: flex; flex-direction: column-reverse; overflow: hidden; }
   .barra-planejamento-entregue { width: 100%; background: var(--c-concluido); }
   .coluna-planejamento-legenda { font-size: 0.66rem; color: var(--ink-faint); white-space: nowrap; }
+  .barra-semana { width: 100%; max-width: 40px; border-radius: 4px 4px 0 0; min-height: 3px; display: flex; flex-direction: column-reverse; overflow: hidden; }
+  .barra-semana-prazo { width: 100%; background: var(--c-teste); }
+  .barra-semana-atraso { width: 100%; background: var(--warn); }
 
   .aging-item { display: flex; align-items: center; gap: 10px; padding: 6px 0; border-bottom: 1px solid var(--line-soft); font-size: 0.78rem; }
   .aging-item:last-child { border-bottom: 0; }
@@ -486,6 +489,7 @@
       '<p class="ajuda">Visão por sprint: quanto foi planejado para a sprint escolhida no filtro abaixo, ' +
       'quanto já saiu (no prazo ou atrasado) e quanto ainda está em aberto hoje.</p>' +
       '<div id="planejamentoNumeros"><div class="vazio">Carregando…</div></div>' +
+      '<div id="planejamentoPorSemana"></div>' +
       '<div id="planejamentoSerie"></div>' +
     '</div>';
   }
@@ -507,6 +511,37 @@
         '<div class="planejamento-num"><strong>' + p.naoEntregue + '</strong><span>Ainda não entregue</span></div>' +
         '<div class="planejamento-num"><strong>' + (resposta.carryOverEntregue || 0) + '</strong><span>Carry-over entregue nessa sprint</span></div>' +
       '</div>';
+    renderPlanejamentoPorSemana(p.porSemana || []);
+  }
+
+  /* Complemento ao card inteiro (que só olha a sprint fechada): dentro dela,
+   * em que semana o entregue saiu, no prazo ou não. Mesma leitura de barras
+   * empilhadas do resto do dashboard, só que aqui cada coluna é uma semana
+   * em vez de uma sprint. */
+  function renderPlanejamentoPorSemana(porSemana) {
+    var alvo = document.getElementById('planejamentoPorSemana');
+    if (!alvo) return;
+    if (!porSemana.length) { alvo.innerHTML = ''; return; }
+    var max = Math.max.apply(null, porSemana.map(function (s) { return s.noPrazo + s.atrasado; }));
+    var h = '<h3 class="sub-titulo">Entregue por semana, dentro dessa sprint</h3>' +
+            '<div class="colunas-planejamento">';
+    porSemana.forEach(function (s) {
+      var total = s.noPrazo + s.atrasado;
+      var alt = max ? Math.round(total / max * 100) : 0;
+      var pctAtraso = total ? Math.round(s.atrasado / total * 100) : 0;
+      h += '<div class="coluna-planejamento" title="' + dataCurta(s.semana) + ': ' + s.noPrazo +
+        ' no prazo, ' + s.atrasado + ' atrasado(s)">' +
+        '<div class="barra-semana" style="height:' + alt + '%">' +
+          '<div class="barra-semana-prazo" style="height:' + (100 - pctAtraso) + '%"></div>' +
+          '<div class="barra-semana-atraso" style="height:' + pctAtraso + '%"></div>' +
+        '</div>' +
+        '<span class="coluna-planejamento-legenda">' + dataCurta(s.semana) + '</span>' +
+      '</div>';
+    });
+    alvo.innerHTML = h + '</div><div class="legenda">' +
+      '<span><i style="background:var(--c-teste)"></i>No prazo</span>' +
+      '<span><i style="background:var(--warn)"></i>Atrasado</span>' +
+    '</div>';
   }
 
   function carregarPlanejamento(sprintId, sprintNome) {

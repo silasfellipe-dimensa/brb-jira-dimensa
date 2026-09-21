@@ -288,7 +288,7 @@ async function limparPlanejamento() {
 async function lerPlanejamentoSprint(sprintOrigemId) {
   try {
     const { data, error } = await db().from('planejamento_sprints')
-      .select('sprint_origem,sprint_origem_id,entregue,sprint_conclusao_id')
+      .select('sprint_origem,sprint_origem_id,entregue,sprint_conclusao_id,conclusao_em')
       .eq('sprint_origem_id', sprintOrigemId).limit(10000);
     if (error) throw new Error(error.message);
     return resumirPlanejamento(data || [], sprintOrigemId);
@@ -359,13 +359,35 @@ function resumirPlanejamento(linhas, sprintOrigemId) {
     planejado: linhas.length,
     entregueNoPrazo,
     entregueAtrasado,
-    naoEntregue
+    naoEntregue,
+    porSemana: porSemanaPlanejamento(linhas, sprintOrigemId)
   };
+}
+
+/** Quebra semanal do que foi entregue dentro da sprint de origem, separando
+ * no prazo de atrasado - complemento do "Planejado x Entregue" (que só olha
+ * a sprint inteira) para responder "em que semana isso saiu", igual ao card
+ * "Entregas por semana" já faz para o total do sprint. Mesmo corte de
+ * semana (segunda a domingo) usado em toda a vazão, para os eixos baterem. */
+function porSemanaPlanejamento(linhas, sprintOrigemId) {
+  const porSemana = new Map();
+  for (const linha of linhas) {
+    if (!linha.entregue || !linha.conclusao_em) continue;
+    const d = new Date(linha.conclusao_em);
+    const seg = new Date(d);
+    seg.setDate(d.getDate() - ((d.getDay() + 6) % 7));
+    const chave = seg.toISOString().slice(0, 10);
+    if (!porSemana.has(chave)) porSemana.set(chave, { semana: chave, noPrazo: 0, atrasado: 0 });
+    const grupo = porSemana.get(chave);
+    if (linha.sprint_conclusao_id === sprintOrigemId) grupo.noPrazo++;
+    else grupo.atrasado++;
+  }
+  return Array.from(porSemana.values()).sort((a, b) => a.semana.localeCompare(b.semana));
 }
 
 module.exports = {
   cadastrar, entrar, lerSnapshot, gravarSnapshot, gravarHistorico, lerHistorico,
   gravarEntregas, lerEntregas, listarSprintsEntregas, listarMesesEntregas, limparEntregas,
   gravarPlanejamento, limparPlanejamento, lerPlanejamentoSprint, lerCarryOverEntregue,
-  listarPlanejamentoPorSprint, resumirPlanejamento
+  listarPlanejamentoPorSprint, resumirPlanejamento, porSemanaPlanejamento
 };

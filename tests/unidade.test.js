@@ -17,7 +17,7 @@ const {
   mapearColunas, montarColunas, montarMetricas, epicoDe, ehSubtarefa,
   sprintsDaIssue, montarEntregas, montarPlanejamento, statusFechamento
 } = require('../jira');
-const { resumirPlanejamento } = require('../supabase');
+const { resumirPlanejamento, porSemanaPlanejamento } = require('../supabase');
 
 describe('emailPermitido — quem pode entrar', () => {
   // Bug: alguem de fora dos dominios da equipe cria conta e le o board.
@@ -430,6 +430,49 @@ describe('resumirPlanejamento — os 4 numeros do card "Planejado x Entregue"', 
     assert.strictEqual(resumo.entregueNoPrazo, 0);
     assert.strictEqual(resumo.entregueAtrasado, 0);
     assert.strictEqual(resumo.naoEntregue, 0);
+  });
+
+  test('o resumo carrega a quebra semanal junto', () => {
+    const linhas = [
+      { entregue: true, sprint_conclusao_id: SPRINT_JULHO, conclusao_em: '2026-07-06T10:00:00Z' }
+    ];
+    const resumo = resumirPlanejamento(linhas, SPRINT_JULHO);
+    assert.strictEqual(resumo.porSemana.length, 1);
+  });
+});
+
+describe('porSemanaPlanejamento — quebra semanal do "Planejado x Entregue"', () => {
+  const SPRINT_JULHO = 10;
+  const SPRINT_AGOSTO = 11;
+
+  test('agrupa por semana (segunda a domingo), separando no prazo de atrasado', () => {
+    const linhas = [
+      // segunda 2026-07-06 a domingo 2026-07-12
+      { entregue: true, sprint_conclusao_id: SPRINT_JULHO, conclusao_em: '2026-07-06T10:00:00Z' },
+      { entregue: true, sprint_conclusao_id: SPRINT_JULHO, conclusao_em: '2026-07-12T23:00:00Z' },
+      { entregue: true, sprint_conclusao_id: SPRINT_AGOSTO, conclusao_em: '2026-07-08T10:00:00Z' },
+      // semana seguinte
+      { entregue: true, sprint_conclusao_id: SPRINT_JULHO, conclusao_em: '2026-07-15T10:00:00Z' }
+    ];
+    const semanas = porSemanaPlanejamento(linhas, SPRINT_JULHO);
+    assert.strictEqual(semanas.length, 2);
+    assert.strictEqual(semanas[0].semana, '2026-07-06');
+    assert.strictEqual(semanas[0].noPrazo, 2);
+    assert.strictEqual(semanas[0].atrasado, 1);
+    assert.strictEqual(semanas[1].semana, '2026-07-13');
+    assert.strictEqual(semanas[1].noPrazo, 1);
+    assert.strictEqual(semanas[1].atrasado, 0);
+  });
+
+  test('item ainda aberto (sem conclusao_em) fica fora da quebra semanal', () => {
+    const linhas = [
+      { entregue: false, sprint_conclusao_id: null, conclusao_em: null }
+    ];
+    assert.deepStrictEqual(porSemanaPlanejamento(linhas, SPRINT_JULHO), []);
+  });
+
+  test('sem nenhum item, retorna lista vazia sem quebrar', () => {
+    assert.deepStrictEqual(porSemanaPlanejamento([], SPRINT_JULHO), []);
   });
 });
 
