@@ -8,7 +8,7 @@
     "backfill:entregas": "node backfill-entregas.js"
   },
   "dependencies": {
-    "express": "^4.19.2",
+    "express": "^5.2.1",
     "@supabase/supabase-js": "^2.45.4",
     "jsonwebtoken": "^9.0.2",
     "cookie-parser": "^1.4.6",
