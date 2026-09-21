@@ -4,7 +4,8 @@
   "version": "0.1.0",
   "scripts": {
     "dev": "node server.js",
-    "test": "node --test \"tests/**/*.test.js\""
+    "test": "node --test \"tests/**/*.test.js\"",
+    "backfill:entregas": "node backfill-entregas.js"
   },
   "dependencies": {
     "express": "^4.19.2",

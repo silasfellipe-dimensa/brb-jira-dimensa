@@ -5,7 +5,7 @@
 // testados ou sao rejeitados ANTES de qualquer chamada externa, ou tratam a
 // falha de forma prevista.
 
-process.env.ALLOWED_DOMAINS = 'dimensa.com.br,totvs.com.br,brb.com.br';
+process.env.ALLOWED_DOMAINS = 'dimensa.com.br,totvs.com.br,brb.com.br,evertecinc.com.br';
 process.env.ALLOWED_EMAILS = '';
 process.env.SESSION_SECRET = 'segredo-de-teste-nao-usado-em-producao';
 process.env.CRON_SECRET = 'cron-de-teste';
@@ -96,6 +96,38 @@ describe('portao de acesso — com sessao valida', () => {
     assert.strictEqual(corpo.vazio, true);
     const texto = JSON.stringify(corpo);
     assert.ok(!/127\.0\.0\.1|ECONNREFUSED|stack|supabase/i.test(texto), 'nao pode vazar detalhe interno');
+  });
+});
+
+describe('planejamento — validacao e portao de acesso', () => {
+  test('sem sessao responde 401', async () => {
+    const r = await pedir('/api/planejamento?sprintId=123');
+    assert.strictEqual(r.status, 401);
+  });
+
+  test('sem sprintId responde 400', async () => {
+    const r = await pedir('/api/planejamento', { headers: { Cookie: cookieValido() } });
+    assert.strictEqual(r.status, 400);
+  });
+
+  test('sprintId nao numerico responde 400', async () => {
+    const r = await pedir('/api/planejamento?sprintId=abc', { headers: { Cookie: cookieValido() } });
+    assert.strictEqual(r.status, 400);
+  });
+
+  // Bug: banco fora do ar derrubar a rota em vez de responder algo tratado.
+  test('com o banco indisponivel, planejamento devolve nulo em vez de erro cru', async () => {
+    const r = await pedir('/api/planejamento?sprintId=123', { headers: { Cookie: cookieValido() } });
+    assert.strictEqual(r.status, 200);
+    const corpo = await r.json();
+    assert.strictEqual(corpo.planejamento, null);
+    assert.strictEqual(corpo.carryOverEntregue, 0);
+  });
+
+  test('a serie historica responde 200 mesmo com o banco fora do ar', async () => {
+    const r = await pedir('/api/planejamento/serie', { headers: { Cookie: cookieValido() } });
+    assert.strictEqual(r.status, 200);
+    assert.deepStrictEqual((await r.json()).serie, []);
   });
 });
 

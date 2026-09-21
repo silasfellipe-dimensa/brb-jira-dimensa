@@ -137,6 +137,235 @@ async function lerHistorico(limiteDias = 60) {
   }
 }
 
+async function gravarEntregas(entregas) {
+  if (!Array.isArray(entregas) || !entregas.length) return true;
+  try {
+    const unicas = new Map();
+    for (const entrega of entregas) {
+      const id = `${entrega.chave}:${entrega.sprintConclusaoId || entrega.sprintConclusao || 'sem-sprint'}`;
+      unicas.set(id, { ...entrega, id });
+    }
+    const linhas = Array.from(unicas.values()).map((entrega) => ({
+      id: entrega.id,
+      chave: entrega.chave,
+      conclusao_em: entrega.resolvidoEm || null,
+      sprint_conclusao: entrega.sprintConclusao || null,
+      sprint_conclusao_id: entrega.sprintConclusaoId || null,
+      sprint_origem: entrega.sprintOrigem || null,
+      sprint_origem_id: entrega.sprintOrigemId || null,
+      dados: entrega,
+      atualizado_em: new Date().toISOString()
+    }));
+    const { error } = await db().from('entregas').upsert(linhas, { onConflict: 'id' });
+    if (error) throw new Error(error.message);
+    return true;
+  } catch (erro) {
+    console.error('[supabase] falha ao gravar entregas (board segue normal):', erro.message);
+    return false;
+  }
+}
+
+async function lerEntregas({ sprint, mes, inicio, fim } = {}) {
+  try {
+    let consulta = db().from('entregas').select('dados,conclusao_em,sprint_conclusao,sprint_origem')
+      .order('conclusao_em', { ascending: false }).limit(10000);
+    if (sprint) consulta = consulta.eq('sprint_conclusao', sprint);
+    if (inicio) consulta = consulta.gte('conclusao_em', inicio);
+    if (fim) consulta = consulta.lt('conclusao_em', fim);
+    const { data, error } = await consulta;
+    if (error) throw new Error(error.message);
+    let entregas = (data || []).map((linha) => linha.dados);
+    if (mes) {
+      entregas = entregas.filter((e) => e.resolvidoEm && e.resolvidoEm.slice(0, 7) === mes);
+    }
+    return entregas;
+  } catch (erro) {
+    console.error('[supabase] falha ao ler entregas:', erro.message);
+    return [];
+  }
+}
+
+async function listarSprintsEntregas() {
+  try {
+    const { data, error } = await db().from('entregas')
+      .select('sprint_conclusao,sprint_conclusao_id,conclusao_em')
+      .not('sprint_conclusao', 'is', null)
+      .order('conclusao_em', { ascending: false }).limit(10000);
+    if (error) throw new Error(error.message);
+    const unicas = new Map();
+    for (const linha of data || []) {
+      if (!unicas.has(linha.sprint_conclusao)) {
+        unicas.set(linha.sprint_conclusao, {
+          nome: linha.sprint_conclusao,
+          id: linha.sprint_conclusao_id,
+          ultimaEntrega: linha.conclusao_em
+        });
+      }
+    }
+    return Array.from(unicas.values());
+  } catch (erro) {
+    console.error('[supabase] falha ao listar sprints de entregas:', erro.message);
+    return [];
+  }
+}
+
+async function listarMesesEntregas() {
+  try {
+    const { data, error } = await db().from('entregas')
+      .select('conclusao_em').not('conclusao_em', 'is', null)
+      .order('conclusao_em', { ascending: false }).limit(10000);
+    if (error) throw new Error(error.message);
+    return Array.from(new Set((data || []).map((linha) => linha.conclusao_em.slice(0, 7))));
+  } catch (erro) {
+    console.error('[supabase] falha ao listar meses de entregas:', erro.message);
+    return [];
+  }
+}
+
+async function limparEntregas() {
+  try {
+    // Delete "tudo" via um filtro sempre verdadeiro - a tabela nao tem uma
+    // rota de "truncate" direta pelo client. Necessario ao trocar o modelo
+    // de granularidade (de "por task" para "por epico/task avulsa"), senao
+    // as linhas antigas ficam orfas (chave antiga nunca mais bate) e inflam
+    // a contagem do histórico.
+    const { error } = await db().from('entregas').delete().not('id', 'is', null);
+    if (error) throw new Error(error.message);
+    return true;
+  } catch (erro) {
+    console.error('[supabase] falha ao limpar entregas:', erro.message);
+    return false;
+  }
+}
+
+// Planejamento: uma linha por grupo (epico/task avulsa) e sprint de ORIGEM -
+// entregue ou nao. Diferente de entregas, guarda tambem quem ainda esta em
+// aberto, para o card "Planejado x Entregue" responder o que ficou pra tras.
+async function gravarPlanejamento(planejamento) {
+  if (!Array.isArray(planejamento) || !planejamento.length) return true;
+  try {
+    const unicas = new Map();
+    for (const item of planejamento) {
+      const id = `${item.chave}:${item.sprintOrigemId || item.sprintOrigem || 'sem-sprint'}`;
+      unicas.set(id, { ...item, id });
+    }
+    const linhas = Array.from(unicas.values()).map((item) => ({
+      id: item.id,
+      chave: item.chave,
+      tipo: item.tipo,
+      sprint_origem: item.sprintOrigem || null,
+      sprint_origem_id: item.sprintOrigemId || null,
+      entregue: !!item.entregue,
+      sprint_conclusao: item.sprintConclusao || null,
+      sprint_conclusao_id: item.sprintConclusaoId || null,
+      conclusao_em: item.resolvidoEm || null,
+      total: item.total || 0,
+      concluidas: item.concluidas || 0,
+      dados: item,
+      atualizado_em: new Date().toISOString()
+    }));
+    const { error } = await db().from('planejamento_sprints').upsert(linhas, { onConflict: 'id' });
+    if (error) throw new Error(error.message);
+    return true;
+  } catch (erro) {
+    console.error('[supabase] falha ao gravar planejamento (board segue normal):', erro.message);
+    return false;
+  }
+}
+
+async function limparPlanejamento() {
+  try {
+    const { error } = await db().from('planejamento_sprints').delete().not('id', 'is', null);
+    if (error) throw new Error(error.message);
+    return true;
+  } catch (erro) {
+    console.error('[supabase] falha ao limpar planejamento:', erro.message);
+    return false;
+  }
+}
+
+/** Numeros de "Planejado x Entregue" para UMA sprint (a de origem). */
+async function lerPlanejamentoSprint(sprintOrigemId) {
+  try {
+    const { data, error } = await db().from('planejamento_sprints')
+      .select('sprint_origem,sprint_origem_id,entregue,sprint_conclusao_id')
+      .eq('sprint_origem_id', sprintOrigemId).limit(10000);
+    if (error) throw new Error(error.message);
+    return resumirPlanejamento(data || [], sprintOrigemId);
+  } catch (erro) {
+    console.error('[supabase] falha ao ler planejamento da sprint:', erro.message);
+    return null;
+  }
+}
+
+/** Quantos itens de OUTRAS sprints (carry-over) foram entregues DURANTE a
+ * sprint informada - o contraponto do "planejado": nao so "o que era pra
+ * sair, saiu", mas tambem "quanto do que saiu veio de atraso anterior". */
+async function lerCarryOverEntregue(sprintConclusaoId) {
+  try {
+    const { data, error } = await db().from('planejamento_sprints')
+      .select('sprint_origem_id', { count: 'exact', head: false })
+      .eq('sprint_conclusao_id', sprintConclusaoId).eq('entregue', true)
+      .neq('sprint_origem_id', sprintConclusaoId).limit(10000);
+    if (error) throw new Error(error.message);
+    return (data || []).length;
+  } catch (erro) {
+    console.error('[supabase] falha ao ler carry-over de entregas:', erro.message);
+    return 0;
+  }
+}
+
+/** Serie historica: um resumo por sprint de origem, mais antiga primeiro -
+ * para o grafico comparar varias sprints. */
+async function listarPlanejamentoPorSprint() {
+  try {
+    const { data, error } = await db().from('planejamento_sprints')
+      .select('sprint_origem,sprint_origem_id,entregue,sprint_conclusao_id')
+      .not('sprint_origem_id', 'is', null).limit(10000);
+    if (error) throw new Error(error.message);
+    const porSprint = new Map();
+    for (const linha of data || []) {
+      if (!porSprint.has(linha.sprint_origem_id)) porSprint.set(linha.sprint_origem_id, []);
+      porSprint.get(linha.sprint_origem_id).push(linha);
+    }
+    const resultado = [];
+    for (const [sprintOrigemId, linhas] of porSprint) {
+      resultado.push(resumirPlanejamento(linhas, sprintOrigemId));
+    }
+    return resultado;
+  } catch (erro) {
+    console.error('[supabase] falha ao listar planejamento por sprint:', erro.message);
+    return [];
+  }
+}
+
+/** Reduz as linhas cruas de uma sprint de origem aos 4 numeros do card:
+ * planejado, entregue no prazo (mesma sprint), entregue atrasado (sprint
+ * de conclusao diferente da de origem) e ainda nao entregue. Pura, de
+ * proposito - testavel sem tocar no banco. */
+function resumirPlanejamento(linhas, sprintOrigemId) {
+  const nome = linhas.length ? linhas[0].sprint_origem : null;
+  let entregueNoPrazo = 0;
+  let entregueAtrasado = 0;
+  let naoEntregue = 0;
+  for (const linha of linhas) {
+    if (!linha.entregue) { naoEntregue++; continue; }
+    if (linha.sprint_conclusao_id === sprintOrigemId) entregueNoPrazo++;
+    else entregueAtrasado++;
+  }
+  return {
+    sprintOrigemId,
+    sprintOrigem: nome,
+    planejado: linhas.length,
+    entregueNoPrazo,
+    entregueAtrasado,
+    naoEntregue
+  };
+}
+
 module.exports = {
-  cadastrar, entrar, lerSnapshot, gravarSnapshot, gravarHistorico, lerHistorico
+  cadastrar, entrar, lerSnapshot, gravarSnapshot, gravarHistorico, lerHistorico,
+  gravarEntregas, lerEntregas, listarSprintsEntregas, listarMesesEntregas, limparEntregas,
+  gravarPlanejamento, limparPlanejamento, lerPlanejamentoSprint, lerCarryOverEntregue,
+  listarPlanejamentoPorSprint, resumirPlanejamento
 };

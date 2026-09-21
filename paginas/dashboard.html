@@ -132,6 +132,16 @@
   .colunas-vazao .rot { font-size: 0.66rem; color: var(--ink-faint); white-space: nowrap; }
   .colunas-vazao .qtd { font-size: 0.78rem; font-weight: 700; font-variant-numeric: tabular-nums; }
 
+  .planejamento-grade { display: flex; flex-wrap: wrap; gap: 14px; margin: 10px 0 16px; }
+  .planejamento-num { flex: 1 1 140px; text-align: center; padding: 10px; border-radius: 8px; background: var(--line-soft); }
+  .planejamento-num strong { display: block; font-size: 1.6rem; font-variant-numeric: tabular-nums; }
+  .planejamento-num span { font-size: 0.72rem; color: var(--ink-dim); }
+  .colunas-planejamento { display: flex; align-items: flex-end; gap: 10px; height: 130px; padding-top: 8px; }
+  .coluna-planejamento { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 6px; height: 100%; justify-content: flex-end; }
+  .barra-planejamento { width: 100%; max-width: 40px; background: var(--line); border-radius: 4px 4px 0 0; min-height: 3px; display: flex; flex-direction: column-reverse; overflow: hidden; }
+  .barra-planejamento-entregue { width: 100%; background: var(--c-concluido); }
+  .coluna-planejamento-legenda { font-size: 0.66rem; color: var(--ink-faint); white-space: nowrap; }
+
   .aging-item { display: flex; align-items: center; gap: 10px; padding: 6px 0; border-bottom: 1px solid var(--line-soft); font-size: 0.78rem; }
   .aging-item:last-child { border-bottom: 0; }
   .aging-item .dias { width: 52px; flex-shrink: 0; text-align: right; font-weight: 700; font-variant-numeric: tabular-nums; }
@@ -142,6 +152,74 @@
   .aging-item .onde { flex-shrink: 0; font-size: 0.62rem; text-transform: uppercase; letter-spacing: 0.05em; font-weight: 600; }
   .aging-item.velho .dias { color: var(--warn); }
   .aging-item .entrega-data { color: var(--c-teste); font-weight: 600; }
+  .filtros-entregas { display: grid; grid-template-columns: 1.4fr 1fr 1fr 1fr auto auto; gap: 8px; margin: 12px 0 16px; }
+  .filtros-entregas label { display: flex; flex-direction: column; gap: 4px; color: var(--ink-faint); font-size: 0.68rem; }
+  .filtros-entregas select, .filtros-entregas input {
+    min-width: 0; border: 1px solid var(--line); border-radius: 6px; padding: 7px 8px;
+    background: var(--bg); color: var(--ink); font: inherit; font-size: 0.76rem;
+  }
+  .filtros-entregas button { align-self: end; border: 0; border-radius: 6px; padding: 8px 12px;
+    background: var(--accent); color: #fff; font: inherit; font-size: 0.76rem; cursor: pointer; }
+  .filtros-entregas button.secundario { background: transparent; border: 1px solid var(--line); color: var(--ink-dim); }
+  .entrega-meta { color: var(--ink-faint); font-size: 0.7rem; }
+  .entrega-origem { color: var(--ink-faint); font-size: 0.7rem; }
+  @media (max-width: 900px) { .filtros-entregas { grid-template-columns: 1fr 1fr; } }
+
+  /* Mesmo padrão visual do card do board (chave, título, progresso, avatar) -
+   * quem já conhece o board reconhece o item de entrega de cara. */
+  .entrega-card {
+    padding: 10px 12px 11px; border-radius: 8px; background: var(--bg);
+    border: 1px solid var(--line-soft); margin-bottom: 8px;
+  }
+  .entrega-chave {
+    font-family: ui-monospace, Consolas, monospace; font-size: 0.66rem; font-weight: 600;
+    color: var(--ink-faint); letter-spacing: 0.02em; margin-bottom: 4px;
+  }
+  .entrega-topo { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; }
+  .entrega-titulo { font-size: 0.85rem; line-height: 1.4; }
+  .entrega-progresso {
+    flex-shrink: 0; font-family: ui-monospace, Consolas, monospace; font-size: 0.66rem; font-weight: 600;
+    color: var(--accent); background: var(--line-soft); padding: 1px 7px; border-radius: 100px;
+    font-variant-numeric: tabular-nums;
+  }
+  .entrega-rodape { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 9px; }
+  .entrega-pessoa { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
+  .entrega-pessoa .assignee-name { font-size: 0.72rem; color: var(--ink-dim); }
+  .entrega-avatar {
+    position: relative; width: 22px; height: 22px; border-radius: 50%; flex-shrink: 0; overflow: hidden;
+  }
+  .entrega-avatar img { width: 100%; height: 100%; object-fit: cover; display: block; }
+  .entrega-avatar-fallback {
+    position: absolute; inset: 0; align-items: center; justify-content: center;
+    font-size: 0.62rem; font-weight: 700; color: #fff;
+  }
+  .entrega-tipo {
+    font-family: system-ui, sans-serif; font-size: 0.62rem; font-weight: 600; text-transform: uppercase;
+    color: var(--ink-faint); letter-spacing: 0.03em;
+  }
+  .entrega-tarefas { margin: 6px 0 0; padding-left: 16px; font-size: 0.72rem; color: var(--ink-dim); }
+  .entrega-tarefas li { margin-bottom: 2px; }
+  .entrega-tarefas li.entrega-subtarefa { color: var(--ink-faint); list-style-type: circle; }
+  .entrega-card-alerta { border-color: var(--c-atraso, #c0392b); background: var(--c-atraso-soft, #fdecea); }
+  .entrega-alerta-linha { margin-top: 6px; }
+  .entrega-alerta {
+    display: inline-block; font-size: 0.68rem; font-weight: 700; color: var(--c-atraso, #c0392b);
+    background: var(--c-atraso-soft, #fdecea); border-radius: 100px; padding: 2px 9px;
+  }
+
+  .historico-cab {
+    display: flex; align-items: center; justify-content: space-between; gap: 12px;
+    cursor: pointer; user-select: none;
+  }
+  .historico-cab h2 { margin: 0; }
+  .historico-contagem {
+    font-size: 0.72rem; font-weight: 700; color: var(--ink-dim);
+    background: var(--line-soft); border-radius: 100px; padding: 3px 10px; white-space: nowrap;
+  }
+  .historico-seta { flex-shrink: 0; width: 16px; height: 16px; stroke: var(--ink-faint); fill: none;
+    stroke-width: 2; transition: transform 0.15s ease; }
+  #historicoEntregas.recolhido .historico-seta { transform: rotate(-90deg); }
+  #historicoEntregas.recolhido .historico-corpo { display: none; }
 
   .legenda { display: flex; flex-wrap: wrap; gap: 14px; margin-top: 12px; font-size: 0.72rem; color: var(--ink-dim); }
   .legenda span { display: inline-flex; align-items: center; gap: 5px; }
@@ -197,12 +275,14 @@
   <div class="abas" role="tablist">
     <button class="aba" id="abaCliente" role="tab" aria-selected="true" aria-controls="painelCliente">Entrega</button>
     <button class="aba" id="abaTime" role="tab" aria-selected="false" aria-controls="painelTime">Fluxo do time</button>
+    <button class="aba" id="abaHistorico" role="tab" aria-selected="false" aria-controls="painelHistorico">Histórico de entregas</button>
   </div>
 </header>
 
 <main>
   <section class="painel" id="painelCliente" role="tabpanel"></section>
   <section class="painel" id="painelTime" role="tabpanel" hidden></section>
+  <section class="painel" id="painelHistorico" role="tabpanel" hidden></section>
 </main>
 
 <footer id="rodape"></footer>
@@ -212,6 +292,19 @@
     return String(s).replace(/[&<>"']/g, function (c) {
       return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
     });
+  }
+
+  // Mesmas funcoes do board (index.html): iniciais e cor do avatar-fallback
+  // precisam bater com o que o usuario ja ve la, senao a mesma pessoa muda
+  // de cor entre as duas telas.
+  function iniciais(nome) {
+    var p = nome.trim().split(/\s+/);
+    return ((p[0][0] || '') + (p.length > 1 ? p[p.length - 1][0] : '')).toUpperCase();
+  }
+  function matiz(nome) {
+    var h = 0;
+    for (var i = 0; i < nome.length; i++) h = (h * 31 + nome.charCodeAt(i)) % 360;
+    return h;
   }
 
   /* Chave fechada: a cor vem do nome da coluna, nunca de texto livre. */
@@ -232,6 +325,20 @@
     var m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso);
     var d = m ? new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3])) : new Date(iso);
     return d.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' });
+  }
+
+  var NOMES_MES = [
+    'Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho',
+    'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'
+  ];
+  // Recebe "AAAA-MM" (formato tecnico da API/filtro) e devolve "Mês AAAA",
+  // que e o que ajuda a distinguir "Janeiro 2025" de "Janeiro 2026" na combo.
+  function mesPorExtenso(aaaaMM) {
+    var m = /^(\d{4})-(\d{2})$/.exec(aaaaMM || '');
+    if (!m) return aaaaMM;
+    var indice = Number(m[2]) - 1;
+    var nome = NOMES_MES[indice] || m[2];
+    return nome + ' ' + m[1];
   }
 
   var dados = null, met = null, hist = [];
@@ -294,13 +401,41 @@
     return h + '</div>';
   }
 
+  /** Demandas concluídas no sprint atual (mesmo agrupamento do board: um
+   * épico ou uma task avulsa conta uma vez, mesmo com várias subtarefas).
+   * `dados.entregas` vem pronto do snapshot - é o mesmo array que faz o
+   * board e o histórico baterem no mesmo número; usar aqui evita que estes
+   * dois cards mostrem uma contagem por item (task+subtask) diferente do
+   * resto da tela. */
+  function entregasAgrupadas() {
+    return (dados && dados.entregas) || [];
+  }
+
+  // Agrupa por semana (segunda a domingo), mesmo critério de corte que o
+  // servidor usa para o cálculo de vazão/previsão - só que aqui contando
+  // demandas (agrupadas), não itens individuais.
+  function entregasPorSemana() {
+    var porSemana = {};
+    entregasAgrupadas().forEach(function (e) {
+      if (!e.resolvidoEm) return;
+      var d = new Date(e.resolvidoEm);
+      var seg = new Date(d);
+      seg.setDate(d.getDate() - ((d.getDay() + 6) % 7));
+      var chave = seg.toISOString().slice(0, 10);
+      porSemana[chave] = (porSemana[chave] || 0) + 1;
+    });
+    return Object.keys(porSemana).sort().map(function (semana) {
+      return { semana: semana, qtd: porSemana[semana] };
+    });
+  }
+
   function vazao() {
-    var v = (met.vazao || []).slice(-8);
+    var v = entregasPorSemana().slice(-8);
     if (!v.length) return '';
     var max = Math.max.apply(null, v.map(function (x) { return x.qtd; }));
     var h = '<div class="cartao"><h2>Entregas por semana</h2>' +
-            '<p class="ajuda">Itens concluídos a cada semana. É daqui que sai a previsão — sem story points, ' +
-            'o ritmo real é o único jeito honesto de estimar o que ainda cabe no sprint.</p>' +
+            '<p class="ajuda">Demandas concluídas a cada semana — mesmo critério do board: cada épico ou ' +
+            'task avulsa conta uma vez, mesmo com várias subtarefas.</p>' +
             '<div class="colunas-vazao">';
     v.forEach(function (x) {
       var alt = max ? Math.round(x.qtd / max * 100) : 0;
@@ -314,9 +449,17 @@
   /* Contraponto ao aging e ao "parado com terceiros": os dois so mostram
    * problema. Sem isto, quem olha o dashboard nunca ve o que de fato saiu. */
   function entregues() {
-    var itens = met.entregues || [];
+    var itens = entregasAgrupadas()
+      .slice()
+      .sort(function (a, b) {
+        if (!a.resolvidoEm && !b.resolvidoEm) return 0;
+        if (!a.resolvidoEm) return 1;
+        if (!b.resolvidoEm) return -1;
+        return new Date(b.resolvidoEm) - new Date(a.resolvidoEm);
+      });
     var h = '<div class="cartao"><h2>Entregue recentemente</h2>' +
-            '<p class="ajuda">Demandas que chegaram ao fim do board, da mais recente para a mais antiga.</p>';
+            '<p class="ajuda">Demandas que chegaram ao fim do board (mesmo critério do board: épico ou ' +
+            'task avulsa conta uma vez), da mais recente para a mais antiga.</p>';
     if (!itens.length) return h + '<div class="vazio">Nada concluído ainda neste sprint.</div></div>';
     itens.slice(0, 15).forEach(function (a) {
       h += '<div class="aging-item">' +
@@ -329,6 +472,286 @@
     });
     if (itens.length > 15) h += '<div class="vazio">… e mais ' + (itens.length - 15) + ' entregue(s).</div>';
     return h + '</div>';
+  }
+
+  /** Card "Planejado x Entregue": visao de gestor por sprint - quanto foi
+   * planejado, quanto saiu no prazo, quanto atrasou e quanto ainda esta
+   * aberto hoje, mais quanto do que saiu na sprint veio de atraso anterior
+   * (carry-over). Os 5 numeros vem de /api/planejamento; o grafico historico
+   * (uma sprint por barra) vem de /api/planejamento/serie. */
+  function planejamentoCard() {
+    return '<div class="cartao" id="planejamentoCard">' +
+      '<h2>Planejado × Entregue</h2>' +
+      '<p class="ajuda">Visão por sprint: quanto foi planejado para a sprint escolhida no filtro abaixo, ' +
+      'quanto já saiu (no prazo ou atrasado) e quanto ainda está em aberto hoje.</p>' +
+      '<div id="planejamentoNumeros"><div class="vazio">Carregando…</div></div>' +
+      '<div id="planejamentoSerie"></div>' +
+    '</div>';
+  }
+
+  function renderPlanejamentoNumeros(sprintNome, resposta) {
+    var alvo = document.getElementById('planejamentoNumeros');
+    if (!alvo) return;
+    if (!resposta || !resposta.planejamento) {
+      alvo.innerHTML = '<div class="vazio">Escolha uma sprint específica no filtro do histórico ' +
+        'para ver o comparativo (não se aplica a filtro por mês ou período).</div>';
+      return;
+    }
+    var p = resposta.planejamento;
+    alvo.innerHTML =
+      '<div class="planejamento-grade">' +
+        '<div class="planejamento-num"><strong>' + p.planejado + '</strong><span>Planejado para ' + esc(sprintNome || p.sprintOrigem || '') + '</span></div>' +
+        '<div class="planejamento-num"><strong>' + p.entregueNoPrazo + '</strong><span>Entregue no prazo</span></div>' +
+        '<div class="planejamento-num"><strong>' + p.entregueAtrasado + '</strong><span>Entregue atrasado</span></div>' +
+        '<div class="planejamento-num"><strong>' + p.naoEntregue + '</strong><span>Ainda não entregue</span></div>' +
+        '<div class="planejamento-num"><strong>' + (resposta.carryOverEntregue || 0) + '</strong><span>Carry-over entregue nessa sprint</span></div>' +
+      '</div>';
+  }
+
+  function carregarPlanejamento(sprintId, sprintNome) {
+    var alvo = document.getElementById('planejamentoNumeros');
+    if (!sprintId) { renderPlanejamentoNumeros(sprintNome, null); return; }
+    if (alvo) alvo.innerHTML = '<div class="vazio">Carregando…</div>';
+    fetch('/api/planejamento?sprintId=' + encodeURIComponent(sprintId), { cache: 'no-store' })
+      .then(function (r) { return r.json(); })
+      .then(function (res) { renderPlanejamentoNumeros(sprintNome, res); })
+      .catch(function () { renderPlanejamentoNumeros(sprintNome, null); });
+  }
+
+  function renderPlanejamentoSerie(serie) {
+    var alvo = document.getElementById('planejamentoSerie');
+    if (!alvo) return;
+    if (!serie || !serie.length) { alvo.innerHTML = ''; return; }
+    var maxPlanejado = Math.max.apply(null, serie.map(function (s) { return s.planejado || 0; }));
+    var h = '<div class="colunas-planejamento">';
+    serie.forEach(function (s) {
+      var alt = maxPlanejado ? Math.round((s.planejado / maxPlanejado) * 100) : 0;
+      var altEntregue = maxPlanejado ? Math.round(((s.entregueNoPrazo + s.entregueAtrasado) / maxPlanejado) * 100) : 0;
+      h += '<div class="coluna-planejamento" title="' + esc(s.sprintOrigem || '') + ': ' + s.planejado + ' planejado(s), ' +
+        (s.entregueNoPrazo + s.entregueAtrasado) + ' entregue(s), ' + s.naoEntregue + ' em aberto">' +
+        '<div class="barra-planejamento" style="height:' + alt + '%">' +
+          '<div class="barra-planejamento-entregue" style="height:' + (alt ? Math.round(altEntregue / alt * 100) : 0) + '%"></div>' +
+        '</div>' +
+        '<span class="coluna-planejamento-legenda">' + esc(s.sprintOrigem || '?') + '</span>' +
+      '</div>';
+    });
+    return alvo.innerHTML = h + '</div>';
+  }
+
+  function carregarPlanejamentoSerie() {
+    fetch('/api/planejamento/serie', { cache: 'no-store' })
+      .then(function (r) { return r.json(); })
+      .then(function (res) { renderPlanejamentoSerie(res.serie || []); })
+      .catch(function () { renderPlanejamentoSerie([]); });
+  }
+
+  function historicoEntregas() {
+    return '<div class="cartao recolhido" id="historicoEntregas">' +
+      '<div class="historico-cab" id="historicoCab">' +
+        '<h2>Histórico de entregas</h2>' +
+        '<span style="display:flex;align-items:center;gap:10px;">' +
+          '<span class="historico-contagem" id="historicoContagem">—</span>' +
+          '<svg class="historico-seta" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg>' +
+        '</span>' +
+      '</div>' +
+      '<div class="historico-corpo">' +
+        '<p class="ajuda">As tasks permanecem disponíveis mesmo depois que a sprint deixa de ser atual. ' +
+        'O board agrupa tasks em cards por épico; aqui cada task é listada individualmente.</p>' +
+        '<div class="filtros-entregas">' +
+        '<label>Sprint<select id="filtroSprint"><option value="">Sprint atual</option></select></label>' +
+        '<label>Mês<select id="filtroMes"><option value="">Todos os meses</option></select></label>' +
+        '<label>De<input type="date" id="filtroInicio"></label>' +
+        '<label>Até<input type="date" id="filtroFim"></label>' +
+        '<button type="button" id="aplicarEntregas">Pesquisar</button>' +
+        '<button type="button" class="secundario" id="limparEntregas">Limpar filtros</button>' +
+        '</div>' +
+        '<div id="listaHistoricoEntregas"><div class="vazio">Carregando histórico…</div></div>' +
+      '</div>' +
+    '</div>';
+  }
+
+  function renderHistoricoEntregas(itens) {
+    var alvo = document.getElementById('listaHistoricoEntregas');
+    var contagem = document.getElementById('historicoContagem');
+    if (contagem) {
+      contagem.textContent = itens.length + (itens.length === 1 ? ' entrega' : ' entregas');
+    }
+    if (!alvo) return;
+    if (!itens.length) {
+      alvo.innerHTML = '<div class="vazio">Nenhuma task encontrada para os filtros selecionados.</div>';
+      return;
+    }
+    alvo.innerHTML = itens.map(function (a) {
+      var progresso = a.total > 0
+        ? '<span class="entrega-progresso">' + a.concluidas + '/' + a.total + '</span>'
+        : '';
+
+      var alerta = a.pendenteFechamento
+        ? '<span class="entrega-alerta" title="Todas as tasks estão concluídas, mas o item ainda não foi fechado no Jira.">' +
+            '⚠ pendente de fechamento</span>'
+        : '';
+
+      var tarefas = (a.tarefas && a.tarefas.length > 1)
+        ? '<ul class="entrega-tarefas">' + a.tarefas.map(function (t) {
+            return '<li' + (t.subtarefa ? ' class="entrega-subtarefa"' : '') + '>' +
+              esc(t.chave || '') + ' — ' + esc(t.titulo || '') + '</li>';
+          }).join('') + '</ul>'
+        : '';
+
+      var pessoa = '';
+      if (a.pessoa) {
+        var corAvatar = 'hsl(' + matiz(a.pessoa) + ', 42%, 40%)';
+        pessoa = '<div class="entrega-pessoa">' +
+          '<span class="assignee-name">' + esc(a.pessoa) + '</span>' +
+          '<span class="entrega-avatar">' +
+            (a.avatarUrl
+              ? '<img src="' + esc(a.avatarUrl) + '" alt="" loading="lazy" ' +
+                'onerror="this.style.display=\'none\';this.nextElementSibling.style.display=\'flex\'">'
+              : '') +
+            '<span class="entrega-avatar-fallback" style="background:' + corAvatar +
+              (a.avatarUrl ? ';display:none' : ';display:flex') + '">' + esc(iniciais(a.pessoa)) + '</span>' +
+          '</span>' +
+        '</div>';
+      }
+
+      var origem = a.sprintOrigem ? esc(a.sprintOrigem) : 'não informada';
+      var dataConclusao = a.resolvidoEm ? dataCurta(a.resolvidoEm) : '—';
+      var tipoRotulo = a.tipo === 'epico' ? 'Épico' : 'Task avulsa';
+      return '<div class="entrega-card' + (a.pendenteFechamento ? ' entrega-card-alerta' : '') + '">' +
+        '<div class="entrega-chave">' + esc(a.chave || '') + ' <span class="entrega-tipo">' + tipoRotulo + '</span></div>' +
+        '<div class="entrega-topo">' +
+          '<div class="entrega-titulo" title="' + esc(a.titulo || '') + '">' + esc(a.titulo || '') + '</div>' +
+          progresso +
+        '</div>' +
+        tarefas +
+        (alerta ? '<div class="entrega-alerta-linha">' + alerta + '</div>' : '') +
+        '<div class="entrega-rodape">' +
+          '<span class="entrega-meta">' + dataConclusao + ' · Sprint: ' + esc(a.sprintConclusao || 'não informada') +
+            ' · <span class="entrega-origem">Origem: ' + origem + '</span></span>' +
+          pessoa +
+        '</div>' +
+      '</div>';
+    }).join('');
+  }
+
+  function carregarHistoricoEntregas(opcoes) {
+    var alvo = document.getElementById('listaHistoricoEntregas');
+    if (alvo) alvo.innerHTML = '<div class="vazio">Carregando histórico…</div>';
+    var query = new URLSearchParams();
+    if (opcoes && opcoes.sprint) query.set('sprint', opcoes.sprint);
+    if (opcoes && opcoes.mes) query.set('mes', opcoes.mes);
+    if (opcoes && opcoes.inicio) query.set('inicio', opcoes.inicio);
+    if (opcoes && opcoes.fim) query.set('fim', opcoes.fim);
+    fetch('/api/entregas?' + query.toString(), { cache: 'no-store' })
+      .then(function (r) { return r.json(); })
+      .then(function (res) { renderHistoricoEntregas(res.entregas || []); })
+      .catch(function () { renderHistoricoEntregas([]); });
+  }
+
+  // Combo em branco = "Sprint atual", mas SO quando nenhum outro filtro foi
+  // escolhido. Se o usuario ja pediu um mes ou um periodo, forcar a sprint
+  // atual junto seria uma interseccao que ele nao pediu (e quase sempre da
+  // vazio). Pura de proposito: e testada isolada em tests/dashboard.test.js.
+  //
+  // Bug corrigido aqui: o botao "Pesquisar" lia sprintSelect.value direto -
+  // com o combo no padrao ("Sprint atual", value=""), isso mandava a API sem
+  // filtro de sprint nenhum e trazia TODAS as entregas (61), nao so as da
+  // sprint atual (17).
+  function resolverSprintEfetivo(sprintSelecionado, sprintAtual, mes, inicio, fim) {
+    var semNenhumFiltro = !sprintSelecionado && !mes && !inicio && !fim;
+    return semNenhumFiltro ? sprintAtual : sprintSelecionado;
+  }
+
+  // Mesma regra do resolverSprintEfetivo, mas devolvendo o ID da sprint (o
+  // card "Planejado x Entregue" e o backfill de planejamento sao indexados
+  // por sprintId, nao pelo nome). Sem filtro nenhum, usa a sprint atual do
+  // board (dados.sprintId); com mes/periodo escolhido sem sprint especifica,
+  // nao ha uma sprint unica para comparar - devolve null e o card avisa.
+  function resolverSprintIdEfetivo(sprintSelecionado, sprintIdOpcaoSelecionada, sprintIdAtual, mes, inicio, fim) {
+    var semNenhumFiltro = !sprintSelecionado && !mes && !inicio && !fim;
+    if (semNenhumFiltro) return sprintIdAtual || null;
+    if (!sprintSelecionado) return null;
+    return sprintIdOpcaoSelecionada || null;
+  }
+
+  function prepararFiltrosEntregas() {
+    var sprintAtual = window.__sprint || '';
+    var sprintSelect = document.getElementById('filtroSprint');
+    var mesSelect = document.getElementById('filtroMes');
+    var inicioInput = document.getElementById('filtroInicio');
+    var fimInput = document.getElementById('filtroFim');
+    if (!sprintSelect || !mesSelect) return;
+
+    var cartao = document.getElementById('historicoEntregas');
+    var cabecalho = document.getElementById('historicoCab');
+    if (cabecalho) {
+      cabecalho.addEventListener('click', function () {
+        cartao.classList.toggle('recolhido');
+      });
+    }
+
+    fetch('/api/entregas/sprints', { cache: 'no-store' })
+      .then(function (r) { return r.json(); })
+      .then(function (res) {
+        // Sprint sem ano no nome (ex: "Setembro") vira ambiguo de um ano para
+        // o outro. O ano usado e o da ultima entrega registrada na sprint -
+        // e o dado que a API ja traz, sem precisar tocar no nome salvo.
+        (res.sprints || []).forEach(function (s) {
+          var ano = s.ultimaEntrega ? new Date(s.ultimaEntrega).getFullYear() : null;
+          var option = document.createElement('option');
+          option.value = s.nome;
+          if (s.id) option.dataset.id = s.id;
+          option.textContent = ano ? (s.nome + ' ' + ano) : s.nome;
+          sprintSelect.appendChild(option);
+        });
+        (res.meses || []).forEach(function (mes) {
+          var option = document.createElement('option');
+          option.value = mes; option.textContent = mesPorExtenso(mes);
+          mesSelect.appendChild(option);
+        });
+        carregarHistoricoEntregas({ sprint: sprintAtual });
+        atualizarPlanejamento();
+      })
+      .catch(function () { carregarHistoricoEntregas({ sprint: sprintAtual }); atualizarPlanejamento(); });
+
+    carregarPlanejamentoSerie();
+
+    function idOpcaoSelecionada() {
+      var opt = sprintSelect.options[sprintSelect.selectedIndex];
+      return opt && opt.dataset && opt.dataset.id ? Number(opt.dataset.id) : null;
+    }
+
+    function atualizarPlanejamento() {
+      var sprintEfetivo = resolverSprintEfetivo(
+        sprintSelect.value, sprintAtual, mesSelect.value, inicioInput.value, fimInput.value
+      );
+      var sprintIdEfetivo = resolverSprintIdEfetivo(
+        sprintSelect.value, idOpcaoSelecionada(), dados && dados.sprintId,
+        mesSelect.value, inicioInput.value, fimInput.value
+      );
+      carregarPlanejamento(sprintIdEfetivo, sprintEfetivo);
+    }
+
+    document.getElementById('aplicarEntregas').addEventListener('click', function () {
+      carregarHistoricoEntregas({
+        sprint: resolverSprintEfetivo(sprintSelect.value, sprintAtual, mesSelect.value, inicioInput.value, fimInput.value),
+        mes: mesSelect.value,
+        inicio: inicioInput.value,
+        fim: fimInput.value
+      });
+      atualizarPlanejamento();
+    });
+
+    // Limpar filtros: volta para a visao padrao (sprint atual), sem exigir
+    // que o usuario zere cada campo na mao.
+    document.getElementById('limparEntregas').addEventListener('click', function () {
+      sprintSelect.value = '';
+      mesSelect.value = '';
+      inicioInput.value = '';
+      fimInput.value = '';
+      carregarHistoricoEntregas({ sprint: sprintAtual });
+      atualizarPlanejamento();
+    });
   }
 
   function bolaComQuem() {
@@ -581,6 +1004,9 @@
     document.getElementById('painelTime').innerHTML =
       kpis() + aging() + '<div class="duas">' + wip() + carga() + '</div>' + cfd() + escopo();
 
+    document.getElementById('painelHistorico').innerHTML =
+      planejamentoCard() + historicoEntregas();
+
     var periodo = met.relogio
       ? ' · ' + dataCurta(met.relogio.inicio) + ' a ' + dataCurta(met.relogio.fim) : '';
     document.getElementById('subtitulo').textContent = 'Sprint ' + (window.__sprint || '') + periodo;
@@ -590,14 +1016,17 @@
   }
 
   function trocarAba(qual) {
-    var c = qual === 'cliente';
-    document.getElementById('abaCliente').setAttribute('aria-selected', c ? 'true' : 'false');
-    document.getElementById('abaTime').setAttribute('aria-selected', c ? 'false' : 'true');
-    document.getElementById('painelCliente').hidden = !c;
-    document.getElementById('painelTime').hidden = c;
+    var abas = { cliente: 'painelCliente', time: 'painelTime', historico: 'painelHistorico' };
+    Object.keys(abas).forEach(function (nome) {
+      var ativo = nome === qual;
+      document.getElementById('aba' + nome.charAt(0).toUpperCase() + nome.slice(1))
+        .setAttribute('aria-selected', ativo ? 'true' : 'false');
+      document.getElementById(abas[nome]).hidden = !ativo;
+    });
   }
   document.getElementById('abaCliente').addEventListener('click', function () { trocarAba('cliente'); });
   document.getElementById('abaTime').addEventListener('click', function () { trocarAba('time'); });
+  document.getElementById('abaHistorico').addEventListener('click', function () { trocarAba('historico'); });
 
   fetch('/api/eu').then(function (r) { return r.ok ? r.json() : null; }).then(function (eu) {
     if (eu && eu.email) document.getElementById('quem').textContent = eu.email;
@@ -620,6 +1049,7 @@
       return;
     }
     render();
+    prepararFiltrosEntregas();
   }).catch(function (erro) {
     document.getElementById('painelCliente').innerHTML =
       '<div class="cartao"><div class="vazio">Não foi possível carregar os dados.</div></div>';

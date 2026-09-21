@@ -208,8 +208,8 @@
           if (modo === 'entrar') {
             window.location.href = '/';
           } else {
-            mostrarAviso('Cadastro criado! Verifique seu e-mail e clique no link de confirmação antes de entrar.', 'ok');
             setModo('entrar');
+            mostrarAviso('Cadastro criado! Enviamos um e-mail para você. Verifique sua caixa de entrada e clique no link de confirmação antes de entrar.', 'ok');
           }
         })
         .catch(function () { mostrarAviso('Falha ao conversar com o servidor.', 'erro'); })
