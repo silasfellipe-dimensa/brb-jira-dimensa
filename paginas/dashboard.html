@@ -277,7 +277,8 @@
 
     if (!cards.length) return '';
     var h = '<div class="cartao"><h2>Progresso por demanda</h2>' +
-            '<p class="ajuda">Quanto de cada épico já foi concluído. A cor é a coluna em que a demanda está hoje.</p>';
+            '<p class="ajuda">Quanto de cada épico já foi concluído. Cada linha é um épico; a fração conta ' +
+            'todas as tasks e subtarefas dele. A cor é a coluna em que a demanda está hoje.</p>';
     cards.forEach(function (x) {
       var pct = Math.round(x.k.concluidas / x.k.total * 100);
       // Mesma chave que identifica o card no board, para cruzar as duas telas
@@ -299,7 +300,8 @@
     if (!v.length) return '';
     var max = Math.max.apply(null, v.map(function (x) { return x.qtd; }));
     var h = '<div class="cartao"><h2>Entregas por semana</h2>' +
-            '<p class="ajuda">Itens concluídos a cada semana. É daqui que sai a previsão — sem story points, ' +
+            '<p class="ajuda">Itens concluídos a cada semana, incluindo subtarefas — é daqui que sai a previsão ' +
+            'de ritmo, e para isso conta-se tudo que fecha, não só a demanda. Sem story points, ' +
             'o ritmo real é o único jeito honesto de estimar o que ainda cabe no sprint.</p>' +
             '<div class="colunas-vazao">';
     v.forEach(function (x) {
@@ -316,7 +318,8 @@
   function entregues() {
     var itens = met.entregues || [];
     var h = '<div class="cartao"><h2>Entregue recentemente</h2>' +
-            '<p class="ajuda">Demandas que chegaram ao fim do board, da mais recente para a mais antiga.</p>';
+            '<p class="ajuda">Demandas que chegaram ao fim do board, da mais recente para a mais antiga. ' +
+            'Só demanda — subtarefa concluída (ex.: "Code Review") fica de fora, para não virar ruído.</p>';
     if (!itens.length) return h + '<div class="vazio">Nada concluído ainda neste sprint.</div></div>';
     itens.slice(0, 15).forEach(function (a) {
       h += '<div class="aging-item">' +
