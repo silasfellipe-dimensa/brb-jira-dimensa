@@ -4,10 +4,10 @@ const express = require('express');
 const cookieParser = require('cookie-parser');
 const crypto = require('crypto');
 const path = require('path');
-const { buscarBoard } = require('./jira');
+const { buscarBoard, buscarEntregasHistoricas } = require('./jira');
 const {
   cadastrar, entrar, lerSnapshot, gravarSnapshot, gravarHistorico, lerHistorico,
-  gravarEntregas, lerEntregas, listarSprintsEntregas, listarMesesEntregas,
+  gravarEntregas, lerEntregas, listarSprintsEntregas, listarMesesEntregas, gravarPlanejamento,
   lerPlanejamentoSprint, lerCarryOverEntregue, listarPlanejamentoPorSprint, listarItensPlanejamento,
   listarItensCarryOver
 } = require('./supabase');
@@ -69,6 +69,26 @@ app.use((req, res, next) => {
 
 async function executarAtualizacao(usuario) {
   const dados = await buscarBoard();
+
+  // dados.entregas (de buscarBoard) só enxerga a sprint ativa - um épico com
+  // uma tarefa na sprint ativa e outra numa sprint anterior aparecia "100%
+  // concluído" contando só a metade visível ali (bug real, sessão
+  // 2026-09-21: JDCBBRB-298 marcado entregue com uma tarefa-irmã ainda
+  // aberta em outra sprint). buscarEntregasHistoricas vê sprint ativa +
+  // fechadas juntas e por isso é a fonte certa tanto pra entregas quanto
+  // pro planejamento (Planejado x Entregue) - sobrescreve dados.entregas
+  // ANTES de gravar o snapshot, porque é dali que a aba Entrega lê os
+  // cards "Entregas por semana" e "Entregue recentemente".
+  // Best-effort: se o Jira falhar aqui, o board segue com o que buscarBoard
+  // já tinha, só sem a correção desta rodada.
+  try {
+    const { entregas, planejamento } = await buscarEntregasHistoricas();
+    dados.entregas = entregas;
+    await gravarPlanejamento(planejamento);
+  } catch (erro) {
+    console.error('[entregas/planejamento] falha ao atualizar (board segue normal):', erro.message);
+  }
+
   await gravarSnapshot(dados);
   await gravarEntregas(dados.entregas);
 

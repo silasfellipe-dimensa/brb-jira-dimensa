@@ -810,18 +810,10 @@ async function buscarEntregasHistoricas() {
   }
   const statusEpicos = await buscarStatusEpicos(Array.from(chavesEpicos));
 
-  const entregas = [];
-  for (const [sprintId, issuesDoSprint] of issuesPorSprint) {
-    const sprint = unicas.get(String(sprintId));
-    entregas.push(...montarEntregas(
-      ordemColunas, statusParaColuna, issuesDoSprint, sprint, MOSTRAR_RESPONSAVEL, statusEpicos
-    ));
-  }
-
   // Planejamento precisa ver TODOS os filhos de um grupo juntos, mesmo que
   // tenham passado por sprints diferentes - por isso combina (com dedup por
   // chave, ja que a mesma issue pode aparecer em mais de uma sprint) em vez
-  // de repetir o processamento por sprint como as entregas fazem acima.
+  // de processar sprint por sprint.
   const issuesUnicas = new Map();
   for (const issuesDoSprint of issuesPorSprint.values()) {
     for (const issue of issuesDoSprint) {
@@ -831,6 +823,17 @@ async function buscarEntregasHistoricas() {
   const planejamento = montarPlanejamento(
     ordemColunas, statusParaColuna, Array.from(issuesUnicas.values()), MOSTRAR_RESPONSAVEL, statusEpicos
   );
+
+  // Entregas = subconjunto do planejamento, nao um calculo a parte. Antes
+  // rodava montarEntregas() sprint por sprint, cada chamada so enxergando as
+  // issues DAQUELA sprint - um epico com uma tarefa na sprint ativa e outra
+  // numa sprint anterior aparecia "100% concluido" contando so a metade que
+  // aquela chamada via. planejamento ja resolve isso (ve o grupo inteiro,
+  // combinado); usar o mesmo resultado aqui garante que as duas telas nunca
+  // mais divirjam sobre o que foi ou nao entregue (bug real, sessao
+  // 2026-09-21: JDCBBRB-298 aparecia entregue com uma tarefa-irma ainda
+  // aberta em outra sprint).
+  const entregas = planejamento.filter((p) => p.entregue);
 
   return { entregas, planejamento };
 }
