@@ -458,10 +458,88 @@ function porSemanaPlanejamento(linhas, sprintOrigemId) {
   return Array.from(porSemana.values()).sort((a, b) => a.semana.localeCompare(b.semana));
 }
 
+/** Grava um evento de acesso (login ou cadastro). Best-effort: se a tabela
+ * ainda não existe (script supabase-acessos.sql não rodou) ou o Supabase
+ * falhar, loga e segue - login não pode depender disto pra funcionar. */
+async function registrarAcesso(email, tipo) {
+  try {
+    const { error } = await db().from('acessos').insert({ email, tipo });
+    if (error) throw new Error(error.message);
+  } catch (erro) {
+    console.error('[supabase] falha ao registrar acesso (login segue normal):', erro.message);
+  }
+}
+
+/** Histórico de acessos, mais recente primeiro - o que a página /admin
+ * lista. */
+async function listarAcessos(limite) {
+  try {
+    const { data, error } = await db().from('acessos')
+      .select('email,tipo,criado_em')
+      .order('criado_em', { ascending: false })
+      .limit(limite || 200);
+    if (error) throw new Error(error.message);
+    return data || [];
+  } catch (erro) {
+    console.error('[supabase] falha ao listar acessos:', erro.message);
+    return [];
+  }
+}
+
+/** Quem está cadastrado, direto do Supabase Auth - não precisa de tabela
+ * própria, o Auth já guarda isso. `admin.listUsers` exige a service_role,
+ * por isso usa db() (nunca o authClient de chave pública). */
+async function listarUsuarios() {
+  try {
+    const { data, error } = await db().auth.admin.listUsers({ perPage: 1000 });
+    if (error) throw new Error(error.message);
+    return montarListaUsuarios(data.users || []);
+  } catch (erro) {
+    console.error('[supabase] falha ao listar usuários:', erro.message);
+    return [];
+  }
+}
+
+/** Confirma o e-mail de alguém sem depender do link (que pode nunca chegar -
+ * ver sessão 2026-09-24: rate limit do Supabase, filtro corporativo, etc).
+ * Só quem já é admin chega aqui (rota protegida por exigirAdminApi). */
+async function confirmarUsuarioManualmente(userId) {
+  try {
+    const { data, error } = await db().auth.admin.updateUserById(userId, { email_confirm: true });
+    if (error) throw new Error(error.message);
+    return { ok: true, email: data.user.email };
+  } catch (erro) {
+    console.error('[supabase] falha ao confirmar usuário manualmente:', erro.message);
+    return { ok: false, erro: erro.message };
+  }
+}
+
+/** Pura: mapeia os campos do Supabase Auth e ordena por último acesso, mais
+ * recente primeiro. Quem nunca entrou (só cadastrado, sem login) fica no
+ * fim - sem essa checagem explícita, data nula viraria "maior" numa
+ * comparação ingenua e pularia pro topo por acidente. */
+function montarListaUsuarios(users) {
+  return users
+    .map((u) => ({
+      id: u.id,
+      email: u.email,
+      criadoEm: u.created_at,
+      ultimoLogin: u.last_sign_in_at || null,
+      confirmado: !!u.email_confirmed_at
+    }))
+    .sort((a, b) => {
+      if (!a.ultimoLogin && !b.ultimoLogin) return new Date(b.criadoEm) - new Date(a.criadoEm);
+      if (!a.ultimoLogin) return 1;
+      if (!b.ultimoLogin) return -1;
+      return new Date(b.ultimoLogin) - new Date(a.ultimoLogin);
+    });
+}
+
 module.exports = {
   cadastrar, entrar, lerSnapshot, gravarSnapshot, gravarHistorico, lerHistorico,
   gravarEntregas, lerEntregas, listarSprintsEntregas, listarMesesEntregas, limparEntregas,
   gravarPlanejamento, limparPlanejamento, lerPlanejamentoSprint, lerCarryOverEntregue,
   listarPlanejamentoPorSprint, resumirPlanejamento, porSemanaPlanejamento, listarItensPlanejamento,
-  classificarItensPlanejamento, listarItensCarryOver, montarItensCarryOver, contarCarryOverPorSprint
+  classificarItensPlanejamento, listarItensCarryOver, montarItensCarryOver, contarCarryOverPorSprint,
+  registrarAcesso, listarAcessos, listarUsuarios, montarListaUsuarios, confirmarUsuarioManualmente
 };

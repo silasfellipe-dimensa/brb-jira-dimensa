@@ -422,8 +422,15 @@
    * board e o histórico baterem no mesmo número; usar aqui evita que estes
    * dois cards mostrem uma contagem por item (task+subtask) diferente do
    * resto da tela. */
+  /* dados.entregas agora cobre TODAS as sprints (correção do falso positivo,
+   * sessão 2026-09-22) - sem filtrar aqui, "Entregas por semana" e "Entregue
+   * recentemente" (cards desta aba, sempre sobre a sprint atual) passariam a
+   * misturar Julho/Agosto junto com Setembro. Quem quer ver várias sprints
+   * já tem a aba Histórico de entregas, com filtro próprio. */
   function entregasAgrupadas() {
-    return (dados && dados.entregas) || [];
+    var todas = (dados && dados.entregas) || [];
+    if (!dados || !dados.sprint) return todas;
+    return todas.filter(function (e) { return e.sprintConclusao === dados.sprint; });
   }
 
   // Agrupa por semana (segunda a domingo), mesmo critério de corte que o
@@ -494,13 +501,28 @@
    * aberto hoje, mais quanto do que saiu na sprint veio de atraso anterior
    * (carry-over). Os 5 numeros vem de /api/planejamento; o grafico historico
    * (uma sprint por barra) vem de /api/planejamento/serie. */
-  function planejamentoCard() {
-    return '<div class="cartao" id="planejamentoCard">' +
-      '<h2>Planejado × Entregue</h2>' +
-      '<p class="ajuda">Visão por sprint: quanto foi planejado para a sprint escolhida no filtro abaixo, ' +
-      'quanto já saiu (no prazo ou atrasado) e quanto ainda está em aberto hoje.</p>' +
+  /* Duas cartas, não uma: a comparação entre sprints é visão geral e fica
+   * sempre igual; o detalhe muda a cada sprint escolhida. Misturar as duas
+   * num card só (como era antes) empilhava 3 gráficos de barra diferentes
+   * sem nenhuma separação visual - "embolado" foi a palavra usada pra
+   * descrever isso na sessão 2026-09-22. Mesmo padrão do resto do
+   * dashboard: um card por métrica, não um card por aba. */
+  function serieSprintsCard() {
+    return '<div class="cartao">' +
+      '<h2>Comparação entre sprints</h2>' +
+      '<p class="ajuda">Planejado (barra cinza) x entregue (barra escura) por sprint. ' +
+      'Clique numa barra, ou escolha a sprint no filtro abaixo, para ver o detalhe.</p>' +
       '<div id="planejamentoSerie"></div>' +
-      '<div id="planejamentoNumeros"><div class="vazio">Carregando…</div></div>' +
+    '</div>';
+  }
+
+  function detalheSprintCard() {
+    return '<div class="cartao" id="planejamentoCard">' +
+      '<h2 id="detalheSprintTitulo">Detalhe da sprint</h2>' +
+      '<p class="ajuda" id="detalheSprintAjuda">Escolha uma sprint específica no filtro do histórico, ' +
+      'ou clique numa barra acima, para ver quanto foi planejado, quanto já saiu (no prazo ou atrasado) ' +
+      'e quanto ainda está em aberto.</p>' +
+      '<div id="planejamentoNumeros"></div>' +
       '<div id="planejamentoPorSemana"></div>' +
       '<div id="planejamentoDetalheItens"></div>' +
     '</div>';
@@ -509,15 +531,25 @@
   function renderPlanejamentoNumeros(sprintNome, resposta) {
     var alvo = document.getElementById('planejamentoNumeros');
     if (!alvo) return;
+    var titulo = document.getElementById('detalheSprintTitulo');
+    var ajuda = document.getElementById('detalheSprintAjuda');
     if (!resposta || !resposta.planejamento) {
-      alvo.innerHTML = '<div class="vazio">Escolha uma sprint específica no filtro do histórico ' +
-        'para ver o comparativo (não se aplica a filtro por mês ou período).</div>';
+      if (titulo) titulo.textContent = 'Detalhe da sprint';
+      if (ajuda) ajuda.textContent = 'Escolha uma sprint específica no filtro do histórico, ou clique numa ' +
+        'barra acima, para ver quanto foi planejado, quanto já saiu (no prazo ou atrasado) e quanto ainda ' +
+        'está em aberto (não se aplica a filtro por mês ou período).';
+      alvo.innerHTML = '<div class="vazio">Nenhuma sprint selecionada.</div>';
+      document.getElementById('planejamentoPorSemana').innerHTML = '';
+      document.getElementById('planejamentoDetalheItens').innerHTML = '';
       return;
     }
     var p = resposta.planejamento;
+    if (titulo) titulo.textContent = sprintNome || p.sprintOrigem || 'Detalhe da sprint';
+    if (ajuda) ajuda.textContent = 'Quanto foi planejado para essa sprint, quanto já saiu (no prazo ou ' +
+      'atrasado) e quanto ainda está em aberto hoje.';
     alvo.innerHTML =
       '<div class="planejamento-grade">' +
-        '<div class="planejamento-num"><strong>' + p.planejado + '</strong><span>Planejado para ' + esc(sprintNome || p.sprintOrigem || '') + '</span></div>' +
+        '<div class="planejamento-num"><strong>' + p.planejado + '</strong><span>Planejado (nascido aqui)</span></div>' +
         '<div class="planejamento-num"><strong>' + p.entregueNoPrazo + '</strong><span>Entregue no prazo</span></div>' +
         '<div class="planejamento-num"><strong>' + p.entregueAtrasado + '</strong><span>Entregue atrasado</span></div>' +
         '<div class="planejamento-num"><strong>' + p.naoEntregue + '</strong><span>Ainda não entregue</span></div>' +
@@ -596,10 +628,20 @@
       col.addEventListener('click', function () {
         var jaSelecionada = col.classList.contains('selecionada');
         alvo.querySelectorAll('.coluna-planejamento.selecionada').forEach(function (c) { c.classList.remove('selecionada'); });
-        var destino = document.getElementById('planejamentoDetalheItens');
-        if (jaSelecionada) { if (destino) destino.innerHTML = ''; return; }
+        // As duas partes do card de detalhe (números + lista de itens) têm
+        // que sempre mostrar a MESMA sprint - antes o clique só atualizava a
+        // lista, e o título/números ficavam com o que veio do filtro de
+        // baixo, mostrando "Setembro" com a lista de "Julho" ao mesmo tempo.
+        if (jaSelecionada) { carregarPlanejamento(null, null); return; }
         col.classList.add('selecionada');
-        carregarItensPlanejamento(col.getAttribute('data-sprint-id'), col.getAttribute('data-sprint-nome'));
+        var sprintId = col.getAttribute('data-sprint-id');
+        var sprintNome = col.getAttribute('data-sprint-nome');
+        carregarPlanejamento(sprintId, sprintNome);
+        carregarItensPlanejamento(sprintId, sprintNome);
+        // O card de detalhe fica logo abaixo, mas fora da tela em resoluções
+        // menores - sem isto, o clique "não fazia nada" até rolar a página.
+        var cardDetalhe = document.getElementById('planejamentoCard');
+        if (cardDetalhe) cardDetalhe.scrollIntoView({ behavior: 'smooth', block: 'start' });
       });
     });
   }
@@ -610,7 +652,8 @@
    * precisar abrir o Jira. */
   function carregarItensPlanejamento(sprintId, sprintNome) {
     var destino = document.getElementById('planejamentoDetalheItens');
-    if (!sprintId || !destino) return;
+    if (!destino) return;
+    if (!sprintId) { destino.innerHTML = ''; return; }
     destino.innerHTML = '<div class="vazio">Carregando…</div>';
     fetch('/api/planejamento/itens?sprintId=' + encodeURIComponent(sprintId), { cache: 'no-store' })
       .then(function (r) { return r.json(); })
@@ -655,7 +698,7 @@
       'carry-over': 'Entregue nessa sprint, mas nasceu antes'
     };
 
-    var h = '<h3 class="sub-titulo">' + esc(sprintNome || '') + '</h3>' +
+    var h = '<h3 class="sub-titulo">O que nasceu e o que saiu, item a item</h3>' +
       '<p class="ajuda">Os 3 primeiros grupos olham pela origem (o que nasceu nessa sprint). ' +
       'O último olha pela conclusão: itens de sprint anterior que só saíram agora — sem eles, ' +
       'o total de entregas da sprint parece menor do que realmente foi.</p>';
@@ -861,6 +904,16 @@
         mesSelect.value, inicioInput.value, fimInput.value
       );
       carregarPlanejamento(sprintIdEfetivo, sprintEfetivo);
+      carregarItensPlanejamento(sprintIdEfetivo, sprintEfetivo);
+      // A barra clicada e o filtro de baixo têm que concordar sobre qual
+      // sprint está selecionada - sem isto, escolher pelo filtro deixava a
+      // seleção visual da barra (se houvesse uma) desatualizada.
+      var serie = document.getElementById('planejamentoSerie');
+      if (serie) {
+        serie.querySelectorAll('.coluna-planejamento').forEach(function (col) {
+          col.classList.toggle('selecionada', sprintIdEfetivo && Number(col.getAttribute('data-sprint-id')) === Number(sprintIdEfetivo));
+        });
+      }
     }
 
     document.getElementById('aplicarEntregas').addEventListener('click', function () {
@@ -1136,7 +1189,7 @@
       kpis() + aging() + '<div class="duas">' + wip() + carga() + '</div>' + cfd() + escopo();
 
     document.getElementById('painelHistorico').innerHTML =
-      planejamentoCard() + historicoEntregas();
+      serieSprintsCard() + detalheSprintCard() + historicoEntregas();
 
     var periodo = met.relogio
       ? ' · ' + dataCurta(met.relogio.inicio) + ' a ' + dataCurta(met.relogio.fim) : '';

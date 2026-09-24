@@ -22,6 +22,12 @@ const dominiosPermitidos = (process.env.ALLOWED_DOMAINS || '')
 const emailsPermitidos = (process.env.ALLOWED_EMAILS || '')
   .split(',').map((e) => e.trim().toLowerCase()).filter(Boolean);
 
+// Por e-mail exato, nunca por dominio - dominio inteiro deixaria qualquer
+// colega de @dimensa.com.br ou @evertecinc.com.br entrar no admin, nao so
+// quem esta nesta lista.
+const emailsAdmin = (process.env.ADMIN_EMAILS || '')
+  .split(',').map((e) => e.trim().toLowerCase()).filter(Boolean);
+
 /** Confere se o e-mail pode acessar. Chamada tanto no cadastro quanto no
  * login, de proposito - ninguem entra so por ter passado no cadastro. */
 function emailPermitido(email) {
@@ -29,6 +35,10 @@ function emailPermitido(email) {
   if (emailsPermitidos.includes(e)) return true;
   const dominio = e.split('@')[1] || '';
   return dominiosPermitidos.includes(dominio);
+}
+
+function souAdmin(email) {
+  return !!email && emailsAdmin.includes(String(email).toLowerCase());
 }
 
 function criarSessao(usuario) {
@@ -58,6 +68,24 @@ function exigirSessaoApi(req, res, next) {
   const usuario = token && lerSessao(token);
   if (!usuario) return res.status(401).json({ erro: 'Sessão expirada ou inexistente. Faça login novamente.' });
   req.usuario = usuario;
+  next();
+}
+
+/** Middlewares de admin: sempre APOS exigirSessaoPagina/exigirSessaoApi na
+ * cadeia de rotas, entao req.usuario ja existe aqui. 403, nao 404 - esconder
+ * a rota so atrasa quem tenta, e loga errado como "nao encontrado" em vez de
+ * "sem permissao" quando alguem investigar depois. */
+function exigirAdminPagina(req, res, next) {
+  if (!souAdmin(req.usuario && req.usuario.email)) {
+    return res.status(403).send('Sua conta não tem acesso a esta página.');
+  }
+  next();
+}
+
+function exigirAdminApi(req, res, next) {
+  if (!souAdmin(req.usuario && req.usuario.email)) {
+    return res.status(403).json({ erro: 'Sua conta não tem acesso a este recurso.' });
+  }
   next();
 }
 
@@ -103,5 +131,8 @@ module.exports = {
   lerSessao,
   exigirSessaoPagina,
   exigirSessaoApi,
+  souAdmin,
+  exigirAdminPagina,
+  exigirAdminApi,
   limitarTentativas
 };

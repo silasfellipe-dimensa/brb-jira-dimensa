@@ -9,7 +9,7 @@ const {
   cadastrar, entrar, lerSnapshot, gravarSnapshot, gravarHistorico, lerHistorico,
   gravarEntregas, lerEntregas, listarSprintsEntregas, listarMesesEntregas, gravarPlanejamento,
   lerPlanejamentoSprint, lerCarryOverEntregue, listarPlanejamentoPorSprint, listarItensPlanejamento,
-  listarItensCarryOver
+  listarItensCarryOver, registrarAcesso, listarAcessos, listarUsuarios, confirmarUsuarioManualmente
 } = require('./supabase');
 const {
   COOKIE_NAME,
@@ -19,6 +19,9 @@ const {
   criarSessao,
   exigirSessaoPagina,
   exigirSessaoApi,
+  exigirAdminPagina,
+  exigirAdminApi,
+  souAdmin,
   limitarTentativas
 } = require('./auth');
 
@@ -157,6 +160,7 @@ app.post('/auth/cadastro', limitarTentativas, async (req, res) => {
   try {
     await cadastrar(email, senha);
     console.log(`Cadastro iniciado: ${email} (aguardando confirmação por e-mail)`);
+    registrarAcesso(email, 'cadastro'); // best-effort, nao trava o cadastro
     res.json({ ok: true });
   } catch (erro) {
     console.error(`Falha no cadastro de ${email}:`, erro.message);
@@ -189,6 +193,7 @@ app.post('/auth/entrar', limitarTentativas, async (req, res) => {
     });
 
     console.log(`Login: ${usuarioSupabase.email}`);
+    registrarAcesso(usuarioSupabase.email, 'login'); // best-effort, nao trava o login
     res.json({ ok: true });
   } catch (erro) {
     console.error(`Falha no login de ${email}:`, erro.message);
@@ -228,7 +233,7 @@ app.get('/', exigirSessaoPagina, (req, res) => {
 });
 
 app.get('/api/eu', exigirSessaoApi, (req, res) => {
-  res.json({ ...req.usuario, hubUrl: process.env.HUB_URL || null });
+  res.json({ ...req.usuario, hubUrl: process.env.HUB_URL || null, admin: souAdmin(req.usuario.email) });
 });
 
 app.get('/api/dados', exigirSessaoApi, async (req, res) => {
@@ -237,6 +242,31 @@ app.get('/api/dados', exigirSessaoApi, async (req, res) => {
 
 app.get('/dashboard', exigirSessaoPagina, (req, res) => {
   res.sendFile(path.join(PUBLIC_DIR, 'dashboard.html'));
+});
+
+app.get('/admin', exigirSessaoPagina, exigirAdminPagina, (req, res) => {
+  res.sendFile(path.join(PUBLIC_DIR, 'admin.html'));
+});
+
+/** Quem está cadastrado (Supabase Auth) e o histórico de acessos - só pra
+ * quem está em ADMIN_EMAILS (ver auth.js). */
+app.get('/api/admin/usuarios', exigirSessaoApi, exigirAdminApi, async (req, res) => {
+  res.json({ usuarios: await listarUsuarios() });
+});
+
+app.get('/api/admin/acessos', exigirSessaoApi, exigirAdminApi, async (req, res) => {
+  res.json({ acessos: await listarAcessos(200) });
+});
+
+/** Confirma o e-mail de alguém sem esperar o link chegar - existe porque o
+ * envio pode falhar (rate limit do Supabase, filtro corporativo do
+ * destinatário) sem nenhum aviso pro usuário. POST porque muda estado. */
+app.post('/api/admin/usuarios/:id/confirmar', exigirSessaoApi, exigirAdminApi, async (req, res) => {
+  const resultado = await confirmarUsuarioManualmente(req.params.id);
+  if (!resultado.ok) return res.status(400).json({ erro: 'Não foi possível confirmar esse usuário.' });
+  console.log(`[admin] ${req.usuario.email} confirmou manualmente: ${resultado.email}`);
+  registrarAcesso(resultado.email, 'confirmado-manualmente');
+  res.json({ ok: true });
 });
 
 /** Métricas do sprint + série histórica para os gráficos de fluxo.

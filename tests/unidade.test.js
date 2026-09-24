@@ -3,6 +3,7 @@
 
 process.env.ALLOWED_DOMAINS = 'dimensa.com.br,totvs.com.br,brb.com.br,evertecinc.com.br';
 process.env.ALLOWED_EMAILS = 'convidado@parceiro.com';
+process.env.ADMIN_EMAILS = 'silas.fellipe@dimensa.com.br,silas.fellipe@evertecinc.com.br';
 process.env.SESSION_SECRET = 'segredo-de-teste-nao-usado-em-producao';
 // supabase-js valida a URL/chave na criacao do client, mesmo so para testar
 // funcao pura que nunca toca rede - por isso valores fake aqui.
@@ -12,14 +13,14 @@ process.env.SUPABASE_ANON_KEY = 'chave-fake-de-teste';
 const { test, describe } = require('node:test');
 const assert = require('node:assert');
 
-const { emailPermitido, segredoConfere, criarSessao, lerSessao } = require('../auth');
+const { emailPermitido, segredoConfere, criarSessao, lerSessao, souAdmin, exigirAdminApi } = require('../auth');
 const {
   mapearColunas, montarColunas, montarMetricas, epicoDe, ehSubtarefa,
   sprintsDaIssue, montarEntregas, montarPlanejamento, statusFechamento
 } = require('../jira');
 const {
   resumirPlanejamento, porSemanaPlanejamento, classificarItensPlanejamento, montarItensCarryOver,
-  contarCarryOverPorSprint
+  contarCarryOverPorSprint, montarListaUsuarios
 } = require('../supabase');
 
 describe('emailPermitido — quem pode entrar', () => {
@@ -291,6 +292,59 @@ describe('emailPermitido — quem pode entrar', () => {
     assert.ok(!emailPermitido('sem-arroba'));
     assert.ok(!emailPermitido('@dimensa.com.br'.replace('@', '')));
     assert.ok(!emailPermitido(''));
+  });
+});
+
+describe('souAdmin — quem enxerga a página /admin', () => {
+  // Por e-mail EXATO, nunca por dominio: dominio inteiro liberaria qualquer
+  // colega de @dimensa.com.br/@evertecinc.com.br, nao so quem esta na lista.
+  test('aceita so os e-mails exatos da lista', () => {
+    assert.ok(souAdmin('silas.fellipe@dimensa.com.br'));
+    assert.ok(souAdmin('silas.fellipe@evertecinc.com.br'));
+  });
+
+  test('recusa outro e-mail do mesmo dominio liberado', () => {
+    assert.ok(!souAdmin('outra.pessoa@dimensa.com.br'));
+    assert.ok(!souAdmin('outra.pessoa@evertecinc.com.br'));
+  });
+
+  test('ignora diferenca de maiuscula/minuscula', () => {
+    assert.ok(souAdmin('Silas.Fellipe@DIMENSA.com.br'));
+  });
+
+  test('recusa vazio/indefinido sem quebrar', () => {
+    assert.ok(!souAdmin(''));
+    assert.ok(!souAdmin(undefined));
+    assert.ok(!souAdmin(null));
+  });
+});
+
+describe('exigirAdminApi — guard da rota /api/admin/*', () => {
+  function chamar(email) {
+    let status = null, corpo = null, proximo = false;
+    const req = { usuario: email ? { email } : undefined };
+    const res = {
+      status(s) { status = s; return this; },
+      json(c) { corpo = c; return this; }
+    };
+    exigirAdminApi(req, res, () => { proximo = true; });
+    return { status, corpo, proximo };
+  }
+
+  test('deixa passar quem esta em ADMIN_EMAILS', () => {
+    const r = chamar('silas.fellipe@dimensa.com.br');
+    assert.ok(r.proximo);
+    assert.strictEqual(r.status, null);
+  });
+
+  // Bug que este guard existe pra evitar: sessao valida (ja passou por
+  // exigirSessaoApi) mas de alguem fora da lista de admin - sem este
+  // segundo guard, qualquer usuario logado veria dado de todo mundo.
+  test('bloqueia com 403 quem tem sessao valida mas nao e admin', () => {
+    const r = chamar('outra.pessoa@dimensa.com.br');
+    assert.ok(!r.proximo);
+    assert.strictEqual(r.status, 403);
+    assert.ok(r.corpo.erro);
   });
 });
 
@@ -1134,5 +1188,51 @@ describe('montarMetricas — entregues (contraponto ao aging)', () => {
   test('respeita a privacidade: sem mostrarResponsavel, sem nome', () => {
     const sem = montarMetricas(ordem, mapa, issues, sprint, AGORA, false);
     assert.ok(sem.entregues.every((e) => e.pessoa === null));
+  });
+});
+
+describe('montarListaUsuarios — ordem da tabela "Usuários cadastrados" no /admin', () => {
+  test('ordena por último acesso, mais recente primeiro', () => {
+    const users = [
+      { email: 'a@x.com', created_at: '2026-08-01T00:00:00Z', last_sign_in_at: '2026-09-10T00:00:00Z', email_confirmed_at: '2026-08-01T00:01:00Z' },
+      { email: 'b@x.com', created_at: '2026-08-02T00:00:00Z', last_sign_in_at: '2026-09-20T00:00:00Z', email_confirmed_at: '2026-08-02T00:01:00Z' }
+    ];
+    const lista = montarListaUsuarios(users);
+    assert.deepStrictEqual(lista.map((u) => u.email), ['b@x.com', 'a@x.com']);
+  });
+
+  // Bug que isto evita: comparar `new Date(null)` com uma data real produz
+  // NaN, e o resultado da comparacao vira imprevisivel - quem nunca logou
+  // podia aparecer no topo por acidente em vez de no fim.
+  test('quem nunca logou fica no fim, nao no topo', () => {
+    const users = [
+      { email: 'nunca-logou@x.com', created_at: '2026-09-24T00:00:00Z', last_sign_in_at: null, email_confirmed_at: '2026-09-24T00:01:00Z' },
+      { email: 'ja-logou@x.com', created_at: '2026-08-01T00:00:00Z', last_sign_in_at: '2026-09-01T00:00:00Z', email_confirmed_at: '2026-08-01T00:01:00Z' }
+    ];
+    const lista = montarListaUsuarios(users);
+    assert.deepStrictEqual(lista.map((u) => u.email), ['ja-logou@x.com', 'nunca-logou@x.com']);
+  });
+
+  test('dois sem login: cai para ordem de cadastro, mais recente primeiro', () => {
+    const users = [
+      { email: 'mais-velho@x.com', created_at: '2026-08-01T00:00:00Z', last_sign_in_at: null, email_confirmed_at: null },
+      { email: 'mais-novo@x.com', created_at: '2026-09-01T00:00:00Z', last_sign_in_at: null, email_confirmed_at: null }
+    ];
+    const lista = montarListaUsuarios(users);
+    assert.deepStrictEqual(lista.map((u) => u.email), ['mais-novo@x.com', 'mais-velho@x.com']);
+  });
+
+  test('marca confirmado a partir de email_confirmed_at', () => {
+    const users = [
+      { email: 'sim@x.com', created_at: '2026-08-01T00:00:00Z', last_sign_in_at: null, email_confirmed_at: '2026-08-01T00:01:00Z' },
+      { email: 'nao@x.com', created_at: '2026-08-01T00:00:00Z', last_sign_in_at: null, email_confirmed_at: null }
+    ];
+    const lista = montarListaUsuarios(users);
+    assert.strictEqual(lista.find((u) => u.email === 'sim@x.com').confirmado, true);
+    assert.strictEqual(lista.find((u) => u.email === 'nao@x.com').confirmado, false);
+  });
+
+  test('lista vazia nao quebra', () => {
+    assert.deepStrictEqual(montarListaUsuarios([]), []);
   });
 });

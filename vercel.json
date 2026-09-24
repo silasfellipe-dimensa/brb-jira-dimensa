@@ -2,7 +2,8 @@
   "outputDirectory": "static",
   "functions": {
     "api/index.js": {
-      "includeFiles": "paginas/**"
+      "includeFiles": "paginas/**",
+      "maxDuration": 30
     }
   },
   "rewrites": [
