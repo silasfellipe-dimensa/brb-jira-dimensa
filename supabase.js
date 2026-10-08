@@ -1,4 +1,5 @@
 const { createClient } = require('@supabase/supabase-js');
+const { deLinha } = require('./demandas');
 
 // Dois clientes, de proposito:
 //
@@ -535,7 +536,70 @@ function montarListaUsuarios(users) {
     });
 }
 
+/* ---- Demandas e Pontos de Função (tabela demandas_pf) ----
+ * Todas devolvem { ok, ... } em vez de lançar: a rota decide a mensagem e o
+ * status, e o erro cru do Postgres fica só no log do servidor. Remover é
+ * lógico (removido=true) - ponto "pago" é dado de cobrança, não se apaga. */
+const COLUNAS_DEMANDA = 'id,mes,demanda_acs,artefato_jira,nome,pontos_total,em_analise,' +
+  'pontos_documentacao,pontos_desenvolvimento,pontos_teste,pontos_implantacao,' +
+  'inicio_atendimento,conclusao_prevista,previsao_expedicao,observacoes,atualizado_por,atualizado_em';
+
+async function listarDemandas() {
+  try {
+    const { data, error } = await db().from('demandas_pf').select(COLUNAS_DEMANDA)
+      .eq('removido', false).order('id', { ascending: true }).limit(2000);
+    if (error) throw new Error(error.message);
+    return { ok: true, demandas: (data || []).map(deLinha) };
+  } catch (erro) {
+    console.error('[supabase] falha ao listar demandas:', erro.message);
+    return { ok: false };
+  }
+}
+
+async function criarDemanda(email, mes) {
+  try {
+    const { data, error } = await db().from('demandas_pf')
+      .insert({ mes, criado_por: email, atualizado_por: email })
+      .select(COLUNAS_DEMANDA).single();
+    if (error) throw new Error(error.message);
+    return { ok: true, demanda: deLinha(data) };
+  } catch (erro) {
+    console.error('[supabase] falha ao criar demanda:', erro.message);
+    return { ok: false };
+  }
+}
+
+async function atualizarDemanda(id, registro, email) {
+  try {
+    const { data, error } = await db().from('demandas_pf')
+      .update({ ...registro, atualizado_por: email, atualizado_em: new Date().toISOString() })
+      .eq('id', id).eq('removido', false)
+      .select(COLUNAS_DEMANDA).maybeSingle();
+    if (error) throw new Error(error.message);
+    if (!data) return { ok: false, naoEncontrada: true };
+    return { ok: true, demanda: deLinha(data) };
+  } catch (erro) {
+    console.error('[supabase] falha ao atualizar demanda:', erro.message);
+    return { ok: false };
+  }
+}
+
+async function removerDemanda(id, email) {
+  try {
+    const { data, error } = await db().from('demandas_pf')
+      .update({ removido: true, atualizado_por: email, atualizado_em: new Date().toISOString() })
+      .eq('id', id).eq('removido', false).select('id').maybeSingle();
+    if (error) throw new Error(error.message);
+    if (!data) return { ok: false, naoEncontrada: true };
+    return { ok: true };
+  } catch (erro) {
+    console.error('[supabase] falha ao remover demanda:', erro.message);
+    return { ok: false };
+  }
+}
+
 module.exports = {
+  listarDemandas, criarDemanda, atualizarDemanda, removerDemanda,
   cadastrar, entrar, lerSnapshot, gravarSnapshot, gravarHistorico, lerHistorico,
   gravarEntregas, lerEntregas, listarSprintsEntregas, listarMesesEntregas, limparEntregas,
   gravarPlanejamento, limparPlanejamento, lerPlanejamentoSprint, lerCarryOverEntregue,

@@ -1,0 +1,776 @@
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Demandas · Kanban BRB</title>
+
+<style>
+  :root {
+    color-scheme: light dark;
+    --bg: #F5F5F5;
+    --bg-panel: #FFFFFF;
+    --ink: #1E212C;
+    --ink-dim: #4B5A68;
+    --ink-faint: #7C8894;
+    --line: #E5E6E7;
+    --line-soft: #EFEFEF;
+    --accent: #FF6C0C;
+    --accent-soft: #FFE8D9;
+    --warn: #A8452E;
+    --ok: #0B9C7F;
+    --shadow: 0 1px 2px rgba(30,33,44,0.06), 0 1px 1px rgba(30,33,44,0.04);
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #1E212C;
+      --bg-panel: #262B38;
+      --ink: #F5F5F5;
+      --ink-dim: #A7B0BC;
+      --ink-faint: #78838F;
+      --line: #333846;
+      --line-soft: #2A2E3A;
+      --accent: #FF8A3D;
+      --accent-soft: #3A2A1C;
+      --warn: #E2725B;
+      --ok: #3EE8C4;
+      --shadow: 0 1px 3px rgba(0,0,0,0.35);
+    }
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--ink);
+    font-family: Lato, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  header.top { background: var(--bg); border-bottom: 1px solid var(--line); padding: 22px 28px; }
+  .top-row {
+    display: flex; align-items: center; justify-content: space-between;
+    gap: 24px; flex-wrap: wrap; max-width: 1500px; margin: 0 auto;
+  }
+  .titles h1 { margin: 0; font-size: 1.5rem; font-weight: 700; letter-spacing: -0.01em; }
+  .acoes-topo { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+  .link-topo {
+    display: inline-flex; align-items: center; gap: 6px;
+    font-size: 0.8rem; color: var(--ink-dim); text-decoration: none;
+    border: 1px solid var(--line); border-radius: 7px; padding: 7px 12px;
+    background: var(--bg-panel);
+  }
+  .link-topo:hover { border-color: var(--accent); color: var(--accent); }
+  .link-topo.destaque { border-color: var(--accent); color: var(--accent); font-weight: 700; }
+  .quem { font-size: 0.78rem; color: var(--ink-faint); }
+
+  main { max-width: 1500px; margin: 0 auto; padding: 22px 28px 60px; }
+
+  .cartao {
+    background: var(--bg-panel); border: 1px solid var(--line-soft);
+    border-radius: 10px; padding: 16px 18px 18px; box-shadow: var(--shadow);
+  }
+  .topo-cartao { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; }
+  .cartao h2 { margin: 0 0 3px; font-size: 0.95rem; font-weight: 700; }
+  .ajuda { margin: 0 0 14px; font-size: 0.76rem; color: var(--ink-faint); line-height: 1.45; max-width: 800px; }
+  .selo {
+    flex-shrink: 0; font-size: 0.68rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em;
+    padding: 3px 10px; border-radius: 100px; background: var(--accent-soft); color: var(--accent);
+  }
+  .selo:empty { display: none; }
+
+  .aviso {
+    margin-bottom: 12px; padding: 9px 12px; border-left: 3px solid var(--warn);
+    background: var(--line-soft); border-radius: 0 6px 6px 0; font-size: 0.78rem; color: var(--ink);
+  }
+  .aviso[hidden] { display: none; }
+
+  /* barra de escolha do mes */
+  .barra { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 16px; }
+  .barra label { font-size: 0.78rem; font-weight: 700; color: var(--ink-dim); }
+  .barra select {
+    font: inherit; font-size: 0.85rem; color: var(--ink); background: var(--bg);
+    border: 1px solid var(--line); border-radius: 6px; padding: 7px 10px; min-width: 190px;
+  }
+  .barra select:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-soft); }
+  .contagem { font-size: 0.76rem; color: var(--ink-faint); }
+
+  .chips { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+  .chip {
+    font: inherit; font-size: 0.78rem; font-weight: 600; cursor: pointer; color: var(--ink-dim);
+    background: var(--bg); border: 1px solid var(--line); border-radius: 100px; padding: 6px 14px;
+  }
+  .chip:hover { border-color: var(--accent); }
+  .chip[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .chip.todos { background: none; border-style: dashed; }
+
+  h3.sub { margin: 22px 0 8px; font-size: 0.85rem; font-weight: 700; }
+  h3.sub:first-of-type { margin-top: 4px; }
+  h3.sub small { font-weight: 400; color: var(--ink-faint); margin-left: 2px; }
+  .nota { margin: 8px 0 0; font-size: 0.72rem; color: var(--ink-faint); line-height: 1.45; }
+
+  .tabela-scroll { overflow-x: auto; border: 1px solid var(--line-soft); border-radius: 8px; }
+  table.grade { border-collapse: collapse; width: 100%; min-width: 1700px; font-size: 0.8rem; }
+  table.grade.resumo { min-width: 0; }
+  .grade th {
+    text-align: left; font-size: 0.68rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em;
+    color: var(--ink-dim); background: var(--line-soft); padding: 9px 10px; border-bottom: 1px solid var(--line);
+    white-space: nowrap;
+  }
+  .grade th.num, .grade td.num { text-align: right; }
+  .grade td { padding: 5px 6px; border-bottom: 1px solid var(--line-soft); vertical-align: top; }
+  .grade tbody tr:hover td { background: var(--line-soft); }
+  .grade td.leitura { padding: 8px 10px; }
+  .grade td.leitura.obs { white-space: pre-wrap; }
+  .grade td.c-numero input, .grade td.c-pontos input { text-align: right; font-variant-numeric: tabular-nums; }
+  .grade td.leitura.num { font-variant-numeric: tabular-nums; }
+  .resumo td { padding: 9px 10px; font-variant-numeric: tabular-nums; }
+  .resumo tr.consolidado td { font-weight: 700; background: var(--line-soft); border-top: 1px solid var(--line); border-bottom: 0; }
+  .resumo td.destaque { font-weight: 700; color: var(--accent); }
+
+  /* Cada celula editavel e uma caixa visivel: sem borda/fundo, uma celula
+   * vazia parecia so espaco em branco e ninguem percebia que dava pra digitar. */
+  .grade td input, .grade td textarea {
+    display: block; width: 100%; color: var(--ink); font: inherit; resize: vertical;
+    background: var(--bg); border: 1px solid var(--line); border-radius: 6px; padding: 7px 9px;
+  }
+  .grade td textarea { min-height: 38px; }
+  .grade td input:hover, .grade td textarea:hover { border-color: var(--ink-faint); }
+  .grade td input:focus, .grade td textarea:focus {
+    outline: none; border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-soft); background: var(--bg-panel);
+  }
+  .grade td input::placeholder, .grade td textarea::placeholder { color: var(--ink-faint); opacity: 0.75; }
+  .grade a { color: var(--accent); text-decoration: none; font-weight: 600; }
+  .grade a:hover { text-decoration: underline; }
+  .abrir { display: inline-block; padding: 3px 3px 0; font-size: 0.72rem; }
+  .abrir[hidden] { display: none; }
+
+  td.acoes { white-space: nowrap; padding: 6px 8px; text-align: right; }
+  .estado { font-size: 0.7rem; margin-right: 6px; color: var(--ink-faint); }
+  .estado.salvo { color: var(--ok); }
+  .estado.erro { color: var(--warn); font-weight: 700; }
+  .btn-remover {
+    font: inherit; font-size: 1rem; line-height: 1; cursor: pointer; color: var(--ink-faint);
+    background: none; border: 1px solid transparent; border-radius: 6px; padding: 3px 8px;
+  }
+  .btn-remover:hover { color: var(--warn); border-color: var(--warn); }
+
+  tr.totais td {
+    padding: 9px 10px; font-weight: 700; background: var(--line-soft); border-bottom: 0;
+    border-top: 1px solid var(--line); font-variant-numeric: tabular-nums;
+  }
+  tr.totais td.num { text-align: right; }
+
+  .btn-add {
+    margin-top: 14px; font: inherit; font-size: 0.8rem; font-weight: 700; cursor: pointer;
+    border: 1px dashed var(--accent); color: var(--accent); background: none;
+    border-radius: 7px; padding: 8px 14px;
+  }
+  .btn-add:hover { background: var(--accent); color: #fff; border-style: solid; }
+  .btn-add:disabled { opacity: 0.6; cursor: default; }
+
+  .vazio { padding: 22px; text-align: center; color: var(--ink-faint); font-size: 0.8rem; line-height: 1.5; }
+  .vazio[hidden] { display: none; }
+
+  @media print {
+    body { background: #fff; }
+    .acoes-topo, .chips, .barra, .btn-add { display: none !important; }
+    .cartao { box-shadow: none; border: 0; padding: 0; }
+    .tabela-scroll { overflow: visible; }
+    table.grade { min-width: 0; font-size: 0.7rem; }
+  }
+</style>
+
+<header class="top">
+  <div class="top-row">
+    <div class="titles">
+      <h1>Demandas</h1>
+    </div>
+    <div class="acoes-topo" id="acoesTopo">
+      <a class="link-topo" href="/">Voltar ao board</a>
+      <a class="link-topo" href="/dashboard">Dashboard</a>
+      <span class="quem" id="quem"></span>
+    </div>
+  </div>
+</header>
+
+<main>
+  <div class="cartao">
+    <div class="topo-cartao">
+      <div>
+        <h2>Demandas e Pontos de Função</h2>
+        <p class="ajuda" id="ajuda">Carregando…</p>
+      </div>
+      <span class="selo" id="selo"></span>
+    </div>
+    <div class="barra" id="barra"></div>
+    <div class="aviso" id="aviso" role="alert" hidden></div>
+    <div id="area"><div class="vazio">Carregando…</div></div>
+    <div class="vazio" id="vazio" hidden></div>
+    <div id="acoesRodape"></div>
+  </div>
+</main>
+
+<script>
+  (function () {
+    // Mesma página em duas rotas: /demandas (ver) e /demandas/editar (preencher).
+    var EDITANDO = /\/editar\/?$/.test(location.pathname);
+
+    var CAMPOS = [
+      { chave: 'demandaAcs', rotulo: 'Demanda/Sustentação ACS', tipo: 'texto', larg: 160, dica: 'ex.: 20260525005' },
+      { chave: 'artefatoJira', rotulo: 'Artefato Jira', tipo: 'jira', larg: 170, dica: 'chave ou link' },
+      { chave: 'nome', rotulo: 'Nome da Demanda/Sustentação', tipo: 'texto', larg: 330, dica: 'nome da demanda' },
+      { chave: 'pontosTotal', rotulo: 'Pontos de Função (total)', tipo: 'pontos', larg: 150, dica: 'número ou em análise' },
+      { chave: 'documentacao', rotulo: 'Documentação (30%)', tipo: 'numero', larg: 120, dica: '0,0' },
+      { chave: 'desenvolvimento', rotulo: 'Desenvolvimento (40%)', tipo: 'numero', larg: 135, dica: '0,0' },
+      { chave: 'teste', rotulo: 'Teste (20%)', tipo: 'numero', larg: 100, dica: '0,0' },
+      { chave: 'implantacao', rotulo: 'Implantação (10%)', tipo: 'numero', larg: 120, dica: '0,0' },
+      { chave: 'inicioAtendimento', rotulo: 'Início do Atendimento - ACS', tipo: 'data', larg: 160 },
+      { chave: 'conclusaoPrevista', rotulo: 'Conclusão prevista (SLA)', tipo: 'data', larg: 160 },
+      { chave: 'previsaoExpedicao', rotulo: 'Previsão de Expedição', tipo: 'data', larg: 160 },
+      { chave: 'observacoes', rotulo: 'Observações', tipo: 'area', larg: 340, dica: 'observações' }
+    ];
+    var COLUNAS_SOMA = ['pontosTotal', 'documentacao', 'desenvolvimento', 'teste', 'implantacao'];
+    var NOMES_MES = ['Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho', 'Julho', 'Agosto',
+      'Setembro', 'Outubro', 'Novembro', 'Dezembro'];
+
+    var estado = {
+      editor: false,
+      demandas: [],
+      disponiveis: [],   // meses que já têm registro (cronológico)
+      resumo: null,      // { porMes, consolidado } - vem do servidor
+      mes: null,         // edição: o mês aberto
+      selecionados: []   // visualização: os meses marcados
+    };
+    var area = document.getElementById('area');
+    var timerAviso = null;
+
+    /* ---------- utilidades ---------- */
+    function esc(s) {
+      return String(s).replace(/[&<>"']/g, function (c) {
+        return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+      });
+    }
+    function fmtNum(v) {
+      return v === null || v === undefined ? '' :
+        Number(v).toLocaleString('pt-BR', { minimumFractionDigits: 0, maximumFractionDigits: 2 });
+    }
+    function fmtData(iso) {
+      if (!iso) return '';
+      var p = String(iso).split('-');
+      return p.length === 3 ? p[2] + '/' + p[1] + '/' + p[0] : iso;
+    }
+    function quemQuando(d) {
+      if (!d.atualizadoPor) return '';
+      var quando = d.atualizadoEm ? new Date(d.atualizadoEm).toLocaleString('pt-BR', {
+        day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit'
+      }) : '';
+      return 'Última alteração: ' + d.atualizadoPor + (quando ? ' em ' + quando : '');
+    }
+    function rotuloJira(v) {
+      var m = /\/browse\/([A-Za-z0-9-]+)/.exec(v || '');
+      return m ? m[1] : v;
+    }
+
+    function doisDigitos(n) { return (n < 10 ? '0' : '') + n; }
+    function mesValido(m) { return /^\d{4}-(0[1-9]|1[0-2])$/.test(m || ''); }
+    function mesAtual() {
+      var d = new Date();
+      return d.getFullYear() + '-' + doisDigitos(d.getMonth() + 1);
+    }
+    function somarMeses(mes, delta) {
+      var p = mes.split('-');
+      var idx = Number(p[0]) * 12 + (Number(p[1]) - 1) + delta;
+      return Math.floor(idx / 12) + '-' + doisDigitos((idx % 12) + 1);
+    }
+    function rotuloMes(mes) {
+      var p = mes.split('-');
+      return NOMES_MES[Number(p[1]) - 1] + ' de ' + p[0];
+    }
+    function rotuloCurto(mes) {
+      var p = mes.split('-');
+      return NOMES_MES[Number(p[1]) - 1].slice(0, 3) + '/' + p[0];
+    }
+    function intervalo(de, ate) {
+      var lista = [];
+      for (var m = de; m <= ate; m = somarMeses(m, 1)) lista.push(m);
+      return lista;
+    }
+    function parametro(nome) {
+      return new URLSearchParams(location.search).get(nome);
+    }
+    function guardarNaUrl(nome, valor) {
+      var p = new URLSearchParams(location.search);
+      if (valor) p.set(nome, valor); else p.delete(nome);
+      var q = p.toString();
+      history.replaceState(null, '', location.pathname + (q ? '?' + q : ''));
+    }
+
+    function pedir(url, opcoes) {
+      return fetch(url, opcoes).then(function (r) {
+        return r.json().then(function (j) { return { ok: r.ok, j: j }; });
+      });
+    }
+    function carregarMeses(meses) {
+      return pedir('/api/demandas?meses=' + encodeURIComponent(meses.join(',')), { cache: 'no-store' });
+    }
+
+    function mostrarAviso(msg) {
+      var el = document.getElementById('aviso');
+      el.textContent = msg;
+      el.hidden = false;
+      clearTimeout(timerAviso);
+      timerAviso = setTimeout(function () { el.hidden = true; }, 8000);
+    }
+    function falhaAoCarregar(msg) {
+      area.innerHTML = '<div class="vazio">' + esc(msg || 'Não foi possível carregar.') + '</div>';
+      document.getElementById('ajuda').textContent = '';
+    }
+
+    /* ---------- células e linhas ---------- */
+    function valorDe(d, c) {
+      if (c.tipo === 'pontos') return d.emAnalise ? 'em análise' : fmtNum(d.pontosTotal);
+      if (c.tipo === 'numero') return fmtNum(d[c.chave]);
+      return d[c.chave] || '';
+    }
+
+    function celulaEditavel(d, c) {
+      var v = esc(valorDe(d, c));
+      var aria = ' aria-label="' + esc(c.rotulo) + '" data-campo="' + c.chave + '"';
+      var dica = c.dica ? ' placeholder="' + esc(c.dica) + '"' : '';
+      if (c.tipo === 'area') return '<textarea rows="2"' + dica + aria + '>' + v + '</textarea>';
+      if (c.tipo === 'data') return '<input type="date"' + aria + ' value="' + v + '">';
+      var extra = c.tipo === 'numero' || c.tipo === 'pontos' ? ' inputmode="decimal"' : '';
+      var h = '<input type="text"' + extra + dica + aria + ' value="' + v + '">';
+      if (c.tipo === 'jira') {
+        h += '<a class="abrir" target="_blank" rel="noopener noreferrer"' +
+          (d.artefatoUrl ? ' href="' + esc(d.artefatoUrl) + '"' : ' hidden') + '>abrir no Jira</a>';
+      }
+      return h;
+    }
+
+    function celulaLeitura(d, c) {
+      if (c.tipo === 'jira') {
+        if (!d.artefatoJira) return '';
+        return d.artefatoUrl
+          ? '<a href="' + esc(d.artefatoUrl) + '" target="_blank" rel="noopener noreferrer">' + esc(rotuloJira(d.artefatoJira)) + '</a>'
+          : esc(d.artefatoJira);
+      }
+      if (c.tipo === 'data') return esc(fmtData(d[c.chave]));
+      return esc(valorDe(d, c));
+    }
+
+    function linhaHtml(d, editavel) {
+      var h = '<tr data-id="' + d.id + '">';
+      CAMPOS.forEach(function (c) {
+        if (editavel) {
+          h += '<td class="c-' + c.tipo + '">' + celulaEditavel(d, c) + '</td>';
+        } else {
+          var classes = 'leitura' + (c.tipo === 'numero' || c.tipo === 'pontos' ? ' num' : '') + (c.tipo === 'area' ? ' obs' : '');
+          h += '<td class="' + classes + '">' + celulaLeitura(d, c) + '</td>';
+        }
+      });
+      if (editavel) {
+        h += '<td class="acoes" title="' + esc(quemQuando(d)) + '"><span class="estado"></span>' +
+          '<button type="button" class="btn-remover" title="Remover linha" aria-label="Remover linha">&times;</button></td>';
+      }
+      return h + '</tr>';
+    }
+
+    function cabecalho(editavel) {
+      var h = '<thead><tr>';
+      CAMPOS.forEach(function (c) { h += '<th style="min-width:' + c.larg + 'px">' + esc(c.rotulo) + '</th>'; });
+      if (editavel) h += '<th style="min-width:120px"></th>';
+      return h + '</tr></thead>';
+    }
+
+    // totais: objeto { pontosTotal, documentacao, ... }; vazio ou zero vira "—"
+    function rodapeTotais(totais, editavel) {
+      var h = '<tfoot><tr class="totais"><td colspan="3">Total</td>';
+      COLUNAS_SOMA.forEach(function (k) {
+        h += '<td class="num" data-total="' + k + '">' + (fmtNum(totais[k]) || '—') + '</td>';
+      });
+      return h + '<td colspan="' + (4 + (editavel ? 1 : 0)) + '"></td></tr></tfoot>';
+    }
+
+    function somar(chave) {
+      var soma = 0, algum = false;
+      estado.demandas.forEach(function (d) {
+        if (typeof d[chave] === 'number') { soma += d[chave]; algum = true; }
+      });
+      return algum ? Math.round(soma * 100) / 100 : null;
+    }
+    function totaisDaTela() {
+      var t = {};
+      COLUNAS_SOMA.forEach(function (k) { t[k] = somar(k); });
+      return t;
+    }
+    function atualizarTotais() {
+      var t = totaisDaTela();
+      COLUNAS_SOMA.forEach(function (k) {
+        var td = area.querySelector('[data-total="' + k + '"]');
+        if (td) td.textContent = fmtNum(t[k]) || '—';
+      });
+    }
+
+    /* ======================================================================
+     * EDIÇÃO  (/demandas/editar) - um mês por vez
+     * ====================================================================== */
+    function demandaDaLinha(tr) {
+      var id = Number(tr.getAttribute('data-id'));
+      return estado.demandas.filter(function (d) { return d.id === id; })[0];
+    }
+
+    function atualizarVazio() {
+      var vazio = document.getElementById('vazio');
+      vazio.hidden = estado.demandas.length > 0;
+      vazio.textContent = 'Nenhuma demanda em ' + rotuloMes(estado.mes) + '. Clique em "+ Adicionar linha" para começar.';
+      var c = document.getElementById('contagem');
+      if (c) c.textContent = estado.demandas.length + (estado.demandas.length === 1 ? ' demanda' : ' demandas') + ' neste mês';
+    }
+
+    // Só o campo salvo é mesclado no estado: devolver a linha inteira
+    // poderia apagar o que a pessoa já digitou em outra célula enquanto esta
+    // resposta voltava.
+    function mesclar(d, r, campo) {
+      if (campo === 'pontosTotal') { d.pontosTotal = r.pontosTotal; d.emAnalise = r.emAnalise; }
+      else d[campo] = r[campo];
+      if (campo === 'artefatoJira') d.artefatoUrl = r.artefatoUrl;
+      d.atualizadoPor = r.atualizadoPor;
+      d.atualizadoEm = r.atualizadoEm;
+    }
+
+    function refletir(tr, d, campo) {
+      var c = CAMPOS.filter(function (x) { return x.chave === campo; })[0];
+      var el = tr.querySelector('[data-campo="' + campo + '"]');
+      if (el && document.activeElement !== el) el.value = valorDe(d, c);
+      if (campo === 'artefatoJira') {
+        var a = tr.querySelector('.abrir');
+        if (a) {
+          if (d.artefatoUrl) { a.href = d.artefatoUrl; a.hidden = false; }
+          else { a.removeAttribute('href'); a.hidden = true; }
+        }
+      }
+      tr.querySelector('.acoes').title = quemQuando(d);
+      atualizarTotais();
+    }
+
+    function marcar(tr, tipo, msg) {
+      var el = tr.querySelector('.estado');
+      if (!el) return;
+      clearTimeout(el._timer);
+      el.className = 'estado' + (tipo ? ' ' + tipo : '');
+      el.textContent = tipo === 'salvando' ? 'Salvando…' : tipo === 'salvo' ? 'Salvo' : tipo === 'erro' ? 'Erro' : '';
+      el.title = msg || '';
+      if (tipo === 'salvo') el._timer = setTimeout(function () { el.textContent = ''; }, 2500);
+    }
+
+    function salvarCampo(tr, campo, valor) {
+      var d = demandaDaLinha(tr);
+      if (!d) return;
+      marcar(tr, 'salvando');
+      var corpo = {};
+      corpo[campo] = valor;
+      pedir('/api/demandas/' + d.id, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(corpo)
+      })
+        .then(function (res) {
+          if (!res.ok) {
+            marcar(tr, 'erro', res.j.erro);
+            mostrarAviso(res.j.erro || 'Não foi possível salvar.');
+            return;
+          }
+          mesclar(d, res.j.demanda, campo);
+          refletir(tr, d, campo);
+          marcar(tr, 'salvo');
+        })
+        .catch(function () {
+          marcar(tr, 'erro', 'Falha ao conversar com o servidor.');
+          mostrarAviso('Falha ao conversar com o servidor. Confira a conexão e tente de novo.');
+        });
+    }
+
+    function removerLinha(tr) {
+      var d = demandaDaLinha(tr);
+      if (!d) return;
+      var nome = d.demandaAcs || d.nome || ('#' + d.id);
+      if (!confirm('Remover a linha "' + nome + '"?')) return;
+      pedir('/api/demandas/' + d.id, { method: 'DELETE' })
+        .then(function (res) {
+          if (!res.ok) { mostrarAviso(res.j.erro || 'Não foi possível remover.'); return; }
+          estado.demandas = estado.demandas.filter(function (x) { return x.id !== d.id; });
+          tr.parentNode.removeChild(tr);
+          atualizarTotais();
+          atualizarVazio();
+        })
+        .catch(function () { mostrarAviso('Falha ao conversar com o servidor.'); });
+    }
+
+    function adicionarLinha(botao) {
+      var mes = estado.mes;
+      // Enquanto troca de mês a grade some da tela; adicionar aí não tem onde aparecer.
+      if (!document.getElementById('corpo')) return;
+      botao.disabled = true;
+      pedir('/api/demandas', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ mes: mes })
+      })
+        .then(function (res) {
+          botao.disabled = false;
+          if (!res.ok) { mostrarAviso(res.j.erro || 'Não foi possível criar a linha.'); return; }
+          var corpo = document.getElementById('corpo');
+          if (mes !== estado.mes || !corpo) return; // trocou de mês enquanto criava
+          estado.demandas.push(res.j.demanda);
+          corpo.insertAdjacentHTML('beforeend', linhaHtml(res.j.demanda, true));
+          atualizarVazio();
+          var primeiro = corpo.lastElementChild.querySelector('input, textarea');
+          if (primeiro) primeiro.focus();
+        })
+        .catch(function () {
+          botao.disabled = false;
+          mostrarAviso('Falha ao conversar com o servidor.');
+        });
+    }
+
+    function montarGrade() {
+      area.innerHTML = '<div class="tabela-scroll"><table class="grade">' + cabecalho(true) +
+        '<tbody id="corpo">' + estado.demandas.map(function (d) { return linhaHtml(d, true); }).join('') + '</tbody>' +
+        rodapeTotais(totaisDaTela(), true) + '</table></div>';
+      atualizarVazio();
+
+      var corpo = document.getElementById('corpo');
+      corpo.addEventListener('change', function (e) {
+        var campo = e.target.getAttribute('data-campo');
+        if (!campo) return;
+        salvarCampo(e.target.closest('tr'), campo, e.target.value);
+      });
+      corpo.addEventListener('click', function (e) {
+        var botao = e.target.closest('.btn-remover');
+        if (botao) removerLinha(botao.closest('tr'));
+      });
+    }
+
+    // Do mais antigo com registro (ou 3 meses atrás) até 2 meses à frente, sem
+    // buracos: dá para abrir um mês novo ou preencher um que ficou para trás.
+    function mesesDoSeletor() {
+      var atual = mesAtual();
+      var todos = estado.disponiveis.concat([atual, estado.mes]);
+      var menor = todos.concat([somarMeses(atual, -3)]).sort()[0];
+      var maior = todos.concat([somarMeses(atual, 2)]).sort().pop();
+      return intervalo(menor, maior).reverse();
+    }
+
+    function atualizarRotulosEdicao() {
+      var btn = document.getElementById('btnAdd');
+      if (btn) btn.textContent = '+ Adicionar linha em ' + rotuloMes(estado.mes);
+      var ver = document.getElementById('linkVisualizar');
+      if (ver) ver.href = '/demandas?meses=' + estado.mes;
+    }
+
+    function trocarMes(novo) {
+      estado.mes = novo;
+      guardarNaUrl('mes', novo);
+      atualizarRotulosEdicao();
+      area.innerHTML = '<div class="vazio">Carregando…</div>';
+      document.getElementById('vazio').hidden = true;
+      carregarMeses([novo]).then(function (res) {
+        if (novo !== estado.mes) return; // escolheu outro mês no meio do caminho
+        if (!res.ok) return falhaAoCarregar(res.j.erro);
+        estado.demandas = res.j.demandas;
+        estado.disponiveis = res.j.mesesDisponiveis;
+        montarGrade();
+      }).catch(function () { falhaAoCarregar(); });
+    }
+
+    function montarBarraEdicao() {
+      var opcoes = mesesDoSeletor().map(function (m) {
+        return '<option value="' + m + '"' + (m === estado.mes ? ' selected' : '') + '>' + esc(rotuloMes(m)) + '</option>';
+      }).join('');
+      document.getElementById('barra').innerHTML =
+        '<label for="selMes">Mês</label><select id="selMes">' + opcoes + '</select>' +
+        '<span class="contagem" id="contagem"></span>';
+      document.getElementById('selMes').addEventListener('change', function () { trocarMes(this.value); });
+
+      document.getElementById('acoesRodape').innerHTML = '<button type="button" class="btn-add" id="btnAdd"></button>';
+      document.getElementById('btnAdd').addEventListener('click', function () { adicionarLinha(this); });
+
+      var ver = document.createElement('a');
+      ver.className = 'link-topo destaque';
+      ver.id = 'linkVisualizar';
+      ver.textContent = 'Visualizar';
+      var topo = document.getElementById('acoesTopo');
+      topo.insertBefore(ver, topo.firstChild);
+
+      document.getElementById('selo').textContent = 'Edição liberada';
+      document.getElementById('ajuda').textContent = 'Escolha o mês: a entrega é mensal e cada mês tem registros novos ' +
+        '(a mesma demanda pode aparecer em vários meses). Clique em qualquer caixa para preencher; as colunas podem ' +
+        'ficar em branco. Cada alteração é salva ao sair do campo, e os valores de cada fase são digitados ' +
+        '(os percentuais nos títulos são só referência).';
+    }
+
+    function iniciarEdicao() {
+      var param = parametro('mes');
+      estado.mes = mesValido(param) ? param : mesAtual();
+      carregarMeses([estado.mes]).then(function (res) {
+        if (!res.ok) return falhaAoCarregar(res.j.erro);
+        if (!res.j.editor) { location.replace('/demandas'); return; }
+        estado.editor = true;
+        estado.demandas = res.j.demandas;
+        estado.disponiveis = res.j.mesesDisponiveis;
+        montarBarraEdicao();
+        atualizarRotulosEdicao();
+        montarGrade();
+      }).catch(function () { falhaAoCarregar(); });
+    }
+
+    /* ======================================================================
+     * VISUALIZAÇÃO  (/demandas) - vários meses, resumo e consolidado
+     * ====================================================================== */
+    function celulaResumo(v, destaque) {
+      return '<td class="num' + (destaque ? ' destaque' : '') + '">' + (fmtNum(v) || '0') + '</td>';
+    }
+    function linhaResumo(rotulo, o, consolidado) {
+      return '<tr' + (consolidado ? ' class="consolidado"' : '') + '><td>' + esc(rotulo) + '</td>' +
+        celulaResumo(o.demandas) + celulaResumo(o.pontosTotal) + celulaResumo(o.documentacao) +
+        celulaResumo(o.desenvolvimento) + celulaResumo(o.teste) + celulaResumo(o.implantacao) +
+        celulaResumo(o.entregue, true) + '</tr>';
+    }
+
+    function blocoResumo() {
+      var r = estado.resumo;
+      var varios = r.porMes.length > 1;
+      var h = '<h3 class="sub">' + (varios ? 'Consolidado dos meses selecionados' : 'Resumo de ' + esc(rotuloMes(r.porMes[0].mes))) + '</h3>' +
+        '<div class="tabela-scroll"><table class="grade resumo"><thead><tr><th>Mês</th><th class="num">Demandas</th>' +
+        '<th class="num">Pontos de Função (total)</th><th class="num">Documentação</th><th class="num">Desenvolvimento</th>' +
+        '<th class="num">Teste</th><th class="num">Implantação</th><th class="num">Total entregue</th></tr></thead><tbody>';
+      r.porMes.forEach(function (m) { h += linhaResumo(rotuloMes(m.mes), m, false); });
+      if (varios) h += linhaResumo('Consolidado', r.consolidado, true);
+      h += '</tbody></table></div>';
+      if (varios) {
+        h += '<p class="nota">As fases são o que foi entregue em cada mês, então somam. Os Pontos de Função (total) são da ' +
+          'demanda: se o mesmo número ACS aparece em mais de um mês, entra uma vez só no consolidado (com o valor do mês ' +
+          'mais recente) — por isso o consolidado pode ser menor que a soma dos meses.</p>';
+      }
+      return h;
+    }
+
+    function blocoMes(resumoMes) {
+      var linhas = estado.demandas.filter(function (d) { return d.mes === resumoMes.mes; });
+      // zero no rodapé do detalhe é "nada preenchido", igual ao "—" da edição
+      var totais = {};
+      COLUNAS_SOMA.forEach(function (k) { totais[k] = resumoMes[k] || null; });
+      return '<h3 class="sub">' + esc(rotuloMes(resumoMes.mes)) + ' <small>' + linhas.length +
+        (linhas.length === 1 ? ' demanda' : ' demandas') + '</small></h3>' +
+        '<div class="tabela-scroll"><table class="grade">' + cabecalho(false) + '<tbody>' +
+        linhas.map(function (d) { return linhaHtml(d, false); }).join('') + '</tbody>' +
+        rodapeTotais(totais, false) + '</table></div>';
+    }
+
+    function renderFiltrosVer() {
+      var h = '<div class="chips" role="group" aria-label="Meses">' +
+        estado.disponiveis.map(function (m) {
+          var marcado = estado.selecionados.indexOf(m) >= 0;
+          return '<button type="button" class="chip" data-mes="' + m + '" aria-pressed="' + marcado + '">' + esc(rotuloCurto(m)) + '</button>';
+        }).join('') +
+        '<button type="button" class="chip todos" data-todos="1">Todos os meses</button></div>';
+      var barra = document.getElementById('barra');
+      barra.innerHTML = '<label>Meses</label>' + h;
+    }
+
+    function renderVer() {
+      renderFiltrosVer();
+      if (!estado.selecionados.length) {
+        area.innerHTML = '<div class="vazio">Selecione ao menos um mês acima.</div>';
+        return;
+      }
+      var h = blocoResumo();
+      estado.resumo.porMes.forEach(function (m) { h += blocoMes(m); });
+      area.innerHTML = h;
+      var link = document.getElementById('linkEditar');
+      if (link) link.href = '/demandas/editar?mes=' + estado.selecionados[estado.selecionados.length - 1];
+    }
+
+    function buscarSelecionados() {
+      var pedido = estado.selecionados.slice();
+      carregarMeses(pedido).then(function (res) {
+        if (estado.selecionados.join(',') !== pedido.join(',')) return; // a seleção mudou no meio do caminho
+        if (!res.ok) return falhaAoCarregar(res.j.erro);
+        estado.demandas = res.j.demandas;
+        estado.resumo = res.j.resumo;
+        estado.disponiveis = res.j.mesesDisponiveis;
+        renderVer();
+      }).catch(function () { falhaAoCarregar(); });
+    }
+
+    function selecionar(meses) {
+      estado.selecionados = meses.slice().sort();
+      guardarNaUrl('meses', estado.selecionados.join(','));
+      if (!estado.selecionados.length) { estado.demandas = []; estado.resumo = null; renderVer(); return; }
+      buscarSelecionados();
+    }
+
+    function configurarVer() {
+      document.getElementById('ajuda').textContent = 'Escolha um ou mais meses. Com um mês você vê o resumo e o detalhe; ' +
+        'com vários, o consolidado aparece junto.';
+      document.getElementById('barra').addEventListener('click', function (e) {
+        var chip = e.target.closest('.chip');
+        if (!chip) return;
+        if (chip.getAttribute('data-todos')) return selecionar(estado.disponiveis);
+        var mes = chip.getAttribute('data-mes');
+        var atuais = estado.selecionados.slice();
+        var i = atuais.indexOf(mes);
+        if (i >= 0) atuais.splice(i, 1); else atuais.push(mes);
+        selecionar(atuais);
+      });
+    }
+
+    function iniciarVisualizacao() {
+      var param = parametro('meses');
+      var pedidos = param ? param.split(',').filter(function (m, i, todos) {
+        return mesValido(m) && todos.indexOf(m) === i;
+      }) : [];
+      var inicial = pedidos.length ? pedidos : [mesAtual()];
+      carregarMeses(inicial).then(function (res) {
+        if (!res.ok) return falhaAoCarregar(res.j.erro);
+        estado.editor = !!res.j.editor;
+        estado.disponiveis = res.j.mesesDisponiveis;
+        configurarVer();
+
+        if (estado.editor) {
+          var ed = document.createElement('a');
+          ed.className = 'link-topo destaque';
+          ed.id = 'linkEditar';
+          ed.href = '/demandas/editar';
+          ed.textContent = 'Editar';
+          var topo = document.getElementById('acoesTopo');
+          topo.insertBefore(ed, topo.firstChild);
+        }
+
+        if (!estado.disponiveis.length) {
+          document.getElementById('barra').innerHTML = '';
+          area.innerHTML = '<div class="vazio">Nenhuma demanda cadastrada ainda.</div>';
+          return;
+        }
+        // Só vale mês que tem registro; sem nenhum válido, abre no mais recente.
+        var validos = inicial.filter(function (m) { return estado.disponiveis.indexOf(m) >= 0; });
+        if (!validos.length) validos = [estado.disponiveis[estado.disponiveis.length - 1]];
+        if (validos.join(',') === inicial.slice().sort().join(',')) {
+          estado.selecionados = validos.slice().sort();
+          estado.demandas = res.j.demandas;
+          estado.resumo = res.j.resumo;
+          guardarNaUrl('meses', estado.selecionados.join(','));
+          renderVer();
+        } else {
+          selecionar(validos);
+        }
+      }).catch(function () { falhaAoCarregar(); });
+    }
+
+    fetch('/api/eu').then(function (r) { return r.ok ? r.json() : null; }).then(function (eu) {
+      if (eu && eu.email) document.getElementById('quem').textContent = eu.email;
+    }).catch(function () {});
+
+    if (EDITANDO) iniciarEdicao(); else iniciarVisualizacao();
+  })();
+</script>

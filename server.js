@@ -9,8 +9,13 @@ const {
   cadastrar, entrar, lerSnapshot, gravarSnapshot, gravarHistorico, lerHistorico,
   gravarEntregas, lerEntregas, listarSprintsEntregas, listarMesesEntregas, gravarPlanejamento,
   lerPlanejamentoSprint, lerCarryOverEntregue, listarPlanejamentoPorSprint, listarItensPlanejamento,
-  listarItensCarryOver, registrarAcesso, listarAcessos, listarUsuarios, confirmarUsuarioManualmente
+  listarItensCarryOver, registrarAcesso, listarAcessos, listarUsuarios, confirmarUsuarioManualmente,
+  listarDemandas, criarDemanda, atualizarDemanda, removerDemanda
 } = require('./supabase');
+const {
+  normalizarCampos, idDemanda, interpretarMes, interpretarListaMeses, mesesDisponiveis,
+  filtrarPorMeses, resumirMeses
+} = require('./demandas');
 const {
   COOKIE_NAME,
   SESSAO_DIAS,
@@ -21,7 +26,10 @@ const {
   exigirSessaoApi,
   exigirAdminPagina,
   exigirAdminApi,
+  exigirEditorApi,
+  exigirEditorPagina,
   souAdmin,
+  souEditor,
   limitarTentativas
 } = require('./auth');
 
@@ -63,7 +71,7 @@ app.use((req, res, next) => {
   // Sem isto ele reaproveita a versão antiga e o deploy "não aparece" - o que
   // já custou vários hard refresh. no-cache não proíbe guardar, obriga a
   // revalidar: com o ETag do Express, resposta igual continua saindo 304.
-  if (req.path === '/' || req.path.endsWith('.html') || req.path === '/dashboard') {
+  if (req.path === '/' || req.path.endsWith('.html') || ['/dashboard', '/admin', '/demandas', '/demandas/editar'].includes(req.path)) {
     res.setHeader('Cache-Control', 'no-cache');
   }
 
@@ -233,7 +241,12 @@ app.get('/', exigirSessaoPagina, (req, res) => {
 });
 
 app.get('/api/eu', exigirSessaoApi, (req, res) => {
-  res.json({ ...req.usuario, hubUrl: process.env.HUB_URL || null, admin: souAdmin(req.usuario.email) });
+  res.json({
+    ...req.usuario,
+    hubUrl: process.env.HUB_URL || null,
+    admin: souAdmin(req.usuario.email),
+    editor: souEditor(req.usuario.email)
+  });
 });
 
 app.get('/api/dados', exigirSessaoApi, async (req, res) => {
@@ -242,6 +255,70 @@ app.get('/api/dados', exigirSessaoApi, async (req, res) => {
 
 app.get('/dashboard', exigirSessaoPagina, (req, res) => {
   res.sendFile(path.join(PUBLIC_DIR, 'dashboard.html'));
+});
+
+/** Demandas e Pontos de Função: qualquer pessoa logada vê, só editor altera.
+ * Duas rotas, uma página: /demandas só mostra (mesmo para editor, para poder
+ * apresentar sem risco de mexer num valor), /demandas/editar é onde se
+ * preenche. Cada gravação é por campo (PATCH) e carrega quem mexeu e quando. */
+app.get('/demandas', exigirSessaoPagina, (req, res) => {
+  res.sendFile(path.join(PUBLIC_DIR, 'demandas.html'));
+});
+
+app.get('/demandas/editar', exigirSessaoPagina, exigirEditorPagina, (req, res) => {
+  res.sendFile(path.join(PUBLIC_DIR, 'demandas.html'));
+});
+
+/** ?meses=2026-09,2026-10 filtra; sem o parâmetro devolve todos os meses.
+ * O resumo (por mês e consolidado) sai daqui, calculado numa função testada,
+ * para a tela não reimplementar a regra do consolidado. */
+app.get('/api/demandas', exigirSessaoApi, async (req, res) => {
+  let meses = null;
+  if (req.query.meses !== undefined) {
+    const p = interpretarListaMeses(req.query.meses);
+    if (!p.ok) return res.status(400).json({ erro: p.erro });
+    meses = p.valor;
+  }
+  const r = await listarDemandas();
+  if (!r.ok) return res.status(503).json({ erro: 'Não foi possível carregar as demandas agora.' });
+  const disponiveis = mesesDisponiveis(r.demandas);
+  res.json({
+    demandas: filtrarPorMeses(r.demandas, meses),
+    mesesDisponiveis: disponiveis,
+    resumo: resumirMeses(r.demandas, meses || disponiveis),
+    editor: souEditor(req.usuario.email)
+  });
+});
+
+app.post('/api/demandas', exigirSessaoApi, exigirEditorApi, async (req, res) => {
+  const m = interpretarMes(req.body && req.body.mes);
+  if (!m.ok) return res.status(400).json({ erro: m.erro });
+  const r = await criarDemanda(req.usuario.email, m.valor);
+  if (!r.ok) return res.status(500).json({ erro: 'Não foi possível criar a linha.' });
+  console.log(`[demandas] ${req.usuario.email} criou a linha #${r.demanda.id} em ${m.valor}`);
+  res.status(201).json({ demanda: r.demanda });
+});
+
+app.patch('/api/demandas/:id', exigirSessaoApi, exigirEditorApi, async (req, res) => {
+  const id = idDemanda(req.params.id);
+  if (!id) return res.status(400).json({ erro: 'Identificador inválido.' });
+  const n = normalizarCampos(req.body);
+  if (!n.ok) return res.status(400).json({ erro: n.erro });
+  const r = await atualizarDemanda(id, n.registro, req.usuario.email);
+  if (r.naoEncontrada) return res.status(404).json({ erro: 'Linha não encontrada (pode ter sido removida).' });
+  if (!r.ok) return res.status(500).json({ erro: 'Não foi possível salvar.' });
+  console.log(`[demandas] ${req.usuario.email} alterou #${id}: ${Object.keys(n.registro).join(', ')}`);
+  res.json({ demanda: r.demanda });
+});
+
+app.delete('/api/demandas/:id', exigirSessaoApi, exigirEditorApi, async (req, res) => {
+  const id = idDemanda(req.params.id);
+  if (!id) return res.status(400).json({ erro: 'Identificador inválido.' });
+  const r = await removerDemanda(id, req.usuario.email);
+  if (r.naoEncontrada) return res.status(404).json({ erro: 'Linha não encontrada (pode já ter sido removida).' });
+  if (!r.ok) return res.status(500).json({ erro: 'Não foi possível remover.' });
+  console.log(`[demandas] ${req.usuario.email} removeu #${id}`);
+  res.json({ ok: true });
 });
 
 app.get('/admin', exigirSessaoPagina, exigirAdminPagina, (req, res) => {

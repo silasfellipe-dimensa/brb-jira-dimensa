@@ -41,6 +41,22 @@ function souAdmin(email) {
   return !!email && emailsAdmin.includes(String(email).toLowerCase());
 }
 
+// Quem edita a tela de Demandas e Pontos de Função: só quem é da equipe, ou
+// seja, dos domínios abaixo. Quem entra por outro domínio liberado (BRB,
+// TOTVS) só visualiza - não edita, não inclui, não remove. É por domínio, e
+// só por domínio, de propósito: nem ADMIN_EMAILS nem uma lista de e-mails
+// abre exceção, para "BRB só visualiza" valer sempre, sem depender de
+// ninguém ter configurado a lista certa.
+const dominiosEditores = (process.env.EDITOR_DOMAINS || 'dimensa.com.br,evertecinc.com.br')
+  .split(',').map((d) => d.trim().toLowerCase()).filter(Boolean);
+
+function souEditor(email) {
+  // Compara o domínio INTEIRO (nunca "termina com"): "x@dimensa.com.br.invasor.com"
+  // e "x@naodimensa.com.br" não podem passar.
+  const partes = String(email || '').trim().toLowerCase().split('@');
+  return partes.length === 2 && partes[0] !== '' && dominiosEditores.includes(partes[1]);
+}
+
 function criarSessao(usuario) {
   return jwt.sign(usuario, SESSION_SECRET, { expiresIn: `${SESSAO_DIAS}d` });
 }
@@ -89,6 +105,20 @@ function exigirAdminApi(req, res, next) {
   next();
 }
 
+/** A página de edição não é esconder, é encaminhar: quem não edita vai para a
+ * visualização (que mostra o mesmo dado), em vez de dar de cara com um erro. */
+function exigirEditorPagina(req, res, next) {
+  if (!souEditor(req.usuario && req.usuario.email)) return res.redirect('/demandas');
+  next();
+}
+
+function exigirEditorApi(req, res, next) {
+  if (!souEditor(req.usuario && req.usuario.email)) {
+    return res.status(403).json({ erro: 'Somente a equipe pode editar esta tela.' });
+  }
+  next();
+}
+
 /** Limite de tentativas por IP, para nao deixar a senha ser adivinhada
  * por forca bruta. Em memoria: numa funcao serverless cada instancia tem
  * a sua contagem, entao isso atrasa um ataque, nao o impede por completo.
@@ -132,7 +162,10 @@ module.exports = {
   exigirSessaoPagina,
   exigirSessaoApi,
   souAdmin,
+  souEditor,
   exigirAdminPagina,
   exigirAdminApi,
+  exigirEditorApi,
+  exigirEditorPagina,
   limitarTentativas
 };

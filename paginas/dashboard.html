@@ -132,10 +132,27 @@
   .colunas-vazao .rot { font-size: 0.66rem; color: var(--ink-faint); white-space: nowrap; }
   .colunas-vazao .qtd { font-size: 0.78rem; font-weight: 700; font-variant-numeric: tabular-nums; }
 
-  .planejamento-grade { display: flex; flex-wrap: wrap; gap: 14px; margin: 10px 0 16px; }
+  .planejamento-grade { display: flex; flex-wrap: wrap; gap: 14px; }
   .planejamento-num { flex: 1 1 140px; text-align: center; padding: 10px; border-radius: 8px; background: var(--line-soft); }
   .planejamento-num strong { display: block; font-size: 1.6rem; font-variant-numeric: tabular-nums; }
   .planejamento-num span { font-size: 0.72rem; color: var(--ink-dim); }
+
+  .planejamento-total {
+    display: flex; align-items: baseline; gap: 10px; padding-bottom: 14px; margin-bottom: 16px;
+    border-bottom: 1px solid var(--line);
+  }
+  .planejamento-total strong { font-size: 2rem; font-variant-numeric: tabular-nums; color: var(--ink); flex-shrink: 0; }
+  .planejamento-total span { font-size: 0.78rem; color: var(--ink-faint); }
+
+  .planejamento-grupo { margin-bottom: 20px; }
+  .planejamento-grupo h4 {
+    display: flex; align-items: center; gap: 7px; margin: 0 0 3px;
+    font-size: 0.76rem; font-weight: 700; color: var(--ink);
+  }
+  .planejamento-grupo h4::before {
+    content: ''; width: 8px; height: 8px; border-radius: 3px; background: var(--accent); flex-shrink: 0;
+  }
+  .planejamento-grupo.carry h4::before { background: var(--c-dev); }
   .colunas-planejamento { display: flex; align-items: flex-end; gap: 10px; height: 130px; padding-top: 8px; }
   .coluna-planejamento { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 6px; height: 100%; justify-content: flex-end; }
   .barra-planejamento { width: 100%; max-width: 40px; background: var(--line); border-radius: 4px 4px 0 0; min-height: 3px; display: flex; flex-direction: column-reverse; overflow: hidden; }
@@ -278,6 +295,7 @@
       <p id="subtitulo">Carregando…</p>
     </div>
     <div class="acoes-topo">
+      <a class="link-board" href="/demandas">Demandas</a>
       <a class="link-board" href="/">
         <svg viewBox="0 0 24 24"><path d="M15 18l-6-6 6-6"/></svg>
         Voltar ao board
@@ -544,16 +562,37 @@
       return;
     }
     var p = resposta.planejamento;
+    var carryOver = resposta.carryOverEntregue || 0;
+    // O numero que as pessoas procuram primeiro nao e nenhum dos 5 de baixo
+    // isolado - e a soma de "no prazo" com "carry-over", que juntos formam
+    // TUDO que saiu na sprint de verdade. Sem esse total em destaque, quem
+    // olha o "planejado" (que so conta quem NASCEU aqui) acha que a lista
+    // de itens embaixo (que soma nascido + carry-over) "nao bate" com ele -
+    // não bate mesmo, porque são perguntas diferentes (confusão real,
+    // sessão 2026-09-25).
+    var totalEntregue = p.entregueNoPrazo + p.entregueAtrasado + carryOver;
     if (titulo) titulo.textContent = sprintNome || p.sprintOrigem || 'Detalhe da sprint';
     if (ajuda) ajuda.textContent = 'Quanto foi planejado para essa sprint, quanto já saiu (no prazo ou ' +
       'atrasado) e quanto ainda está em aberto hoje.';
     alvo.innerHTML =
-      '<div class="planejamento-grade">' +
-        '<div class="planejamento-num"><strong>' + p.planejado + '</strong><span>Planejado (nascido aqui)</span></div>' +
-        '<div class="planejamento-num"><strong>' + p.entregueNoPrazo + '</strong><span>Entregue no prazo</span></div>' +
-        '<div class="planejamento-num"><strong>' + p.entregueAtrasado + '</strong><span>Entregue atrasado</span></div>' +
-        '<div class="planejamento-num"><strong>' + p.naoEntregue + '</strong><span>Ainda não entregue</span></div>' +
-        '<div class="planejamento-num"><strong>' + (resposta.carryOverEntregue || 0) + '</strong><span>Carry-over entregue nessa sprint</span></div>' +
+      '<div class="planejamento-total">' +
+        '<strong>' + totalEntregue + '</strong>' +
+        '<span>Total entregue nessa sprint (no prazo + atrasado + carry-over de sprint anterior)</span>' +
+      '</div>' +
+      '<div class="planejamento-grupo">' +
+        '<h4>Nasceu nessa sprint</h4>' +
+        '<div class="planejamento-grade">' +
+          '<div class="planejamento-num"><strong>' + p.planejado + '</strong><span>Planejado</span></div>' +
+          '<div class="planejamento-num"><strong>' + p.entregueNoPrazo + '</strong><span>Entregue no prazo</span></div>' +
+          '<div class="planejamento-num"><strong>' + p.entregueAtrasado + '</strong><span>Entregue atrasado</span></div>' +
+          '<div class="planejamento-num"><strong>' + p.naoEntregue + '</strong><span>Ainda não entregue</span></div>' +
+        '</div>' +
+      '</div>' +
+      '<div class="planejamento-grupo carry">' +
+        '<h4>Chegou de outra sprint</h4>' +
+        '<div class="planejamento-grade">' +
+          '<div class="planejamento-num"><strong>' + carryOver + '</strong><span>Carry-over entregue nessa sprint</span></div>' +
+        '</div>' +
       '</div>';
     renderPlanejamentoPorSemana(p.porSemana || []);
   }
@@ -692,23 +731,39 @@
       'carry-over': carryOver
     };
     var titulos = {
-      'no-prazo': 'Nasceu e foi entregue nessa sprint',
-      'atrasado': 'Nasceu nessa sprint, saiu atrasado (sprint posterior)',
-      'aberto': 'Nasceu nessa sprint, ainda não entregue',
-      'carry-over': 'Entregue nessa sprint, mas nasceu antes'
+      'no-prazo': 'Entregue no prazo',
+      'atrasado': 'Entregue atrasado',
+      'aberto': 'Ainda não entregue',
+      'carry-over': 'Entregue nessa sprint'
     };
 
-    var h = '<h3 class="sub-titulo">O que nasceu e o que saiu, item a item</h3>' +
-      '<p class="ajuda">Os 3 primeiros grupos olham pela origem (o que nasceu nessa sprint). ' +
-      'O último olha pela conclusão: itens de sprint anterior que só saíram agora — sem eles, ' +
-      'o total de entregas da sprint parece menor do que realmente foi.</p>';
-    ['no-prazo', 'atrasado', 'aberto', 'carry-over'].forEach(function (chave) {
+    function listaDoGrupo(chave) {
       var lista = grupos[chave];
-      if (!lista.length) return;
-      h += '<div class="detalhe-planejamento-grupo ' + chave + '"><h4>' + titulos[chave] + ' (' + lista.length + ')</h4>';
+      if (!lista.length) return '';
+      var h = '<div class="detalhe-planejamento-grupo ' + chave + '"><h4>' + titulos[chave] + ' (' + lista.length + ')</h4>';
       lista.forEach(function (item) { h += linhaItemPlanejamento(item); });
-      h += '</div>';
-    });
+      return h + '</div>';
+    }
+
+    var nasceuAqui = listaDoGrupo('no-prazo') + listaDoGrupo('atrasado') + listaDoGrupo('aberto');
+    var chegouDeFora = listaDoGrupo('carry-over');
+
+    var h = '<h3 class="sub-titulo">O que nasceu e o que saiu, item a item</h3>';
+    if (nasceuAqui) {
+      h += '<div class="planejamento-grupo">' +
+        '<h4>Nasceu nessa sprint</h4>' +
+        '<p class="ajuda">O que era pra sair dessa sprint, saiu?</p>' +
+        nasceuAqui +
+      '</div>';
+    }
+    if (chegouDeFora) {
+      h += '<div class="planejamento-grupo carry">' +
+        '<h4>Chegou de outra sprint</h4>' +
+        '<p class="ajuda">Nasceu numa sprint anterior e só saiu agora — soma no "total entregue" lá em cima, ' +
+        'mas não conta no "planejado" desta sprint.</p>' +
+        chegouDeFora +
+      '</div>';
+    }
     destino.innerHTML = h;
   }
 

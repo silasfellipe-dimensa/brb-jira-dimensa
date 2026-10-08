@@ -13,7 +13,9 @@ process.env.SUPABASE_ANON_KEY = 'chave-fake-de-teste';
 const { test, describe } = require('node:test');
 const assert = require('node:assert');
 
-const { emailPermitido, segredoConfere, criarSessao, lerSessao, souAdmin, exigirAdminApi } = require('../auth');
+const {
+  emailPermitido, segredoConfere, criarSessao, lerSessao, souAdmin, exigirAdminApi, souEditor, exigirEditorApi
+} = require('../auth');
 const {
   mapearColunas, montarColunas, montarMetricas, epicoDe, ehSubtarefa,
   sprintsDaIssue, montarEntregas, montarPlanejamento, statusFechamento
@@ -316,6 +318,88 @@ describe('souAdmin — quem enxerga a página /admin', () => {
     assert.ok(!souAdmin(''));
     assert.ok(!souAdmin(undefined));
     assert.ok(!souAdmin(null));
+  });
+});
+
+describe('souEditor — quem altera a tela de Demandas (so Dimensa e Evertec)', () => {
+  test('qualquer pessoa da Dimensa ou da Evertec edita', () => {
+    assert.ok(souEditor('fulano@dimensa.com.br'));
+    assert.ok(souEditor('fulano@evertecinc.com.br'));
+    assert.ok(souEditor('silas.fellipe@dimensa.com.br'));
+  });
+
+  // Regra do negocio: BRB so visualiza - nao edita, nao inclui, nao remove.
+  // E TOTVS (tambem liberado para entrar) nao e da equipe.
+  test('BRB e TOTVS so visualizam', () => {
+    assert.ok(!souEditor('cliente@brb.com.br'));
+    assert.ok(!souEditor('fulano@totvs.com.br'));
+  });
+
+  // Bug que isto evita: abrir excecao para alguem do BRB por engano. Nem
+  // estar em ADMIN_EMAILS nem em lista nenhuma muda isso - e so por dominio.
+  test('um e-mail BRB nao vira editor nem se estiver em ADMIN_EMAILS', () => {
+    // As listas sao lidas quando o modulo carrega, entao recarrega de verdade.
+    const caminho = require.resolve('../auth');
+    const original = require.cache[caminho];
+    const guardado = process.env.ADMIN_EMAILS;
+    process.env.ADMIN_EMAILS = 'chefe@brb.com.br';
+    delete require.cache[caminho];
+    try {
+      const recarregado = require('../auth');
+      assert.ok(recarregado.souAdmin('chefe@brb.com.br'), 'premissa do teste: ele e admin');
+      assert.ok(!recarregado.souEditor('chefe@brb.com.br'));
+    } finally {
+      process.env.ADMIN_EMAILS = guardado;
+      require.cache[caminho] = original;
+    }
+  });
+
+  // Bug: comparar por "termina com" deixaria passar dominio parecido.
+  test('dominio parecido nao passa', () => {
+    ['x@dimensa.com.br.invasor.com', 'x@naodimensa.com.br', 'x@sub.dimensa.com.br',
+      'x@evertecinc.com.br.invasor.com', 'x@dimensa.com', 'dimensa.com.br@gmail.com'].forEach((e) => {
+      assert.ok(!souEditor(e), `nao deveria aceitar ${e}`);
+    });
+  });
+
+  test('ignora caixa e espacos; recusa vazio e malformado sem quebrar', () => {
+    assert.ok(souEditor('  Fulano@DIMENSA.com.br '));
+    ['', '   ', 'sem-arroba', '@dimensa.com.br', 'a@b@dimensa.com.br'].forEach((e) => {
+      assert.ok(!souEditor(e), `nao deveria aceitar "${e}"`);
+    });
+    assert.ok(!souEditor(undefined));
+    assert.ok(!souEditor(null));
+  });
+});
+
+describe('exigirEditorApi — guard das rotas que gravam em /api/demandas', () => {
+  function chamar(email) {
+    let status = null, corpo = null, proximo = false;
+    const req = { usuario: email ? { email } : undefined };
+    const res = {
+      status(s) { status = s; return this; },
+      json(c) { corpo = c; return this; }
+    };
+    exigirEditorApi(req, res, () => { proximo = true; });
+    return { status, corpo, proximo };
+  }
+
+  test('deixa passar Dimensa e Evertec', () => {
+    assert.ok(chamar('editor@dimensa.com.br').proximo);
+    assert.ok(chamar('silas.fellipe@evertecinc.com.br').proximo);
+  });
+
+  test('bloqueia com 403 quem tem sessao valida mas e BRB', () => {
+    const r = chamar('cliente@brb.com.br');
+    assert.ok(!r.proximo);
+    assert.strictEqual(r.status, 403);
+    assert.ok(r.corpo.erro);
+  });
+
+  test('sem usuario na requisicao tambem bloqueia', () => {
+    const r = chamar(null);
+    assert.ok(!r.proximo);
+    assert.strictEqual(r.status, 403);
   });
 });
 

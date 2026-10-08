@@ -37,6 +37,18 @@ function pedir(caminho, opcoes = {}) {
   return fetch(base + caminho, { redirect: 'manual', ...opcoes });
 }
 
+// Editar so quem e Dimensa ou Evertec; BRB (e TOTVS) so visualiza.
+const cookieEditor = () => `${COOKIE_NAME}=${criarSessao({ email: 'editor@dimensa.com.br' })}`;
+const cookieLeitor = () => `${COOKIE_NAME}=${criarSessao({ email: 'cliente@brb.com.br' })}`;
+
+function enviarJson(metodo, caminho, corpo, cookie) {
+  return pedir(caminho, {
+    method: metodo,
+    headers: { 'Content-Type': 'application/json', ...(cookie ? { Cookie: cookie } : {}) },
+    body: corpo === undefined ? undefined : JSON.stringify(corpo)
+  });
+}
+
 function postarJson(caminho, corpo, cabecalhos = {}) {
   return pedir(caminho, {
     method: 'POST',
@@ -128,6 +140,114 @@ describe('planejamento — validacao e portao de acesso', () => {
     const r = await pedir('/api/planejamento/serie', { headers: { Cookie: cookieValido() } });
     assert.strictEqual(r.status, 200);
     assert.deepStrictEqual((await r.json()).serie, []);
+  });
+});
+
+describe('demandas — quem ve, quem edita', () => {
+  const vazamento = /127\.0\.0\.1|ECONNREFUSED|stack|supabase|postgres/i;
+
+  test('sem sessao: pagina redireciona e a API responde 401 em todos os verbos', async () => {
+    const pagina = await pedir('/demandas');
+    assert.strictEqual(pagina.status, 302);
+    assert.strictEqual(pagina.headers.get('location'), '/login.html');
+    const edicao = await pedir('/demandas/editar');
+    assert.strictEqual(edicao.status, 302);
+    assert.strictEqual(edicao.headers.get('location'), '/login.html');
+    assert.strictEqual((await pedir('/api/demandas')).status, 401);
+    assert.strictEqual((await enviarJson('POST', '/api/demandas', { mes: '2026-10' })).status, 401);
+    assert.strictEqual((await enviarJson('PATCH', '/api/demandas/1', { nome: 'x' })).status, 401);
+    assert.strictEqual((await enviarJson('DELETE', '/api/demandas/1')).status, 401);
+  });
+
+  // Bug que isto pega: alguem do BRB conseguir gravar ponto pago chamando a
+  // API direto, mesmo sem o botao aparecer na tela.
+  test('BRB nao grava, em nenhum verbo (nao edita, nao inclui, nao remove)', async () => {
+    const cookie = cookieLeitor();
+    const criar = await enviarJson('POST', '/api/demandas', { mes: '2026-10' }, cookie);
+    const alterar = await enviarJson('PATCH', '/api/demandas/1', { nome: 'x' }, cookie);
+    const remover = await enviarJson('DELETE', '/api/demandas/1', undefined, cookie);
+    [criar, alterar, remover].forEach((r) => assert.strictEqual(r.status, 403));
+  });
+
+  test('TOTVS tambem so visualiza; Dimensa e Evertec passam do guard', async () => {
+    const totvs = `${COOKIE_NAME}=${criarSessao({ email: 'fulano@totvs.com.br' })}`;
+    const evertec = `${COOKIE_NAME}=${criarSessao({ email: 'fulano@evertecinc.com.br' })}`;
+    assert.strictEqual((await enviarJson('POST', '/api/demandas', { mes: '2026-10' }, totvs)).status, 403);
+    // com o banco fora do ar o guard passa e a falha vira 500 (nao 403)
+    assert.strictEqual((await enviarJson('POST', '/api/demandas', { mes: '2026-10' }, evertec)).status, 500);
+    assert.strictEqual((await enviarJson('POST', '/api/demandas', { mes: '2026-10' }, cookieValido())).status, 500);
+  });
+
+  // A pagina de edicao nao esconde: encaminha quem nao edita para a
+  // visualizacao, que mostra o mesmo dado.
+  test('pagina de edicao: BRB vai para a visualizacao, editor abre', async () => {
+    const leitor = await pedir('/demandas/editar', { headers: { Cookie: cookieLeitor() } });
+    assert.strictEqual(leitor.status, 302);
+    assert.strictEqual(leitor.headers.get('location'), '/demandas');
+    const editor = await pedir('/demandas/editar', { headers: { Cookie: cookieEditor() } });
+    assert.strictEqual(editor.status, 200);
+    const visualizacao = await pedir('/demandas', { headers: { Cookie: cookieEditor() } });
+    assert.strictEqual(visualizacao.status, 200, 'editor tambem pode abrir a visualizacao');
+  });
+
+  test('filtro por meses invalido responde 400 antes de tocar no banco', async () => {
+    const cookie = cookieValido();
+    for (const q of ['?meses=abc', '?meses=', '?meses=2026-13', '?meses=2026-10,x', '?meses=2026-10&meses=2026-09']) {
+      const r = await pedir('/api/demandas' + q, { headers: { Cookie: cookie } });
+      assert.strictEqual(r.status, 400, `${q} deveria ser 400, veio ${r.status}`);
+    }
+  });
+
+  test('filtro por meses valido passa na validacao (e o banco fora do ar vira 503)', async () => {
+    const r = await pedir('/api/demandas?meses=2026-09,2026-10', { headers: { Cookie: cookieValido() } });
+    assert.strictEqual(r.status, 503);
+  });
+
+  test('criar linha exige um mes valido', async () => {
+    const cookie = cookieEditor();
+    for (const corpo of [undefined, {}, { mes: '' }, { mes: '2026-13' }, { mes: 'outubro' }, { mes: 202610 }]) {
+      const r = await enviarJson('POST', '/api/demandas', corpo, cookie);
+      assert.strictEqual(r.status, 400, `corpo ${JSON.stringify(corpo)} deveria ser 400, veio ${r.status}`);
+    }
+  });
+
+  test('a identidade informa quem e editor e quem so visualiza', async () => {
+    const viewer = await (await pedir('/api/eu', { headers: { Cookie: cookieLeitor() } })).json();
+    const editor = await (await pedir('/api/eu', { headers: { Cookie: cookieEditor() } })).json();
+    assert.strictEqual(viewer.editor, false);
+    assert.strictEqual(editor.editor, true);
+  });
+
+  test('com o banco indisponivel, listar responde 503 sem vazar detalhe', async () => {
+    const r = await pedir('/api/demandas', { headers: { Cookie: cookieValido() } });
+    assert.strictEqual(r.status, 503);
+    const corpo = await r.json();
+    assert.ok(corpo.erro);
+    assert.ok(!vazamento.test(JSON.stringify(corpo)));
+  });
+
+  test('editor: id invalido e corpo invalido respondem 400 antes de tocar no banco', async () => {
+    const cookie = cookieEditor();
+    assert.strictEqual((await enviarJson('PATCH', '/api/demandas/abc', { nome: 'x' }, cookie)).status, 400);
+    assert.strictEqual((await enviarJson('DELETE', '/api/demandas/0', undefined, cookie)).status, 400);
+    assert.strictEqual((await enviarJson('PATCH', '/api/demandas/1', { teste: 'abc' }, cookie)).status, 400);
+    assert.strictEqual((await enviarJson('PATCH', '/api/demandas/1', { removido: true }, cookie)).status, 400);
+    const r = await enviarJson('PATCH', '/api/demandas/1', { pontosTotal: 'talvez' }, cookie);
+    assert.match((await r.json()).erro, /Pontos de Função/);
+  });
+
+  test('editor com o banco indisponivel: erro tratado, sem vazar detalhe', async () => {
+    const cookie = cookieEditor();
+    for (const r of [
+      await enviarJson('POST', '/api/demandas', { mes: '2026-10' }, cookie),
+      await enviarJson('PATCH', '/api/demandas/1', { nome: 'x' }, cookie),
+      await enviarJson('DELETE', '/api/demandas/1', undefined, cookie)
+    ]) {
+      assert.strictEqual(r.status, 500);
+      const corpo = await r.json();
+      assert.ok(corpo.erro);
+      assert.ok(!vazamento.test(JSON.stringify(corpo)));
+    }
   });
 });
 
