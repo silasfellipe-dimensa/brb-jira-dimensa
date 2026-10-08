@@ -16,6 +16,7 @@
     --accent-soft: #FFE8D9;
     --warn: #A8452E;
     --ok: #0B9C7F;
+    --zebra: rgba(30,33,44,0.035);
     --shadow: 0 1px 2px rgba(30,33,44,0.06), 0 1px 1px rgba(30,33,44,0.04);
   }
 
@@ -32,6 +33,7 @@
       --accent-soft: #3A2A1C;
       --warn: #E2725B;
       --ok: #3EE8C4;
+      --zebra: rgba(255,255,255,0.035);
       --shadow: 0 1px 3px rgba(0,0,0,0.35);
     }
   }
@@ -48,7 +50,7 @@
   header.top { background: var(--bg); border-bottom: 1px solid var(--line); padding: 22px 28px; }
   .top-row {
     display: flex; align-items: center; justify-content: space-between;
-    gap: 24px; flex-wrap: wrap; max-width: 1500px; margin: 0 auto;
+    gap: 24px; flex-wrap: wrap; max-width: 1760px; margin: 0 auto;
   }
   .titles h1 { margin: 0; font-size: 1.5rem; font-weight: 700; letter-spacing: -0.01em; }
   .acoes-topo { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
@@ -62,7 +64,7 @@
   .link-topo.destaque { border-color: var(--accent); color: var(--accent); font-weight: 700; }
   .quem { font-size: 0.78rem; color: var(--ink-faint); }
 
-  main { max-width: 1500px; margin: 0 auto; padding: 22px 28px 60px; }
+  main { max-width: 1760px; margin: 0 auto; padding: 22px 28px 60px; }
 
   .cartao {
     background: var(--bg-panel); border: 1px solid var(--line-soft);
@@ -76,6 +78,9 @@
     padding: 3px 10px; border-radius: 100px; background: var(--accent-soft); color: var(--accent);
   }
   .selo:empty { display: none; }
+  /* Editar / Visualizar moram DENTRO do cartão, no canto de cima: no
+   * cabeçalho da página ficavam longe do conteúdo que mudam. */
+  .acoes-cartao { display: flex; align-items: center; gap: 10px; flex-shrink: 0; }
 
   .aviso {
     margin-bottom: 12px; padding: 9px 12px; border-left: 3px solid var(--warn);
@@ -90,6 +95,7 @@
     font: inherit; font-size: 0.85rem; color: var(--ink); background: var(--bg);
     border: 1px solid var(--line); border-radius: 6px; padding: 7px 10px; min-width: 190px;
   }
+  .barra select.sel-ano { min-width: 110px; }
   .barra select:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-soft); }
   .contagem { font-size: 0.76rem; color: var(--ink-faint); }
 
@@ -110,6 +116,89 @@
   .tabela-scroll { overflow-x: auto; border: 1px solid var(--line-soft); border-radius: 8px; }
   table.grade { border-collapse: collapse; width: 100%; min-width: 1700px; font-size: 0.8rem; }
   table.grade.resumo { min-width: 0; }
+  /* Visualização (tabela): larga e arejada, e rola na horizontal quando a
+   * tela é menor que ela. Foi tentado fazer caber à força em 1280-1366 px e o
+   * texto ficou "embolado" (Observações com 4-5 linhas, palavra quebrando no
+   * meio, título de coluna em 4 linhas) - o usuário preferiu a rolagem. As 12
+   * colunas ficam SEMPRE: coluna vazia é informação, mostra o que falta
+   * preencher. (Quem quer ver tudo sem rolar usa a vista Cartões.)
+   *
+   * Seletores com "table.grade.ampla" por inteiro: as regras gerais de
+   * .grade th / .grade td vêm DEPOIS no arquivo e, com a mesma força,
+   * ganhariam. */
+  table.grade.ampla { min-width: 1600px; table-layout: auto; font-size: 0.8rem; }
+  table.grade.ampla th { white-space: normal; letter-spacing: 0.03em; font-size: 0.66rem; line-height: 1.35; padding: 10px; vertical-align: bottom; }
+  table.grade.ampla td.leitura { padding: 10px; overflow-wrap: break-word; }
+  table.grade.ampla td.leitura:nth-child(-n+2), table.grade.ampla td.leitura:nth-child(4),
+  table.grade.ampla td.leitura:nth-child(n+9):nth-child(-n+11) { white-space: nowrap; }
+  table.grade.ampla tr.totais td { padding: 10px; }
+  /* Largura mínima por coluna; Nome e Observações, que são o texto que se lê,
+   * ficam com a maior folga. */
+  table.grade.ampla th:nth-child(1) { min-width: 125px; }
+  table.grade.ampla th:nth-child(2) { min-width: 115px; }
+  table.grade.ampla th:nth-child(3) { min-width: 220px; }
+  table.grade.ampla th:nth-child(4) { min-width: 115px; }
+  table.grade.ampla th:nth-child(5) { min-width: 110px; }
+  table.grade.ampla th:nth-child(6) { min-width: 125px; }
+  table.grade.ampla th:nth-child(7) { min-width: 85px; }
+  table.grade.ampla th:nth-child(8) { min-width: 105px; }
+  table.grade.ampla th:nth-child(n+9):nth-child(-n+11) { min-width: 110px; }
+  table.grade.ampla th:nth-child(12) { min-width: 280px; }
+
+  /* Relevo (a tabela estava lisa demais): linha separando cada demanda,
+   * listras alternadas, fio vertical entre colunas e cabeçalho com acento.
+   * Os fios ajudam justamente nas colunas vazias, onde o olho se perdia. */
+  table.grade.ampla th, table.grade.resumo th { border-bottom: 2px solid var(--accent); }
+  table.grade.ampla td { border-bottom: 1px solid var(--line); }
+  table.grade.ampla td + td, table.grade.ampla th + th { border-left: 1px solid var(--line-soft); }
+  table.grade.ampla tbody tr:nth-child(even) td { background: var(--zebra); }
+  table.grade.ampla tbody tr:hover td { background: var(--line-soft); }
+  table.grade.ampla tbody tr:last-child td { border-bottom: 0; }
+  table.grade.ampla tr.totais td { border-top: 2px solid var(--line); }
+  table.grade.resumo tbody tr:nth-child(even) td { background: var(--zebra); }
+  table.grade.resumo tr.consolidado td { border-top: 2px solid var(--accent); }
+
+  /* seletor Cartões | Tabela, à direita dos meses */
+  .barra .vista { margin-left: auto; }
+  .barra .vista label { margin-right: 2px; }
+
+  /* Vista em cartões: um bloco por demanda. Nunca rola. */
+  .cartoes { display: grid; grid-template-columns: repeat(auto-fill, minmax(360px, 1fr)); gap: 14px; }
+  .cartao-dem {
+    display: flex; flex-direction: column; gap: 12px; padding: 14px 16px;
+    background: var(--bg); border: 1px solid var(--line); border-radius: 10px;
+    box-shadow: var(--shadow); transition: border-color 0.15s ease, box-shadow 0.15s ease;
+    break-inside: avoid;
+  }
+  .cartao-dem:hover { border-color: var(--accent); box-shadow: 0 2px 8px rgba(0,0,0,0.22); }
+  .cartao-dem .topo {
+    display: flex; justify-content: space-between; align-items: center; gap: 10px;
+    padding-bottom: 10px; border-bottom: 1px solid var(--line); font-size: 0.74rem; color: var(--ink-faint);
+  }
+  .cartao-dem .ids { display: flex; flex-wrap: wrap; gap: 4px 12px; font-variant-numeric: tabular-nums; }
+  .cartao-dem .ids a { color: var(--accent); text-decoration: none; font-weight: 700; }
+  .cartao-dem .ids a:hover { text-decoration: underline; }
+  .cartao-dem .nome { font-size: 0.92rem; font-weight: 700; line-height: 1.3; overflow-wrap: anywhere; }
+  .pf {
+    flex-shrink: 0; font-size: 0.74rem; font-weight: 700; font-variant-numeric: tabular-nums; white-space: nowrap;
+    padding: 2px 10px; border-radius: 100px; background: var(--line-soft); color: var(--ink);
+  }
+  .pf.analise { background: var(--accent-soft); color: var(--accent); }
+  .pf.sem { font-weight: 400; color: var(--ink-faint); }
+  .falta { color: var(--ink-faint); opacity: 0.7; }
+
+  .rot { display: block; font-size: 0.64rem; text-transform: uppercase; letter-spacing: 0.03em; color: var(--ink-faint); }
+  .etapas { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }
+  .etapa { border-top: 3px solid var(--line); padding-top: 6px; min-width: 0; }
+  .etapa.feita { border-top-color: var(--ok); }
+  .etapa .rot { white-space: normal; line-height: 1.25; min-height: 2.5em; letter-spacing: 0; font-size: 0.62rem; }
+  .etapa strong { display: block; margin-top: 2px; font-size: 1rem; font-variant-numeric: tabular-nums; }
+  .etapa:not(.feita) strong { color: var(--ink-faint); font-weight: 600; }
+
+  .datas { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; font-size: 0.8rem; font-variant-numeric: tabular-nums; }
+  .datas .rot { margin-bottom: 1px; }
+  .obs { border-top: 1px solid var(--line-soft); padding-top: 8px; }
+  .obs p { margin: 2px 0 0; font-size: 0.8rem; line-height: 1.45; white-space: pre-wrap; overflow-wrap: anywhere; }
   .grade th {
     text-align: left; font-size: 0.68rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em;
     color: var(--ink-dim); background: var(--line-soft); padding: 9px 10px; border-bottom: 1px solid var(--line);
@@ -143,15 +232,17 @@
   .abrir { display: inline-block; padding: 3px 3px 0; font-size: 0.72rem; }
   .abrir[hidden] { display: none; }
 
-  td.acoes { white-space: nowrap; padding: 6px 8px; text-align: right; }
-  .estado { font-size: 0.7rem; margin-right: 6px; color: var(--ink-faint); }
+  td.acoes { white-space: nowrap; padding: 6px 8px; text-align: left; }
+  .estado { display: block; min-height: 1em; margin-top: 3px; font-size: 0.7rem; color: var(--ink-faint); }
   .estado.salvo { color: var(--ok); }
   .estado.erro { color: var(--warn); font-weight: 700; }
   .btn-remover {
-    font: inherit; font-size: 1rem; line-height: 1; cursor: pointer; color: var(--ink-faint);
-    background: none; border: 1px solid transparent; border-radius: 6px; padding: 3px 8px;
+    display: inline-flex; align-items: center; gap: 5px; font: inherit; font-size: 0.72rem; font-weight: 700;
+    cursor: pointer; color: var(--ink-dim); background: var(--bg);
+    border: 1px solid var(--line); border-radius: 6px; padding: 5px 9px;
   }
   .btn-remover:hover { color: var(--warn); border-color: var(--warn); }
+  .so-leitor { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 
   tr.totais td {
     padding: 9px 10px; font-weight: 700; background: var(--line-soft); border-bottom: 0;
@@ -199,7 +290,7 @@
         <h2>Demandas e Pontos de Função</h2>
         <p class="ajuda" id="ajuda">Carregando…</p>
       </div>
-      <span class="selo" id="selo"></span>
+      <div class="acoes-cartao" id="acoesCartao"><span class="selo" id="selo"></span></div>
     </div>
     <div class="barra" id="barra"></div>
     <div class="aviso" id="aviso" role="alert" hidden></div>
@@ -238,7 +329,10 @@
       disponiveis: [],   // meses que já têm registro (cronológico)
       resumo: null,      // { porMes, consolidado } - vem do servidor
       mes: null,         // edição: o mês aberto
-      selecionados: []   // visualização: os meses marcados
+      selecionados: [],  // visualização: os meses marcados
+      ano: 'todos',      // visualização: o ano do filtro ('AAAA' ou 'todos')
+      // visualização: cartões é o padrão; ?vista=tabela volta para a tabela
+      vista: new URLSearchParams(location.search).get('vista') === 'tabela' ? 'tabela' : 'cartoes'
     };
     var area = document.getElementById('area');
     var timerAviso = null;
@@ -276,11 +370,6 @@
       var d = new Date();
       return d.getFullYear() + '-' + doisDigitos(d.getMonth() + 1);
     }
-    function somarMeses(mes, delta) {
-      var p = mes.split('-');
-      var idx = Number(p[0]) * 12 + (Number(p[1]) - 1) + delta;
-      return Math.floor(idx / 12) + '-' + doisDigitos((idx % 12) + 1);
-    }
     function rotuloMes(mes) {
       var p = mes.split('-');
       return NOMES_MES[Number(p[1]) - 1] + ' de ' + p[0];
@@ -288,11 +377,6 @@
     function rotuloCurto(mes) {
       var p = mes.split('-');
       return NOMES_MES[Number(p[1]) - 1].slice(0, 3) + '/' + p[0];
-    }
-    function intervalo(de, ate) {
-      var lista = [];
-      for (var m = de; m <= ate; m = somarMeses(m, 1)) lista.push(m);
-      return lista;
     }
     function parametro(nome) {
       return new URLSearchParams(location.search).get(nome);
@@ -347,19 +431,35 @@
       return h;
     }
 
+    // Campo vazio aparece como "—" apagado, igual nos cartões: o que falta
+    // preencher tem que ficar visível, não virar um buraco em branco.
     function celulaLeitura(d, c) {
+      var html;
       if (c.tipo === 'jira') {
-        if (!d.artefatoJira) return '';
-        return d.artefatoUrl
-          ? '<a href="' + esc(d.artefatoUrl) + '" target="_blank" rel="noopener noreferrer">' + esc(rotuloJira(d.artefatoJira)) + '</a>'
-          : esc(d.artefatoJira);
+        html = !d.artefatoJira ? ''
+          : d.artefatoUrl
+            ? '<a href="' + esc(d.artefatoUrl) + '" target="_blank" rel="noopener noreferrer">' + esc(rotuloJira(d.artefatoJira)) + '</a>'
+            : esc(d.artefatoJira);
+      } else if (c.tipo === 'data') {
+        html = esc(fmtData(d[c.chave]));
+      } else {
+        html = esc(valorDe(d, c));
       }
-      if (c.tipo === 'data') return esc(fmtData(d[c.chave]));
-      return esc(valorDe(d, c));
+      return html === '' ? '<span class="falta">—</span>' : html;
     }
+
+    var ICONE_LIXEIRA = '<svg viewBox="0 0 24 24" width="13" height="13" aria-hidden="true" fill="none" stroke="currentColor" ' +
+      'stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M8 6V4h8v2M6 6l1 14h10l1-14M10 11v6M14 11v6"/></svg>';
 
     function linhaHtml(d, editavel) {
       var h = '<tr data-id="' + d.id + '">';
+      // Excluir fica na PRIMEIRA coluna: a grade de edição é larga e rola, e
+      // na última coluna o botão ficava fora da tela - parecia que não existia.
+      if (editavel) {
+        h += '<td class="acoes" title="' + esc(quemQuando(d)) + '">' +
+          '<button type="button" class="btn-remover" aria-label="Excluir linha">' + ICONE_LIXEIRA + ' Excluir</button>' +
+          '<span class="estado"></span></td>';
+      }
       CAMPOS.forEach(function (c) {
         if (editavel) {
           h += '<td class="c-' + c.tipo + '">' + celulaEditavel(d, c) + '</td>';
@@ -368,27 +468,32 @@
           h += '<td class="' + classes + '">' + celulaLeitura(d, c) + '</td>';
         }
       });
-      if (editavel) {
-        h += '<td class="acoes" title="' + esc(quemQuando(d)) + '"><span class="estado"></span>' +
-          '<button type="button" class="btn-remover" title="Remover linha" aria-label="Remover linha">&times;</button></td>';
-      }
       return h + '</tr>';
     }
 
-    function cabecalho(editavel) {
+    // Na edição a largura mínima de cada coluna vem do JS (são caixas de
+    // digitar). Na visualização ela vem do CSS (table.grade.ampla), por coluna.
+    function cabecalho(editavel, ampla) {
       var h = '<thead><tr>';
-      CAMPOS.forEach(function (c) { h += '<th style="min-width:' + c.larg + 'px">' + esc(c.rotulo) + '</th>'; });
-      if (editavel) h += '<th style="min-width:120px"></th>';
+      if (editavel) h += '<th style="min-width:108px"><span class="so-leitor">Ações</span></th>';
+      CAMPOS.forEach(function (c) {
+        if (ampla) {
+          h += '<th' + (c.tipo === 'numero' || c.tipo === 'pontos' ? ' class="num"' : '') + '>' + esc(c.rotulo) + '</th>';
+        } else {
+          h += '<th style="min-width:' + c.larg + 'px">' + esc(c.rotulo) + '</th>';
+        }
+      });
       return h + '</tr></thead>';
     }
 
     // totais: objeto { pontosTotal, documentacao, ... }; vazio ou zero vira "—"
     function rodapeTotais(totais, editavel) {
-      var h = '<tfoot><tr class="totais"><td colspan="3">Total</td>';
+      // na edição a coluna de ações vem antes, então o rótulo cobre uma a mais
+      var h = '<tfoot><tr class="totais"><td colspan="' + (editavel ? 4 : 3) + '">Total</td>';
       COLUNAS_SOMA.forEach(function (k) {
         h += '<td class="num" data-total="' + k + '">' + (fmtNum(totais[k]) || '—') + '</td>';
       });
-      return h + '<td colspan="' + (4 + (editavel ? 1 : 0)) + '"></td></tr></tfoot>';
+      return h + '<td colspan="4"></td></tr></tfoot>';
     }
 
     function somar(chave) {
@@ -490,11 +595,19 @@
         });
     }
 
+    // Diz QUAL demanda vai sair: número e nome, e de que mês. Linha ainda em
+    // branco (recém-criada, sem nada digitado) é dita como tal em vez de "#12".
+    function mensagemExcluir(d) {
+      var mes = rotuloMes(d.mes || estado.mes);
+      var quem = [d.demandaAcs, d.nome].filter(Boolean).join(' - ');
+      if (!quem) return 'Deseja realmente excluir esta linha em branco de ' + mes + '?';
+      return 'Deseja realmente excluir a demanda ' + quem + '?\n\nEla sai da lista de ' + mes + '.';
+    }
+
     function removerLinha(tr) {
       var d = demandaDaLinha(tr);
       if (!d) return;
-      var nome = d.demandaAcs || d.nome || ('#' + d.id);
-      if (!confirm('Remover a linha "' + nome + '"?')) return;
+      if (!confirm(mensagemExcluir(d))) return;
       pedir('/api/demandas/' + d.id, { method: 'DELETE' })
         .then(function (res) {
           if (!res.ok) { mostrarAviso(res.j.erro || 'Não foi possível remover.'); return; }
@@ -551,14 +664,22 @@
       });
     }
 
-    // Do mais antigo com registro (ou 3 meses atrás) até 2 meses à frente, sem
-    // buracos: dá para abrir um mês novo ou preencher um que ficou para trás.
-    function mesesDoSeletor() {
-      var atual = mesAtual();
-      var todos = estado.disponiveis.concat([atual, estado.mes]);
-      var menor = todos.concat([somarMeses(atual, -3)]).sort()[0];
-      var maior = todos.concat([somarMeses(atual, 2)]).sort().pop();
-      return intervalo(menor, maior).reverse();
+    // Anos para escolher: do mais antigo com registro (ou o ano passado) até o
+    // ano que vem, sem buracos - dá para abrir o ano novo antes de ele começar
+    // e preencher um mês que ficou para trás.
+    function anosDoSeletor() {
+      var atual = Number(mesAtual().slice(0, 4));
+      var anos = estado.disponiveis.map(function (m) { return Number(m.slice(0, 4)); })
+        .concat([atual - 1, atual + 1, Number(estado.mes.slice(0, 4))]);
+      var menor = Math.min.apply(null, anos);
+      var maior = Math.max.apply(null, anos);
+      var lista = [];
+      for (var a = maior; a >= menor; a--) lista.push(a);
+      return lista;
+    }
+
+    function mesEscolhido() {
+      return document.getElementById('selAno').value + '-' + document.getElementById('selMes').value;
     }
 
     function atualizarRotulosEdicao() {
@@ -584,13 +705,22 @@
     }
 
     function montarBarraEdicao() {
-      var opcoes = mesesDoSeletor().map(function (m) {
-        return '<option value="' + m + '"' + (m === estado.mes ? ' selected' : '') + '>' + esc(rotuloMes(m)) + '</option>';
+      var ano = estado.mes.slice(0, 4);
+      var mm = estado.mes.slice(5);
+      var anos = anosDoSeletor().map(function (a) {
+        return '<option value="' + a + '"' + (String(a) === ano ? ' selected' : '') + '>' + a + '</option>';
+      }).join('');
+      var meses = NOMES_MES.map(function (nome, i) {
+        var v = doisDigitos(i + 1);
+        return '<option value="' + v + '"' + (v === mm ? ' selected' : '') + '>' + nome + '</option>';
       }).join('');
       document.getElementById('barra').innerHTML =
-        '<label for="selMes">Mês</label><select id="selMes">' + opcoes + '</select>' +
+        '<label for="selAno">Ano</label><select id="selAno" class="sel-ano">' + anos + '</select>' +
+        '<label for="selMes">Mês</label><select id="selMes">' + meses + '</select>' +
         '<span class="contagem" id="contagem"></span>';
-      document.getElementById('selMes').addEventListener('change', function () { trocarMes(this.value); });
+      ['selAno', 'selMes'].forEach(function (id) {
+        document.getElementById(id).addEventListener('change', function () { trocarMes(mesEscolhido()); });
+      });
 
       document.getElementById('acoesRodape').innerHTML = '<button type="button" class="btn-add" id="btnAdd"></button>';
       document.getElementById('btnAdd').addEventListener('click', function () { adicionarLinha(this); });
@@ -599,11 +729,10 @@
       ver.className = 'link-topo destaque';
       ver.id = 'linkVisualizar';
       ver.textContent = 'Visualizar';
-      var topo = document.getElementById('acoesTopo');
-      topo.insertBefore(ver, topo.firstChild);
+      document.getElementById('acoesCartao').appendChild(ver);
 
       document.getElementById('selo').textContent = 'Edição liberada';
-      document.getElementById('ajuda').textContent = 'Escolha o mês: a entrega é mensal e cada mês tem registros novos ' +
+      document.getElementById('ajuda').textContent = 'Escolha o ano e o mês: a entrega é mensal e cada mês tem registros novos ' +
         '(a mesma demanda pode aparecer em vários meses). Clique em qualquer caixa para preencher; as colunas podem ' +
         'ficar em branco. Cada alteração é salva ao sair do campo, e os valores de cada fase são digitados ' +
         '(os percentuais nos títulos são só referência).';
@@ -655,27 +784,116 @@
       return h;
     }
 
+    /* ---- Vista em cartões: um bloco por demanda, nunca rola ----
+     * Campo vazio aparece como "—" apagado, de propósito: o que falta
+     * preencher precisa ficar visível, não sumir. A linha de cima de cada
+     * etapa fica verde quando a etapa tem valor maior que zero, para ver de
+     * relance em que pé a demanda está. */
+    var ETAPAS = [
+      { chave: 'documentacao', rotulo: 'Documentação', pct: '30%' },
+      { chave: 'desenvolvimento', rotulo: 'Desenvolvimento', pct: '40%' },
+      { chave: 'teste', rotulo: 'Teste', pct: '20%' },
+      { chave: 'implantacao', rotulo: 'Implantação', pct: '10%' }
+    ];
+    var DATAS = [
+      { chave: 'inicioAtendimento', rotulo: 'Início ACS' },
+      { chave: 'conclusaoPrevista', rotulo: 'Conclusão (SLA)' },
+      { chave: 'previsaoExpedicao', rotulo: 'Expedição' }
+    ];
+
+    function cartaoHtml(d) {
+      var jira = '';
+      if (d.artefatoJira) {
+        jira = d.artefatoUrl
+          ? '<a href="' + esc(d.artefatoUrl) + '" target="_blank" rel="noopener noreferrer">' + esc(rotuloJira(d.artefatoJira)) + '</a>'
+          : esc(d.artefatoJira);
+      }
+      var pf = d.emAnalise ? '<span class="pf analise">em análise</span>'
+        : d.pontosTotal !== null ? '<span class="pf">' + fmtNum(d.pontosTotal) + ' PF</span>'
+        : '<span class="pf sem">sem pontos</span>';
+      var etapas = ETAPAS.map(function (e) {
+        var v = d[e.chave];
+        return '<div class="etapa' + (typeof v === 'number' && v > 0 ? ' feita' : '') + '">' +
+          '<span class="rot">' + e.rotulo + ' ' + e.pct + '</span> <strong>' + (v === null ? '—' : fmtNum(v)) + '</strong></div>';
+      }).join('');
+      var datas = DATAS.map(function (x) {
+        var v = d[x.chave];
+        return '<div><span class="rot">' + x.rotulo + '</span> <span' + (v ? '' : ' class="falta"') + '>' + (v ? fmtData(v) : '—') + '</span></div>';
+      }).join('');
+      // Os espaços entre os blocos não mudam o desenho (são itens de flex/grid),
+      // mas sem eles o texto sai colado para leitor de tela e para copiar/colar.
+      return '<article class="cartao-dem" data-id="' + d.id + '">' +
+        '<div class="topo"><span class="ids"><span>' + (d.demandaAcs ? esc(d.demandaAcs) : '<span class="falta">sem nº ACS</span>') + '</span> ' +
+          (jira ? '<span>' + jira + '</span>' : '') + '</span> ' + pf + '</div>' +
+        '<div class="nome">' + (d.nome ? esc(d.nome) : '<span class="falta">sem nome</span>') + '</div>' +
+        '<div class="etapas">' + etapas + '</div>' +
+        '<div class="datas">' + datas + '</div>' +
+        '<div class="obs"><span class="rot">Observações</span> <p>' + (d.observacoes ? esc(d.observacoes) : '<span class="falta">—</span>') + '</p></div>' +
+        '</article>';
+    }
+
     function blocoMes(resumoMes) {
       var linhas = estado.demandas.filter(function (d) { return d.mes === resumoMes.mes; });
+      var titulo = '<h3 class="sub">' + esc(rotuloMes(resumoMes.mes)) + ' <small>' + linhas.length +
+        (linhas.length === 1 ? ' demanda' : ' demandas') + '</small></h3>';
+      if (estado.vista === 'cartoes') {
+        return titulo + '<div class="cartoes">' + linhas.map(cartaoHtml).join('') + '</div>';
+      }
       // zero no rodapé do detalhe é "nada preenchido", igual ao "—" da edição
       var totais = {};
       COLUNAS_SOMA.forEach(function (k) { totais[k] = resumoMes[k] || null; });
-      return '<h3 class="sub">' + esc(rotuloMes(resumoMes.mes)) + ' <small>' + linhas.length +
-        (linhas.length === 1 ? ' demanda' : ' demandas') + '</small></h3>' +
-        '<div class="tabela-scroll"><table class="grade">' + cabecalho(false) + '<tbody>' +
+      return titulo +
+        '<div class="tabela-scroll"><table class="grade ampla">' + cabecalho(false, true) + '<tbody>' +
         linhas.map(function (d) { return linhaHtml(d, false); }).join('') + '</tbody>' +
         rodapeTotais(totais, false) + '</table></div>';
     }
 
+    /* ---- Ano ----
+     * O filtro de ano separa os meses por ano e dá o consolidado do ano
+     * inteiro a um clique (ano + "Todos os meses"). "Todos os anos" junta
+     * tudo, com o ano escrito em cada mês. */
+    function anosComRegistro() {
+      var vistos = {};
+      estado.disponiveis.forEach(function (m) { vistos[m.slice(0, 4)] = true; });
+      return Object.keys(vistos).sort();
+    }
+    function mesesVisiveis() {
+      return estado.ano === 'todos' ? estado.disponiveis
+        : estado.disponiveis.filter(function (m) { return m.slice(0, 4) === estado.ano; });
+    }
+    function anoDaSelecao(meses) {
+      var anos = meses.map(function (m) { return m.slice(0, 4); })
+        .filter(function (a, i, todos) { return todos.indexOf(a) === i; });
+      return anos.length === 1 ? anos[0] : 'todos';
+    }
+    function escolherAno(ano) {
+      estado.ano = ano;
+      var visiveis = mesesVisiveis();
+      var manter = estado.selecionados.filter(function (m) { return visiveis.indexOf(m) >= 0; });
+      // trocou para um ano em que nada estava marcado: abre no mês mais recente dele
+      selecionar(manter.length ? manter : [visiveis[visiveis.length - 1]]);
+    }
+
     function renderFiltrosVer() {
+      var seletorAno = '<label for="selAno">Ano</label><select id="selAno" class="sel-ano">' +
+        anosComRegistro().concat(['todos']).map(function (a) {
+          return '<option value="' + a + '"' + (a === estado.ano ? ' selected' : '') + '>' +
+            (a === 'todos' ? 'Todos os anos' : a) + '</option>';
+        }).join('') + '</select>';
       var h = '<div class="chips" role="group" aria-label="Meses">' +
-        estado.disponiveis.map(function (m) {
+        mesesVisiveis().map(function (m) {
           var marcado = estado.selecionados.indexOf(m) >= 0;
           return '<button type="button" class="chip" data-mes="' + m + '" aria-pressed="' + marcado + '">' + esc(rotuloCurto(m)) + '</button>';
         }).join('') +
         '<button type="button" class="chip todos" data-todos="1">Todos os meses</button></div>';
+      // Duas vistas do mesmo dado: cartões (padrão) e tabela. Trocar não busca nada.
+      var vista = '<div class="chips vista" role="group" aria-label="Vista"><label>Vista</label>' +
+        ['cartoes', 'tabela'].map(function (v) {
+          return '<button type="button" class="chip" data-vista="' + v + '" aria-pressed="' + (estado.vista === v) + '">' +
+            (v === 'cartoes' ? 'Cartões' : 'Tabela') + '</button>';
+        }).join('') + '</div>';
       var barra = document.getElementById('barra');
-      barra.innerHTML = '<label>Meses</label>' + h;
+      barra.innerHTML = seletorAno + '<label>Meses</label>' + h + vista;
     }
 
     function renderVer() {
@@ -711,12 +929,21 @@
     }
 
     function configurarVer() {
-      document.getElementById('ajuda').textContent = 'Escolha um ou mais meses. Com um mês você vê o resumo e o detalhe; ' +
-        'com vários, o consolidado aparece junto.';
+      document.getElementById('ajuda').textContent = 'Escolha o ano e um ou mais meses. Com um mês você vê o resumo e o ' +
+        'detalhe; com vários, o consolidado aparece junto. "Todos os meses" soma o ano escolhido inteiro.';
+      document.getElementById('barra').addEventListener('change', function (e) {
+        if (e.target.id === 'selAno') escolherAno(e.target.value);
+      });
       document.getElementById('barra').addEventListener('click', function (e) {
         var chip = e.target.closest('.chip');
         if (!chip) return;
-        if (chip.getAttribute('data-todos')) return selecionar(estado.disponiveis);
+        var vista = chip.getAttribute('data-vista');
+        if (vista) {
+          estado.vista = vista === 'tabela' ? 'tabela' : 'cartoes';
+          guardarNaUrl('vista', estado.vista === 'tabela' ? 'tabela' : '');
+          return renderVer();
+        }
+        if (chip.getAttribute('data-todos')) return selecionar(mesesVisiveis());
         var mes = chip.getAttribute('data-mes');
         var atuais = estado.selecionados.slice();
         var i = atuais.indexOf(mes);
@@ -743,8 +970,7 @@
           ed.id = 'linkEditar';
           ed.href = '/demandas/editar';
           ed.textContent = 'Editar';
-          var topo = document.getElementById('acoesTopo');
-          topo.insertBefore(ed, topo.firstChild);
+          document.getElementById('acoesCartao').appendChild(ed);
         }
 
         if (!estado.disponiveis.length) {
@@ -755,6 +981,7 @@
         // Só vale mês que tem registro; sem nenhum válido, abre no mais recente.
         var validos = inicial.filter(function (m) { return estado.disponiveis.indexOf(m) >= 0; });
         if (!validos.length) validos = [estado.disponiveis[estado.disponiveis.length - 1]];
+        estado.ano = anoDaSelecao(validos);
         if (validos.join(',') === inicial.slice().sort().join(',')) {
           estado.selecionados = validos.slice().sort();
           estado.demandas = res.j.demandas;

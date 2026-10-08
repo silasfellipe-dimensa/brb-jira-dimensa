@@ -291,11 +291,11 @@ describe('interpretarListaMeses — ?meses=2026-09,2026-10', () => {
     assert.ok(!interpretarListaMeses(['2026-10', '2026-09']).ok);
   });
 
-  test('recusa mais de 24 meses', () => {
+  test('recusa mais de 60 meses (cinco anos)', () => {
     const muitos = [];
-    for (let i = 0; i < 25; i++) muitos.push(`${2024 + Math.floor(i / 12)}-${String((i % 12) + 1).padStart(2, '0')}`);
+    for (let i = 0; i < 61; i++) muitos.push(`${2024 + Math.floor(i / 12)}-${String((i % 12) + 1).padStart(2, '0')}`);
     assert.ok(!interpretarListaMeses(muitos.join(',')).ok);
-    assert.ok(interpretarListaMeses(muitos.slice(0, 24).join(',')).ok);
+    assert.ok(interpretarListaMeses(muitos.slice(0, 60).join(',')).ok);
   });
 });
 

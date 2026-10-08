@@ -174,7 +174,7 @@ function idDemanda(valor) {
  * A entrega é por mês e cada mês tem registros novos: a mesma demanda pode
  * aparecer em vários meses, uma linha em cada, com o que foi pago naquele
  * mês. O mês é guardado como "AAAA-MM". */
-const MESES_MAX = 24;
+const MESES_MAX = 60;
 const MES_INVALIDO = { ok: false, erro: 'Mês inválido (use AAAA-MM).' };
 
 function interpretarMes(valor) {
