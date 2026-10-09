@@ -170,15 +170,42 @@
     box-shadow: var(--shadow); transition: border-color 0.15s ease, box-shadow 0.15s ease;
     break-inside: avoid;
   }
+  .cartao-dem { cursor: pointer; }
   .cartao-dem:hover { border-color: var(--accent); box-shadow: 0 2px 8px rgba(0,0,0,0.22); }
-  .cartao-dem .topo {
+  .cartao-dem:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .cartao-dem .prog { display: flex; flex-direction: column; gap: 5px; font-size: 0.78rem; font-variant-numeric: tabular-nums; }
+  .cartao-dem .prog-barra { height: 6px; border-radius: 100px; background: var(--line-soft); overflow: hidden; }
+  .cartao-dem .prog-barra i { display: block; height: 100%; background: var(--ok); border-radius: 100px; }
+  .cartao-dem .prog-txt { display: flex; justify-content: space-between; gap: 8px; color: var(--ink-dim); }
+  .cartao-dem .resumo-obs { margin: 0; font-size: 0.8rem; line-height: 1.45; color: var(--ink-dim); overflow-wrap: anywhere;
+    display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+  .cartao-dem .rodape-cartao { display: flex; justify-content: space-between; gap: 8px; margin-top: auto; font-size: 0.72rem; color: var(--ink-faint); }
+  .cartao-dem .rodape-cartao .mais { color: var(--accent); font-weight: 600; }
+  .cartao-dem .rodape-cartao .faltam { color: var(--accent); }
+
+  /* Detalhe da demanda: o cartão completo, por cima da tela */
+  .fundo-detalhe { position: fixed; inset: 0; z-index: 50; display: flex; align-items: center; justify-content: center;
+    padding: 20px; background: rgba(0,0,0,0.55); }
+  .detalhe-dem { position: relative; display: flex; flex-direction: column; gap: 14px; width: min(720px, 100%); max-height: calc(100vh - 40px);
+    overflow-y: auto; padding: 18px 22px 20px; background: var(--bg-panel); border: 1px solid var(--line); border-radius: 12px;
+    box-shadow: 0 12px 40px rgba(0,0,0,0.45); }
+  .detalhe-dem .topo { font-size: 0.8rem; }
+  .detalhe-dem .topo .pf { margin-left: auto; }
+  .detalhe-dem .nome { font-size: 1.1rem; }
+  .detalhe-dem .fechar { background: none; border: 1px solid var(--line); color: var(--ink-dim); border-radius: 6px; width: 28px; height: 28px;
+    font-size: 1.1rem; line-height: 1; cursor: pointer; }
+  .detalhe-dem .fechar:hover { color: var(--ink); border-color: var(--ink-faint); }
+  .detalhe-dem .mes-det { font-size: 0.78rem; color: var(--ink-faint); }
+  .detalhe-dem .rodape-det { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap;
+    padding-top: 10px; border-top: 1px solid var(--line-soft); font-size: 0.74rem; color: var(--ink-faint); }
+  .cartao-dem .topo, .detalhe-dem .topo {
     display: flex; justify-content: space-between; align-items: center; gap: 10px;
     padding-bottom: 10px; border-bottom: 1px solid var(--line); font-size: 0.74rem; color: var(--ink-faint);
   }
-  .cartao-dem .ids { display: flex; flex-wrap: wrap; gap: 4px 12px; font-variant-numeric: tabular-nums; }
-  .cartao-dem .ids a { color: var(--accent); text-decoration: none; font-weight: 700; }
-  .cartao-dem .ids a:hover { text-decoration: underline; }
-  .cartao-dem .nome { font-size: 0.92rem; font-weight: 700; line-height: 1.3; overflow-wrap: anywhere; }
+  .cartao-dem .ids, .detalhe-dem .ids { display: flex; flex-wrap: wrap; gap: 4px 12px; font-variant-numeric: tabular-nums; }
+  .cartao-dem .ids a, .detalhe-dem .ids a { color: var(--accent); text-decoration: none; font-weight: 700; }
+  .cartao-dem .ids a:hover, .detalhe-dem .ids a:hover { text-decoration: underline; }
+  .cartao-dem .nome, .detalhe-dem .nome { font-size: 0.92rem; font-weight: 700; line-height: 1.3; overflow-wrap: anywhere; }
   .pf {
     flex-shrink: 0; font-size: 0.74rem; font-weight: 700; font-variant-numeric: tabular-nums; white-space: nowrap;
     padding: 2px 10px; border-radius: 100px; background: var(--line-soft); color: var(--ink);
@@ -207,6 +234,11 @@
   .grade th.num, .grade td.num { text-align: right; }
   .grade td { padding: 5px 6px; border-bottom: 1px solid var(--line-soft); vertical-align: top; }
   .grade tbody tr:hover td { background: var(--line-soft); }
+  /* linha para a qual o usuario veio do detalhe ("Editar esta demanda") */
+  .grade tbody tr.alvo td { background: var(--accent-soft); border-bottom-color: var(--accent); animation: pulsoAlvo 1.4s ease-out 1; }
+  .grade tbody tr.alvo td:first-child { box-shadow: inset 4px 0 0 var(--accent); }
+  @keyframes pulsoAlvo { 0% { background: var(--accent); } 100% { background: var(--accent-soft); } }
+  @media (prefers-reduced-motion: reduce) { .grade tbody tr.alvo td { animation: none; } }
   .grade td.leitura { padding: 8px 10px; }
   .grade td.leitura.obs { white-space: pre-wrap; }
   .grade td.c-numero input, .grade td.c-pontos input { text-align: right; font-variant-numeric: tabular-nums; }
@@ -332,7 +364,8 @@
       selecionados: [],  // visualização: os meses marcados
       ano: 'todos',      // visualização: o ano do filtro ('AAAA' ou 'todos')
       // visualização: cartões é o padrão; ?vista=tabela volta para a tabela
-      vista: new URLSearchParams(location.search).get('vista') === 'tabela' ? 'tabela' : 'cartoes'
+      vista: new URLSearchParams(location.search).get('vista') === 'tabela' ? 'tabela' : 'cartoes',
+      aberta: new URLSearchParams(location.search).get('demanda')
     };
     var area = document.getElementById('area');
     var timerAviso = null;
@@ -646,17 +679,40 @@
         });
     }
 
+    /* Vindo do detalhe ("Editar esta demanda"), a linha da demanda fica
+     * destacada, centralizada na tela e com o cursor no primeiro campo.
+     * O destaque sai quando o usuário começa a mexer em outra linha. */
+    function destacarAlvo() {
+      var tr = estado.alvo && document.querySelector('#corpo tr[data-id="' + String(estado.alvo).replace(/[^0-9a-z-]/gi, '') + '"]');
+      if (!tr) { estado.alvo = null; return; }
+      tr.classList.add('alvo');
+      if (tr.scrollIntoView) tr.scrollIntoView({ block: 'center' });
+      var campo = tr.querySelector('input, textarea');
+      if (campo) campo.focus({ preventScroll: true });
+    }
+    function limparAlvo() {
+      estado.alvo = null;
+      guardarNaUrl('demanda', '');
+      var marcada = document.querySelector('#corpo tr.alvo');
+      if (marcada) marcada.classList.remove('alvo');
+    }
+
     function montarGrade() {
       area.innerHTML = '<div class="tabela-scroll"><table class="grade">' + cabecalho(true) +
         '<tbody id="corpo">' + estado.demandas.map(function (d) { return linhaHtml(d, true); }).join('') + '</tbody>' +
         rodapeTotais(totaisDaTela(), true) + '</table></div>';
       atualizarVazio();
+      destacarAlvo();
 
       var corpo = document.getElementById('corpo');
       corpo.addEventListener('change', function (e) {
         var campo = e.target.getAttribute('data-campo');
         if (!campo) return;
         salvarCampo(e.target.closest('tr'), campo, e.target.value);
+      });
+      corpo.addEventListener('focusin', function (e) {
+        var tr = e.target.closest('tr');
+        if (estado.alvo && tr && String(tr.getAttribute('data-id')) !== String(estado.alvo)) limparAlvo();
       });
       corpo.addEventListener('click', function (e) {
         var botao = e.target.closest('.btn-remover');
@@ -690,6 +746,7 @@
     }
 
     function trocarMes(novo) {
+      if (estado.alvo) limparAlvo();
       estado.mes = novo;
       guardarNaUrl('mes', novo);
       atualizarRotulosEdicao();
@@ -741,6 +798,7 @@
     function iniciarEdicao() {
       var param = parametro('mes');
       estado.mes = mesValido(param) ? param : mesAtual();
+      estado.alvo = parametro('demanda');
       carregarMeses([estado.mes]).then(function (res) {
         if (!res.ok) return falhaAoCarregar(res.j.erro);
         if (!res.j.editor) { location.replace('/demandas'); return; }
@@ -801,16 +859,62 @@
       { chave: 'previsaoExpedicao', rotulo: 'Expedição' }
     ];
 
-    function cartaoHtml(d) {
-      var jira = '';
-      if (d.artefatoJira) {
-        jira = d.artefatoUrl
-          ? '<a href="' + esc(d.artefatoUrl) + '" target="_blank" rel="noopener noreferrer">' + esc(rotuloJira(d.artefatoJira)) + '</a>'
-          : esc(d.artefatoJira);
-      }
-      var pf = d.emAnalise ? '<span class="pf analise">em análise</span>'
+    function linkJira(d) {
+      if (!d.artefatoJira) return '';
+      return d.artefatoUrl
+        ? '<a href="' + esc(d.artefatoUrl) + '" target="_blank" rel="noopener noreferrer">' + esc(rotuloJira(d.artefatoJira)) + '</a>'
+        : esc(d.artefatoJira);
+    }
+    function seloPf(d) {
+      return d.emAnalise ? '<span class="pf analise">em análise</span>'
         : d.pontosTotal !== null ? '<span class="pf">' + fmtNum(d.pontosTotal) + ' PF</span>'
         : '<span class="pf sem">sem pontos</span>';
+    }
+    function cabecaDemanda(d) {
+      var jira = linkJira(d);
+      // Os espaços entre os blocos não mudam o desenho (são itens de flex/grid),
+      // mas sem eles o texto sai colado para leitor de tela e para copiar/colar.
+      return '<span class="ids"><span>' + (d.demandaAcs ? esc(d.demandaAcs) : '<span class="falta">sem nº ACS</span>') + '</span> ' +
+        (jira ? '<span>' + jira + '</span>' : '') + '</span> ';
+    }
+    function totalEntregue(d) {
+      var t = 0;
+      ETAPAS.forEach(function (e) { if (typeof d[e.chave] === 'number') t += d[e.chave]; });
+      return Math.round(t * 100) / 100;
+    }
+    // Quantos dos 12 campos da demanda já estão preenchidos ("em análise" conta).
+    function preenchimento(d) {
+      var campos = [d.demandaAcs, d.artefatoJira, d.nome, d.observacoes,
+        d.emAnalise || d.pontosTotal !== null, d.documentacao, d.desenvolvimento, d.teste, d.implantacao,
+        d.inicioAtendimento, d.conclusaoPrevista, d.previsaoExpedicao];
+      var feitos = campos.filter(function (v) { return v !== null && v !== undefined && v !== '' && v !== false; }).length;
+      return { feitos: feitos, total: campos.length };
+    }
+
+    /* Cartão enxuto: o que se lê de relance. Tudo o mais (inclusive o que
+     * ainda está vazio) aparece ao clicar, em detalheHtml. */
+    function cartaoHtml(d) {
+      var entregue = totalEntregue(d);
+      var temTotal = !d.emAnalise && typeof d.pontosTotal === 'number' && d.pontosTotal > 0;
+      var pct = temTotal ? Math.min(100, Math.round(entregue / d.pontosTotal * 100)) : 0;
+      var txt = temTotal ? fmtNum(entregue) + ' de ' + fmtNum(d.pontosTotal) + ' PF entregues' : fmtNum(entregue) + ' PF entregues';
+      var pr = preenchimento(d);
+      var rotulo = 'Ver detalhes da demanda ' + (d.demandaAcs || d.nome || '');
+      return '<article class="cartao-dem" data-id="' + d.id + '" tabindex="0" role="button" aria-label="' + esc(rotulo) + '">' +
+        '<div class="topo">' + cabecaDemanda(d) + seloPf(d) + '</div>' +
+        '<div class="nome">' + (d.nome ? esc(d.nome) : '<span class="falta">sem nome</span>') + '</div>' +
+        '<div class="prog"><div class="prog-barra"><i style="width:' + pct + '%"></i></div>' +
+          '<div class="prog-txt"><span>' + txt + '</span> ' + (temTotal ? '<span>' + pct + '%</span>' : '') + '</div></div>' +
+        '<p class="resumo-obs">' + (d.observacoes ? esc(d.observacoes) : '<span class="falta">Sem observações</span>') + '</p>' +
+        '<div class="rodape-cartao"><span' + (pr.feitos < pr.total ? ' class="faltam"' : '') + '>' + pr.feitos + ' de ' + pr.total + ' campos preenchidos</span> ' +
+          '<span class="mais">Ver detalhes ›</span></div>' +
+        '</article>';
+    }
+
+    /* Detalhe: todos os campos. Vazio aparece como "—" apagado, de propósito:
+     * o que falta preencher precisa ficar visível, não sumir. A linha de cima
+     * de cada etapa fica verde quando a etapa tem valor maior que zero. */
+    function detalheHtml(d) {
       var etapas = ETAPAS.map(function (e) {
         var v = d[e.chave];
         return '<div class="etapa' + (typeof v === 'number' && v > 0 ? ' feita' : '') + '">' +
@@ -820,16 +924,45 @@
         var v = d[x.chave];
         return '<div><span class="rot">' + x.rotulo + '</span> <span' + (v ? '' : ' class="falta"') + '>' + (v ? fmtData(v) : '—') + '</span></div>';
       }).join('');
-      // Os espaços entre os blocos não mudam o desenho (são itens de flex/grid),
-      // mas sem eles o texto sai colado para leitor de tela e para copiar/colar.
-      return '<article class="cartao-dem" data-id="' + d.id + '">' +
-        '<div class="topo"><span class="ids"><span>' + (d.demandaAcs ? esc(d.demandaAcs) : '<span class="falta">sem nº ACS</span>') + '</span> ' +
-          (jira ? '<span>' + jira + '</span>' : '') + '</span> ' + pf + '</div>' +
+      var editar = estado.editor
+        ? '<a class="link-topo destaque" id="editarDemanda" href="/demandas/editar?mes=' + esc(d.mes) + '&amp;demanda=' + esc(d.id) + '">Editar esta demanda</a>' : '';
+      return '<article class="detalhe-dem" role="dialog" aria-modal="true" aria-label="Detalhe da demanda" data-id="' + d.id + '">' +
+        '<div class="topo">' + cabecaDemanda(d) + seloPf(d) +
+          '<button type="button" class="fechar" id="fecharDetalhe" aria-label="Fechar">×</button></div>' +
         '<div class="nome">' + (d.nome ? esc(d.nome) : '<span class="falta">sem nome</span>') + '</div>' +
+        '<div class="mes-det">' + esc(rotuloMes(d.mes)) + '</div>' +
         '<div class="etapas">' + etapas + '</div>' +
         '<div class="datas">' + datas + '</div>' +
         '<div class="obs"><span class="rot">Observações</span> <p>' + (d.observacoes ? esc(d.observacoes) : '<span class="falta">—</span>') + '</p></div>' +
+        '<div class="rodape-det"><span>' + esc(quemQuando(d)) + '</span> ' + editar + '</div>' +
         '</article>';
+    }
+
+    var ultimoFoco = null;
+    function abrirDetalhe(id, foco) {
+      estado.aberta = String(id);
+      ultimoFoco = foco || null;
+      guardarNaUrl('demanda', estado.aberta);
+      mostrarDetalhe();
+    }
+    function fecharDetalhe() {
+      estado.aberta = null;
+      guardarNaUrl('demanda', '');
+      mostrarDetalhe();
+      if (ultimoFoco && document.body.contains(ultimoFoco)) ultimoFoco.focus();
+      ultimoFoco = null;
+    }
+    function mostrarDetalhe() {
+      var antigo = document.getElementById('fundoDetalhe');
+      if (antigo) antigo.parentNode.removeChild(antigo);
+      var d = estado.aberta && estado.demandas.filter(function (x) { return String(x.id) === estado.aberta; })[0];
+      if (!d) { estado.aberta = null; return; }
+      var fundo = document.createElement('div');
+      fundo.className = 'fundo-detalhe';
+      fundo.id = 'fundoDetalhe';
+      fundo.innerHTML = detalheHtml(d);
+      document.body.appendChild(fundo);
+      document.getElementById('fecharDetalhe').focus();
     }
 
     function blocoMes(resumoMes) {
@@ -905,6 +1038,7 @@
       var h = blocoResumo();
       estado.resumo.porMes.forEach(function (m) { h += blocoMes(m); });
       area.innerHTML = h;
+      mostrarDetalhe();
       var link = document.getElementById('linkEditar');
       if (link) link.href = '/demandas/editar?mes=' + estado.selecionados[estado.selecionados.length - 1];
     }
@@ -928,7 +1062,29 @@
       buscarSelecionados();
     }
 
+    function configurarDetalhe() {
+      area.addEventListener('click', function (e) {
+        if (e.target.closest('a')) return; // o link do Jira abre o Jira, não o detalhe
+        var c = e.target.closest('.cartao-dem');
+        if (c) abrirDetalhe(c.getAttribute('data-id'), c);
+      });
+      area.addEventListener('keydown', function (e) {
+        var c = e.target.closest && e.target.closest('.cartao-dem');
+        if (c && e.target === c && (e.key === 'Enter' || e.key === ' ')) {
+          e.preventDefault();
+          abrirDetalhe(c.getAttribute('data-id'), c);
+        }
+      });
+      document.addEventListener('click', function (e) {
+        if (e.target.id === 'fecharDetalhe' || e.target.id === 'fundoDetalhe') fecharDetalhe();
+      });
+      document.addEventListener('keydown', function (e) {
+        if (e.key === 'Escape' && estado.aberta) fecharDetalhe();
+      });
+    }
+
     function configurarVer() {
+      configurarDetalhe();
       document.getElementById('ajuda').textContent = 'Escolha o ano e um ou mais meses. Com um mês você vê o resumo e o ' +
         'detalhe; com vários, o consolidado aparece junto. "Todos os meses" soma o ano escolhido inteiro.';
       document.getElementById('barra').addEventListener('change', function (e) {
