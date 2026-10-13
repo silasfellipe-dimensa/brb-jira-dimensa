@@ -112,6 +112,13 @@ function exigirEditorPagina(req, res, next) {
   next();
 }
 
+/** Telas só da equipe (Dimensa/Evertec): quem não é da equipe nem as vê, então
+ * volta para o board em vez de cair numa tela de erro. */
+function exigirEquipePagina(req, res, next) {
+  if (!souEditor(req.usuario && req.usuario.email)) return res.redirect('/');
+  next();
+}
+
 function exigirEditorApi(req, res, next) {
   if (!souEditor(req.usuario && req.usuario.email)) {
     return res.status(403).json({ erro: 'Somente a equipe pode editar esta tela.' });
@@ -167,5 +174,6 @@ module.exports = {
   exigirAdminApi,
   exigirEditorApi,
   exigirEditorPagina,
+  exigirEquipePagina,
   limitarTentativas
 };

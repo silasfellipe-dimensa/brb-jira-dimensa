@@ -1,0 +1,707 @@
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Expedições · Kanban BRB</title>
+
+<style>
+  :root {
+    color-scheme: light dark;
+    --bg: #F5F5F5;
+    --bg-panel: #FFFFFF;
+    --ink: #1E212C;
+    --ink-dim: #4B5A68;
+    --ink-faint: #7C8894;
+    --line: #E5E6E7;
+    --line-soft: #EFEFEF;
+    --accent: #FF6C0C;
+    --accent-soft: #FFE8D9;
+    --warn: #B83A22;
+    --warn-soft: #FBE3DD;
+    --ok: #0B9C7F;
+    --ok-soft: #D8F1EB;
+    --shadow: 0 1px 2px rgba(30,33,44,0.06), 0 1px 1px rgba(30,33,44,0.04);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #1E212C;
+      --bg-panel: #262B38;
+      --ink: #F5F5F5;
+      --ink-dim: #A7B0BC;
+      --ink-faint: #78838F;
+      --line: #333846;
+      --line-soft: #2A2E3A;
+      --accent: #FF8A3D;
+      --accent-soft: #3A2A1C;
+      --warn: #F08A72;
+      --warn-soft: #3F2320;
+      --ok: #3EE8C4;
+      --ok-soft: #173A33;
+      --shadow: 0 1px 3px rgba(0,0,0,0.35);
+    }
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--ink);
+    font-family: Lato, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  button { font: inherit; color: inherit; cursor: pointer; }
+
+  header.top { background: var(--bg); border-bottom: 1px solid var(--line); padding: 22px 28px; }
+  .top-row { display: flex; align-items: center; justify-content: space-between; gap: 24px; flex-wrap: wrap; max-width: 1400px; margin: 0 auto; }
+  .titles h1 { margin: 0; font-size: 1.5rem; font-weight: 700; letter-spacing: -0.01em; }
+  .acoes-topo { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+  .link-topo, .btn {
+    display: inline-flex; align-items: center; gap: 6px; font-size: 0.8rem; color: var(--ink-dim); text-decoration: none;
+    border: 1px solid var(--line); border-radius: 7px; padding: 7px 12px; background: var(--bg-panel);
+  }
+  .link-topo:hover, .btn:hover { border-color: var(--accent); color: var(--accent); }
+  .btn.destaque { border-color: var(--accent); color: var(--accent); font-weight: 700; }
+  .btn.primario { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 700; }
+  .btn.primario:hover { color: #fff; filter: brightness(1.05); }
+  .btn:disabled { opacity: 0.55; cursor: default; }
+  .quem { font-size: 0.78rem; color: var(--ink-faint); }
+
+  main { max-width: 1400px; margin: 0 auto; padding: 22px 28px 60px; }
+  .painel { background: var(--bg-panel); border: 1px solid var(--line-soft); border-radius: 10px; padding: 16px 18px 18px; box-shadow: var(--shadow); }
+  .painel h2 { margin: 0 0 3px; font-size: 0.95rem; font-weight: 700; }
+  .ajuda { margin: 0 0 14px; font-size: 0.76rem; color: var(--ink-faint); line-height: 1.45; max-width: 820px; }
+
+  .barra { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 12px; }
+  .barra label { font-size: 0.78rem; font-weight: 700; color: var(--ink-dim); }
+  .barra select, .campo input, .campo select, .novo input, .novo-item input, .motivo-form textarea {
+    font: inherit; font-size: 0.85rem; color: var(--ink); background: var(--bg);
+    border: 1px solid var(--line); border-radius: 6px; padding: 7px 10px;
+  }
+  .barra select { min-width: 200px; }
+  .barra .empurra { margin-left: auto; display: flex; gap: 8px; flex-wrap: wrap; }
+  select:focus, input:focus, textarea:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-soft); }
+
+  .resumo { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 14px; }
+  .pilula { font-size: 0.74rem; font-weight: 600; padding: 4px 12px; border-radius: 100px; background: var(--line-soft); color: var(--ink-dim); }
+  .pilula.alerta { background: var(--warn-soft); color: var(--warn); }
+  .pilula.ok { background: var(--ok-soft); color: var(--ok); }
+
+  .aviso { margin-bottom: 12px; padding: 9px 12px; border-left: 3px solid var(--warn); background: var(--line-soft); border-radius: 0 6px 6px 0; font-size: 0.78rem; }
+  .aviso[hidden] { display: none; }
+  .vazio { padding: 26px; text-align: center; color: var(--ink-faint); font-size: 0.82rem; line-height: 1.5; }
+
+  /* nova expedição */
+  .novo { border: 1px dashed var(--accent); border-radius: 10px; padding: 14px 16px; margin-bottom: 18px; background: var(--bg); }
+  .novo h3 { margin: 0 0 10px; font-size: 0.85rem; }
+  .busca { position: relative; margin-bottom: 12px; }
+  .busca input { width: 100%; }
+  .sugestoes { position: absolute; z-index: 5; left: 0; right: 0; top: calc(100% + 2px); max-height: 280px; overflow-y: auto;
+    list-style: none; margin: 0; padding: 4px; background: var(--bg-panel); border: 1px solid var(--line); border-radius: 8px; box-shadow: 0 8px 24px rgba(0,0,0,0.3); }
+  .sugestoes li { padding: 7px 10px; border-radius: 6px; font-size: 0.8rem; cursor: pointer; display: flex; gap: 10px; align-items: baseline; flex-wrap: wrap; }
+  .sugestoes li:hover, .sugestoes li[aria-selected="true"] { background: var(--accent-soft); }
+  .sugestoes .k { color: var(--accent); font-weight: 700; white-space: nowrap; }
+  .sugestoes small { color: var(--ink-faint); }
+  .grade-campos { display: grid; grid-template-columns: 170px 1fr 190px 220px; gap: 12px; align-items: end; }
+  .campo { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+  .campo span.rot { display: flex; align-items: center; gap: 6px; white-space: nowrap; min-height: 18px; font-size: 0.66rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.03em; color: var(--ink-faint); }
+  .campo input { width: 100%; min-width: 0; }
+  .novo .linha-acoes { display: flex; gap: 10px; align-items: center; margin-top: 12px; flex-wrap: wrap; }
+  .nota { font-size: 0.74rem; color: var(--ink-faint); }
+
+  /* grupos por data */
+  h3.grupo { margin: 22px 0 10px; font-size: 0.85rem; font-weight: 700; display: flex; align-items: baseline; gap: 8px; }
+  h3.grupo small { font-weight: 400; color: var(--ink-faint); }
+  h3.grupo.atrasadas { color: var(--warn); }
+
+  .exp { background: var(--bg); border: 1px solid var(--line); border-radius: 10px; margin-bottom: 10px; box-shadow: var(--shadow); }
+  .exp.alerta { border-color: var(--warn); box-shadow: inset 4px 0 0 var(--warn); }
+  .exp.concluida { border-color: var(--ok); box-shadow: inset 4px 0 0 var(--ok); }
+  /* ACS ou data de expedição vazios: o cartão inteiro e o campo pedem preenchimento
+   * (laranja, para não confundir com o vermelho de "prazo estourando"). Não
+   * impede nada: só deixa claro o que falta. */
+  .exp.incompleto { border-color: var(--accent); box-shadow: inset 4px 0 0 var(--accent); background: var(--accent-soft); }
+  .exp.incompleto .campo input:not(.precisa) { background: var(--bg-panel); }
+  .campo input.precisa { border-color: var(--accent); border-width: 2px; background: var(--bg-panel); box-shadow: 0 0 0 3px var(--accent-soft); }
+  .tag-preencher { margin-left: 0; padding: 1px 7px; border-radius: 4px; background: var(--accent); color: #fff; font-size: 0.62rem; letter-spacing: 0.02em; }
+  h3.grupo.sem-data { color: var(--accent); }
+  .pilula.atencao { background: var(--accent-soft); color: var(--accent); }
+  .exp-topo { display: flex; gap: 12px; align-items: flex-start; padding: 12px 14px; }
+  .exp-toggle { flex-shrink: 0; width: 28px; height: 28px; margin-top: 18px; border: 1px solid var(--line); border-radius: 6px; background: var(--bg-panel); color: var(--ink-dim); transition: transform 0.12s ease; }
+  .exp-toggle[aria-expanded="true"] { transform: rotate(90deg); }
+  .exp-main { flex: 1; min-width: 0; }
+  .exp .grade-campos { grid-template-columns: 170px 1fr 190px 220px; }
+  .exp .campo input { padding: 6px 9px; font-size: 0.82rem; }
+  .jira-link { font-size: 0.7rem; color: var(--accent); text-decoration: none; margin-left: 6px; font-weight: 600; }
+  .jira-link:hover { text-decoration: underline; }
+  .exp-resumo { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-top: 10px; font-size: 0.78rem; }
+  .resp { font-weight: 600; padding: 3px 10px; border-radius: 100px; background: var(--line-soft); color: var(--ink-dim); }
+  .resp.sem { background: var(--warn-soft); color: var(--warn); }
+  .barra-prog { width: 160px; height: 7px; border-radius: 100px; background: var(--line-soft); overflow: hidden; }
+  .barra-prog i { display: block; height: 100%; background: var(--ok); }
+  .exp.alerta .barra-prog i { background: var(--warn); }
+  .prog-txt { font-variant-numeric: tabular-nums; color: var(--ink-dim); }
+  .chip-alerta { font-weight: 700; color: var(--warn); }
+  .chip-ok { font-weight: 700; color: var(--ok); }
+
+  .exp-corpo { border-top: 1px solid var(--line-soft); padding: 12px 14px 14px 54px; display: grid; grid-template-columns: 1fr 1fr; gap: 22px; }
+  .bloco h4 { margin: 0 0 6px; font-size: 0.8rem; font-weight: 700; }
+  .bloco h4 em { font-style: normal; color: var(--accent); }
+  ul.itens { list-style: none; margin: 0; padding: 0; }
+  li.item { padding: 7px 0; border-bottom: 1px solid var(--line-soft); font-size: 0.82rem; }
+  li.item:last-child { border-bottom: 0; }
+  .item-linha { display: flex; gap: 8px; align-items: flex-start; }
+  .item-linha label { display: flex; gap: 9px; align-items: flex-start; flex: 1; min-width: 0; cursor: pointer; line-height: 1.35; }
+  .item-linha input[type="checkbox"] { width: 17px; height: 17px; margin: 1px 0 0; accent-color: var(--ok); flex-shrink: 0; }
+  li.item.est-concluido .txt { color: var(--ink-faint); }
+  .tag-na { font-size: 0.66rem; font-weight: 700; padding: 1px 7px; border-radius: 4px; background: var(--accent-soft); color: var(--accent); flex-shrink: 0; margin-top: 1px; }
+  .tag-avulso { font-size: 0.64rem; padding: 1px 6px; border-radius: 4px; border: 1px solid var(--line); color: var(--ink-faint); margin-left: 6px; white-space: nowrap; }
+  .mini { font-size: 0.7rem; padding: 2px 8px; border: 1px solid var(--line); border-radius: 5px; background: var(--bg-panel); color: var(--ink-dim); white-space: nowrap; }
+  .mini:hover { border-color: var(--accent); color: var(--accent); }
+  .mini.perigo:hover { border-color: var(--warn); color: var(--warn); }
+  .motivo { margin: 4px 0 0 26px; font-size: 0.76rem; color: var(--ink-dim); line-height: 1.4; }
+  .motivo small { color: var(--ink-faint); }
+  .motivo-form { margin: 6px 0 0 26px; display: flex; flex-direction: column; gap: 6px; }
+  .motivo-form textarea { width: 100%; min-height: 54px; resize: vertical; }
+  .motivo-form .acoes { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  .erro-inline { color: var(--warn); font-size: 0.74rem; }
+  .novo-item { display: flex; gap: 8px; margin-top: 8px; }
+  .novo-item input { flex: 1; min-width: 0; font-size: 0.8rem; padding: 6px 9px; }
+  .exp-rodape { grid-column: 1 / -1; display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; padding-top: 10px; border-top: 1px solid var(--line-soft); font-size: 0.72rem; color: var(--ink-faint); }
+
+  @media (max-width: 900px) {
+    main { padding: 16px; }
+    .grade-campos, .exp .grade-campos { grid-template-columns: 1fr 1fr; }
+    .campo span.rot { flex-wrap: wrap; white-space: normal; }
+    .exp-corpo { grid-template-columns: 1fr; padding-left: 14px; }
+  }
+</style>
+
+<header class="top">
+  <div class="top-row">
+    <div class="titles"><h1>Expedições</h1></div>
+    <div class="acoes-topo">
+      <a class="link-topo" href="/">Voltar ao board</a>
+      <a class="link-topo" href="/demandas">Demandas</a>
+      <span class="quem" id="quem"></span>
+    </div>
+  </div>
+</header>
+
+<main>
+  <div class="painel">
+    <h2>Checklist do time para expedições</h2>
+    <p class="ajuda">Uma linha por expedição, agrupada pela data. Vermelho quando a expedição é hoje, amanhã ou já passou e ainda há item pendente. O responsável vem do card no Jira. "Não aplicável" exige o motivo, e ele fica visível para o time.</p>
+    <div class="barra" id="barra"></div>
+    <div class="aviso" id="aviso" role="alert" hidden></div>
+    <div class="resumo" id="resumo"></div>
+    <div id="novo"></div>
+    <div id="area"><div class="vazio">Carregando…</div></div>
+  </div>
+</main>
+
+<script src="/dialogo.js"></script>
+<script>
+  (function () {
+    // Caixas de diálogo do sistema (/dialogo.js). Sem ele, cai no pop-up do navegador.
+    var Dlg = window.Dialogo || {
+      confirmar: function (o) { return Promise.resolve(window.confirm([o.titulo, o.destaque, o.mensagem].filter(Boolean).join('\n\n'))); },
+      avisar: function (o) { window.alert([o.titulo, o.mensagem].filter(Boolean).join('\n\n')); return Promise.resolve(); }
+    };
+
+    var ROTULO_BLOCO = { comitar: 'Antes de <em>comitar</em>', expedir: 'Antes de <em>expedir</em>' };
+    var GRUPOS = [
+      { chave: 'atrasadas', titulo: 'Atrasadas' },
+      { chave: 'hoje', titulo: 'Hoje' },
+      { chave: 'amanha', titulo: 'Amanhã' },
+      { chave: 'proximas', titulo: 'Próximos dias' },
+      { chave: 'sem-data', titulo: 'Sem data de expedição' }
+    ];
+
+    var estado = {
+      expedicoes: [], hoje: '', opcoes: null,
+      filtro: new URLSearchParams(location.search).get('responsavel') || '',
+      ocultarConcluidas: false,
+      abertas: {},        // id -> true/false, escolha manual do usuário
+      motivo: {},         // itemId -> true: formulário de "não aplicável" aberto
+      novoAberto: false,
+      escolhida: null     // opção do autocomplete que preencheu o formulário
+    };
+    var area = document.getElementById('area');
+    var aviso = document.getElementById('aviso');
+    var ocupado = false;
+
+    /* ---------- utilidades ---------- */
+    function esc(s) {
+      return String(s === null || s === undefined ? '' : s).replace(/[&<>"']/g, function (c) {
+        return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+      });
+    }
+    function mostrarAviso(t) { aviso.textContent = t || ''; aviso.hidden = !t; }
+    function normalizar(t) {
+      return String(t || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
+    }
+    function fmtData(iso) {
+      return iso ? iso.slice(8, 10) + '/' + iso.slice(5, 7) + '/' + iso.slice(0, 4) : '';
+    }
+    function guardarFiltro(valor) {
+      try { localStorage.setItem('expedicoes.responsavel', valor); } catch (e) { /* sem storage: segue sem lembrar */ }
+      var p = new URLSearchParams(location.search);
+      if (valor) p.set('responsavel', valor); else p.delete('responsavel');
+      var q = p.toString();
+      history.replaceState(null, '', location.pathname + (q ? '?' + q : ''));
+    }
+    function rotuloExpedicao(e) {
+      return [e.artefatoJira, e.nome, e.demandaAcs].filter(Boolean).join(' - ');
+    }
+
+    function chamar(metodo, url, corpo) {
+      return fetch(url, {
+        method: metodo, cache: 'no-store',
+        headers: corpo === undefined ? {} : { 'Content-Type': 'application/json' },
+        body: corpo === undefined ? undefined : JSON.stringify(corpo)
+      }).then(function (r) {
+        if (r.status === 401) { location.href = '/login.html'; return { ok: false, j: {} }; }
+        if (r.status === 403) { location.replace('/'); return { ok: false, j: {} }; }
+        return r.json().then(function (j) { return { ok: r.ok, j: j }; }, function () { return { ok: r.ok, j: {} }; });
+      });
+    }
+
+    /* ---------- derivados ---------- */
+    function visiveis() {
+      return estado.expedicoes.filter(function (e) {
+        var nome = e.responsavel.nome;
+        if (estado.filtro === '__sem__' && nome) return false;
+        if (estado.filtro && estado.filtro !== '__sem__' && nome !== estado.filtro) return false;
+        if (estado.ocultarConcluidas && e.progresso.total > 0 && e.progresso.pendentes === 0) return false;
+        return true;
+      });
+    }
+    function estaAberta(e) {
+      if (Object.prototype.hasOwnProperty.call(estado.abertas, e.id)) return estado.abertas[e.id];
+      return e.alerta; // as que pedem atenção já abrem
+    }
+    function concluida(e) { return e.progresso.total > 0 && e.progresso.pendentes === 0; }
+
+    /* ---------- barra e resumo ---------- */
+    function renderBarra() {
+      var nomes = {};
+      estado.expedicoes.forEach(function (e) { if (e.responsavel.nome) nomes[e.responsavel.nome] = true; });
+      if (estado.filtro && estado.filtro !== '__sem__') nomes[estado.filtro] = true;
+      var ops = '<option value="">Todos</option>' + Object.keys(nomes).sort().map(function (n) {
+        return '<option value="' + esc(n) + '"' + (n === estado.filtro ? ' selected' : '') + '>' + esc(n) + '</option>';
+      }).join('') + '<option value="__sem__"' + (estado.filtro === '__sem__' ? ' selected' : '') + '>Sem responsável</option>';
+      document.getElementById('barra').innerHTML =
+        '<label for="selResp">Responsável</label><select id="selResp">' + ops + '</select>' +
+        '<label><input type="checkbox" id="ocultarConc"' + (estado.ocultarConcluidas ? ' checked' : '') + '> Ocultar concluídas</label>' +
+        '<span class="empurra">' +
+          '<button type="button" class="btn" data-acao="expandir-tudo">Expandir tudo</button>' +
+          '<button type="button" class="btn" data-acao="recolher-tudo">Recolher tudo</button>' +
+          '<button type="button" class="btn primario" data-acao="nova">+ Nova expedição</button></span>';
+    }
+    function renderResumo() {
+      var v = visiveis();
+      var alertas = v.filter(function (e) { return e.alerta; }).length;
+      var semResp = v.filter(function (e) { return !e.responsavel.nome; }).length;
+      var semData = v.filter(function (e) { return !e.dataExpedicao; }).length;
+      var semAcs = v.filter(function (e) { return !String(e.demandaAcs || '').trim(); }).length;
+      var feitas = v.filter(concluida).length;
+      var h = '<span class="pilula">' + v.length + (v.length === 1 ? ' expedição' : ' expedições') + '</span>';
+      if (alertas) h += '<span class="pilula alerta">' + alertas + (alertas === 1 ? ' pede atenção' : ' pedem atenção') + '</span>';
+      if (semResp) h += '<span class="pilula alerta">' + semResp + ' sem responsável</span>';
+      if (semData) h += '<span class="pilula atencao">' + semData + ' sem data de expedição</span>';
+      if (semAcs) h += '<span class="pilula atencao">' + semAcs + ' sem ACS</span>';
+      if (feitas) h += '<span class="pilula ok">' + feitas + (feitas === 1 ? ' concluída' : ' concluídas') + '</span>';
+      document.getElementById('resumo').innerHTML = h;
+    }
+
+    /* ---------- cartão de uma expedição ---------- */
+    function itemHtml(e, i) {
+      var na = i.estado === 'nao_aplicavel';
+      var linha = '<div class="item-linha">';
+      if (na) linha += '<span class="tag-na">N/A</span><span class="txt">' + esc(i.texto) + '</span>';
+      else {
+        linha += '<label><input type="checkbox" data-acao="marcar" data-item="' + i.id + '"' + (i.estado === 'concluido' ? ' checked' : '') +
+          ' aria-label="' + esc(i.texto) + '"> <span class="txt">' + esc(i.texto) + '</span></label>';
+      }
+      if (!i.padrao) linha += '<span class="tag-avulso">avulso</span>';
+      if (na) linha += '<button type="button" class="mini" data-acao="desfazer-na" data-item="' + i.id + '">Desfazer</button>';
+      else linha += '<button type="button" class="mini" data-acao="abrir-na" data-item="' + i.id + '" title="Não se aplica a esta demanda">N/A</button>';
+      if (!i.padrao) linha += '<button type="button" class="mini perigo" data-acao="remover-item" data-item="' + i.id + '" aria-label="Remover item" title="Remover item">×</button>';
+      linha += '</div>';
+      var extra = '';
+      if (na) {
+        extra += '<div class="motivo"><strong>Não aplicável:</strong> ' + esc(i.justificativa) +
+          (i.atualizadoPor ? ' <small>· ' + esc(i.atualizadoPor) + '</small>' : '') + '</div>';
+      }
+      if (estado.motivo[i.id]) {
+        extra += '<div class="motivo-form"><textarea maxlength="500" data-motivo="' + i.id + '" ' +
+          'placeholder="Por que não se aplica? (mínimo 10 caracteres)" aria-label="Motivo do não aplicável"></textarea>' +
+          '<div class="acoes"><button type="button" class="btn destaque" data-acao="confirmar-na" data-item="' + i.id + '">Confirmar</button>' +
+          '<button type="button" class="btn" data-acao="cancelar-na" data-item="' + i.id + '">Cancelar</button>' +
+          '<span class="erro-inline" data-erro="' + i.id + '"></span></div></div>';
+      }
+      return '<li class="item est-' + esc(i.estado) + '" data-item="' + i.id + '">' + linha + extra + '</li>';
+    }
+
+    function blocoHtml(e, bloco) {
+      var itens = e.itens.filter(function (i) { return i.bloco === bloco; });
+      return '<section class="bloco"><h4>' + ROTULO_BLOCO[bloco] + '</h4><ul class="itens">' +
+        itens.map(function (i) { return itemHtml(e, i); }).join('') + '</ul>' +
+        '<div class="novo-item"><input type="text" maxlength="200" data-novo-item="' + bloco + '" placeholder="+ Item só desta demanda" aria-label="Novo item em ' + bloco + '">' +
+        '<button type="button" class="btn" data-acao="add-item" data-bloco="' + bloco + '">Adicionar</button></div></section>';
+    }
+
+    function cartaoHtml(e) {
+      var aberto = estaAberta(e);
+      var p = e.progresso;
+      var resolvidos = p.concluidos + p.naoAplicaveis;
+      var pct = p.total ? Math.round(resolvidos / p.total * 100) : 0;
+      var resp = e.responsavel.nome
+        ? '<span class="resp">' + esc(e.responsavel.nome) + '</span>'
+        : '<span class="resp sem">Sem responsável no Jira</span>';
+      var estadoTxt = concluida(e) ? '<span class="chip-ok">Pronta para expedir</span>'
+        : e.alerta ? '<span class="chip-alerta">' + (e.grupo === 'atrasadas' ? 'Atrasada' : e.grupo === 'hoje' ? 'Expede hoje' : 'Expede amanhã') +
+          ' · faltam ' + p.pendentes + '</span>' : '';
+      var link = e.artefatoUrl ? '<a class="jira-link" href="' + esc(e.artefatoUrl) + '" target="_blank" rel="noopener noreferrer">abrir ↗</a>' : '';
+      var semData = !e.dataExpedicao;
+      var semAcs = !String(e.demandaAcs || '').trim();
+      var tag = '<span class="tag-preencher">preencher</span>';
+      var h = '<article class="exp' + (e.alerta ? ' alerta' : '') + (concluida(e) ? ' concluida' : '') +
+        (semData || semAcs ? ' incompleto' : '') + (semData ? ' sem-data' : '') + (semAcs ? ' sem-acs' : '') + '" data-id="' + e.id + '">' +
+        '<div class="exp-topo"><button type="button" class="exp-toggle" data-acao="alternar" aria-expanded="' + aberto + '" aria-label="Mostrar ou esconder o checklist">›</button>' +
+        '<div class="exp-main"><div class="grade-campos">' +
+          '<div class="campo"><span class="rot">Jira' + link + '</span><input data-campo="artefatoJira" aria-label="Jira" value="' + esc(e.artefatoJira) + '" maxlength="40" placeholder="JDCBBRB-000"></div>' +
+          '<div class="campo"><span class="rot">Nome</span><input data-campo="nome" aria-label="Nome" value="' + esc(e.nome) + '" maxlength="300" placeholder="nome da demanda"></div>' +
+          '<div class="campo"><span class="rot">ACS' + (semAcs ? tag : '') + '</span><input data-campo="demandaAcs" aria-label="ACS' + (semAcs ? ' (obrigatório preencher)' : '') + '"' + (semAcs ? ' class="precisa" aria-invalid="true"' : '') + ' value="' + esc(e.demandaAcs) + '" maxlength="40" placeholder="número ACS"></div>' +
+          '<div class="campo"><span class="rot">Data de expedição' + (semData ? tag : '') + '</span><input type="date" data-campo="dataExpedicao" aria-label="Data de expedição' + (semData ? ' (obrigatório preencher)' : '') + '"' + (semData ? ' class="precisa" aria-invalid="true"' : '') + ' value="' + esc(e.dataExpedicao || '') + '"></div>' +
+        '</div><div class="exp-resumo">' + resp +
+          '<span class="barra-prog" role="progressbar" aria-valuenow="' + pct + '" aria-valuemin="0" aria-valuemax="100"><i style="width:' + pct + '%"></i></span>' +
+          '<span class="prog-txt">' + resolvidos + ' de ' + p.total + (p.naoAplicaveis ? ' · ' + p.naoAplicaveis + ' N/A' : '') + '</span> ' + estadoTxt +
+        '</div></div></div>';
+      if (aberto) {
+        h += '<div class="exp-corpo">' + blocoHtml(e, 'comitar') + blocoHtml(e, 'expedir') +
+          '<div class="exp-rodape"><span>' + (e.atualizadoPor ? 'Última alteração: ' + esc(e.atualizadoPor) : '') + '</span>' +
+          '<button type="button" class="mini perigo" data-acao="excluir">Excluir expedição</button></div></div>';
+      }
+      return h + '</article>';
+    }
+
+    function renderLista() {
+      var v = visiveis();
+      if (!estado.expedicoes.length) {
+        area.innerHTML = '<div class="vazio">Nenhuma expedição cadastrada ainda. Use "+ Nova expedição" e busque pelo Jira, nome ou ACS.</div>';
+        return;
+      }
+      if (!v.length) { area.innerHTML = '<div class="vazio">Nenhuma expedição para este filtro.</div>'; return; }
+      area.innerHTML = GRUPOS.map(function (g) {
+        var lista = v.filter(function (e) { return e.grupo === g.chave; });
+        if (!lista.length) return '';
+        return '<h3 class="grupo ' + g.chave + '">' + g.titulo + ' <small>' + lista.length + '</small></h3>' + lista.map(cartaoHtml).join('');
+      }).join('');
+    }
+
+    function renderTudo() { renderBarra(); renderResumo(); renderLista(); }
+
+    // Troca só o cartão que mudou: o que o usuário digitou nos outros fica como está.
+    function atualizarExpedicao(nova) {
+      var i = estado.expedicoes.findIndex(function (e) { return e.id === nova.id; });
+      var mudouGrupo = i < 0 || estado.expedicoes[i].grupo !== nova.grupo || estado.expedicoes[i].dataExpedicao !== nova.dataExpedicao;
+      if (i >= 0) estado.expedicoes[i] = nova; else estado.expedicoes.push(nova);
+      renderResumo();
+      var el = area.querySelector('.exp[data-id="' + nova.id + '"]');
+      if (mudouGrupo || !el) { ordenar(); renderBarra(); return renderLista(); }
+      trocarCartao(el, nova);
+    }
+    /* Redesenha um cartão sem atrapalhar quem está digitando: o texto ainda não
+     * enviado (novo item, motivo do N/A) e o foco voltam para o mesmo lugar. */
+    function trocarCartao(el, e) {
+      var rascunhos = {};
+      Array.prototype.forEach.call(el.querySelectorAll('input[data-novo-item], textarea[data-motivo]'), function (c) {
+        rascunhos[c.hasAttribute('data-motivo') ? 'textarea[data-motivo="' + c.getAttribute('data-motivo') + '"]'
+          : 'input[data-novo-item="' + c.getAttribute('data-novo-item') + '"]'] = c.value;
+      });
+      var ativo = document.activeElement;
+      var seletorFoco = null;
+      if (ativo && el.contains(ativo)) {
+        if (ativo.getAttribute('data-campo')) seletorFoco = '[data-campo="' + ativo.getAttribute('data-campo') + '"]';
+        else if (ativo.getAttribute('data-novo-item')) seletorFoco = 'input[data-novo-item="' + ativo.getAttribute('data-novo-item') + '"]';
+        else if (ativo.getAttribute('data-motivo')) seletorFoco = 'textarea[data-motivo="' + ativo.getAttribute('data-motivo') + '"]';
+        else if (ativo.getAttribute('data-acao') === 'marcar') seletorFoco = 'input[data-acao="marcar"][data-item="' + ativo.getAttribute('data-item') + '"]';
+      }
+      var tmp = document.createElement('div');
+      tmp.innerHTML = cartaoHtml(e);
+      var novo = tmp.firstChild;
+      el.parentNode.replaceChild(novo, el);
+      Object.keys(rascunhos).forEach(function (sel) {
+        var c = novo.querySelector(sel);
+        if (c && rascunhos[sel]) c.value = rascunhos[sel];
+      });
+      if (seletorFoco) { var f = novo.querySelector(seletorFoco); if (f) f.focus(); }
+    }
+    function ordenar() {
+      estado.expedicoes.sort(function (a, b) {
+        if (!a.dataExpedicao !== !b.dataExpedicao) return a.dataExpedicao ? -1 : 1;
+        if (a.dataExpedicao !== b.dataExpedicao) return a.dataExpedicao < b.dataExpedicao ? -1 : 1;
+        return a.id - b.id;
+      });
+    }
+
+    /* ---------- ações ---------- */
+    function expedicaoDe(el) {
+      var card = el.closest('.exp');
+      if (!card) return null;
+      var id = Number(card.getAttribute('data-id'));
+      return estado.expedicoes.filter(function (e) { return e.id === id; })[0] || null;
+    }
+    function itemDe(e, el) {
+      var id = Number(el.getAttribute('data-item') || (el.closest('[data-item]') && el.closest('[data-item]').getAttribute('data-item')));
+      return e.itens.filter(function (i) { return i.id === id; })[0] || null;
+    }
+
+    function executar(promessa, aoConcluir) {
+      if (ocupado) return;
+      ocupado = true; mostrarAviso('');
+      promessa.then(function (r) {
+        ocupado = false;
+        if (!r.ok) { mostrarAviso(r.j.erro || 'Não foi possível salvar agora.'); return; }
+        aoConcluir(r.j);
+      }).catch(function () { ocupado = false; mostrarAviso('Sem conexão com o servidor. Tente de novo.'); });
+    }
+
+    function salvarCampo(e, input) {
+      var campo = input.getAttribute('data-campo');
+      var corpo = {}; corpo[campo] = input.value;
+      executar(chamar('PATCH', '/api/expedicoes/' + e.id, corpo), function (j) { atualizarExpedicao(j.expedicao); });
+    }
+
+    function marcar(e, i, marcado) {
+      executar(chamar('PATCH', '/api/expedicoes/' + e.id + '/itens/' + i.id, { estado: marcado ? 'concluido' : 'pendente' }),
+        function (j) { atualizarExpedicao(j.expedicao); });
+    }
+
+    function confirmarNa(e, i, card) {
+      var ta = card.querySelector('textarea[data-motivo="' + i.id + '"]');
+      var erro = card.querySelector('[data-erro="' + i.id + '"]');
+      var motivo = ta ? ta.value.trim() : '';
+      if (motivo.length < 10) { if (erro) erro.textContent = 'Explique brevemente por que não se aplica (mínimo 10 caracteres).'; if (ta) ta.focus(); return; }
+      delete estado.motivo[i.id];
+      executar(chamar('PATCH', '/api/expedicoes/' + e.id + '/itens/' + i.id, { estado: 'nao_aplicavel', justificativa: motivo }),
+        function (j) { atualizarExpedicao(j.expedicao); });
+    }
+
+    function adicionarItem(e, bloco, card) {
+      var campo = card.querySelector('input[data-novo-item="' + bloco + '"]');
+      var texto = campo ? campo.value.trim() : '';
+      if (texto.length < 3) { mostrarAviso('Descreva o item (mínimo 3 caracteres).'); if (campo) campo.focus(); return; }
+      executar(chamar('POST', '/api/expedicoes/' + e.id + '/itens', { bloco: bloco, texto: texto }),
+        function (j) { atualizarExpedicao(j.expedicao); });
+    }
+
+    function removerItem(e, i) {
+      var quem = rotuloExpedicao(e);
+      Dlg.confirmar({
+        titulo: 'Deseja realmente remover este item?', destaque: i.texto,
+        mensagem: quem ? 'Ele sai do checklist da expedição ' + quem + '.' : 'Ele sai do checklist desta expedição.',
+        rotuloConfirmar: 'Remover', tom: 'perigo'
+      }).then(function (sim) {
+        if (!sim) return;
+        executar(chamar('DELETE', '/api/expedicoes/' + e.id + '/itens/' + i.id), function (j) { atualizarExpedicao(j.expedicao); });
+      });
+    }
+
+    function excluirExpedicao(e) {
+      var quem = rotuloExpedicao(e);
+      Dlg.confirmar(quem ? {
+        titulo: 'Deseja realmente excluir a expedição?', destaque: quem,
+        mensagem: 'Ela sai da lista. O histórico continua guardado.', rotuloConfirmar: 'Excluir', tom: 'perigo'
+      } : {
+        titulo: 'Deseja realmente excluir esta expedição em branco?',
+        mensagem: 'A expedição vazia será removida da lista.', rotuloConfirmar: 'Excluir', tom: 'perigo'
+      }).then(function (sim) {
+        if (!sim) return;
+        executar(chamar('DELETE', '/api/expedicoes/' + e.id), function () {
+          estado.expedicoes = estado.expedicoes.filter(function (x) { return x.id !== e.id; });
+          renderTudo();
+        });
+      });
+    }
+
+    area.addEventListener('click', function (ev) {
+      var b = ev.target.closest('[data-acao]');
+      if (!b) return;
+      var acao = b.getAttribute('data-acao');
+      var e = expedicaoDe(b);
+      if (!e) return;
+      var card = b.closest('.exp');
+      var i = itemDe(e, b);
+      if (acao === 'alternar') { estado.abertas[e.id] = !estaAberta(e); atualizarCartaoLocal(e); }
+      else if (acao === 'abrir-na' && i) { estado.motivo[i.id] = true; atualizarCartaoLocal(e); var ta = area.querySelector('textarea[data-motivo="' + i.id + '"]'); if (ta) ta.focus(); }
+      else if (acao === 'cancelar-na' && i) { delete estado.motivo[i.id]; atualizarCartaoLocal(e); }
+      else if (acao === 'confirmar-na' && i) confirmarNa(e, i, card);
+      else if (acao === 'desfazer-na' && i) {
+        executar(chamar('PATCH', '/api/expedicoes/' + e.id + '/itens/' + i.id, { estado: 'pendente' }), function (j) { atualizarExpedicao(j.expedicao); });
+      }
+      else if (acao === 'add-item') adicionarItem(e, b.getAttribute('data-bloco'), card);
+      else if (acao === 'remover-item' && i) removerItem(e, i);
+      else if (acao === 'excluir') excluirExpedicao(e);
+    });
+
+    function atualizarCartaoLocal(e) {
+      trocarCartao(area.querySelector('.exp[data-id="' + e.id + '"]'), e);
+    }
+
+    area.addEventListener('change', function (ev) {
+      var t = ev.target;
+      var e = expedicaoDe(t);
+      if (!e) return;
+      if (t.getAttribute('data-acao') === 'marcar') {
+        var i = itemDe(e, t);
+        if (i) marcar(e, i, t.checked);
+      } else if (t.getAttribute('data-campo')) {
+        salvarCampo(e, t);
+      }
+    });
+    area.addEventListener('keydown', function (ev) {
+      var t = ev.target;
+      if (ev.key === 'Enter' && t.getAttribute && t.getAttribute('data-novo-item')) {
+        ev.preventDefault();
+        var e = expedicaoDe(t);
+        if (e) adicionarItem(e, t.getAttribute('data-novo-item'), t.closest('.exp'));
+      }
+    });
+
+    /* ---------- barra ---------- */
+    document.getElementById('barra').addEventListener('change', function (ev) {
+      if (ev.target.id === 'selResp') { estado.filtro = ev.target.value; guardarFiltro(estado.filtro); renderBarra(); renderResumo(); renderLista(); document.getElementById('selResp').focus(); }
+      if (ev.target.id === 'ocultarConc') { estado.ocultarConcluidas = ev.target.checked; renderResumo(); renderLista(); }
+    });
+    document.getElementById('barra').addEventListener('click', function (ev) {
+      var b = ev.target.closest('[data-acao]');
+      if (!b) return;
+      var acao = b.getAttribute('data-acao');
+      if (acao === 'expandir-tudo' || acao === 'recolher-tudo') {
+        visiveis().forEach(function (e) { estado.abertas[e.id] = acao === 'expandir-tudo'; });
+        renderLista();
+      } else if (acao === 'nova') abrirNova();
+    });
+
+    /* ---------- nova expedição (com autocomplete do quadro) ---------- */
+    function abrirNova() {
+      estado.novoAberto = true; estado.escolhida = null;
+      document.getElementById('novo').innerHTML =
+        '<div class="novo"><h3>Nova expedição</h3>' +
+        '<div class="busca"><label class="campo"><span class="rot">Buscar no quadro Kanban e nas Demandas (Jira, nome ou ACS)</span>' +
+        '<input type="text" id="busca" autocomplete="off" placeholder="ex.: JDCBBRB-401, estorno, 20260525005" role="combobox" aria-expanded="false" aria-controls="sugestoes"></label>' +
+        '<ul class="sugestoes" id="sugestoes" role="listbox" hidden></ul></div>' +
+        '<div class="grade-campos">' +
+          '<label class="campo"><span class="rot">Jira</span><input id="nJira" maxlength="40" placeholder="JDCBBRB-000"></label>' +
+          '<label class="campo"><span class="rot">Nome</span><input id="nNome" maxlength="300" placeholder="nome da demanda"></label>' +
+          '<label class="campo"><span class="rot">ACS <span class="tag-preencher" id="tagAcs">preencher</span></span><input id="nAcs" class="precisa" maxlength="40" placeholder="número ACS"></label>' +
+          '<label class="campo"><span class="rot">Data de expedição <span class="tag-preencher" id="tagData">preencher</span></span><input type="date" id="nData" class="precisa"></label>' +
+        '</div><div class="linha-acoes"><button type="button" class="btn primario" id="criarExp">Criar expedição</button>' +
+        '<button type="button" class="btn" id="cancelarExp">Cancelar</button>' +
+        '<span class="nota" id="notaResp">O responsável vem do card no Jira.</span></div></div>';
+      document.getElementById('busca').focus();
+      carregarOpcoes();
+    }
+    // Data e ACS ficam em destaque enquanto vazios (não impede criar: podem chegar
+    // depois, mas o cartão fica marcado até alguém preencher).
+    function marcarObrigatoriosNova() {
+      [['nData', 'tagData'], ['nAcs', 'tagAcs']].forEach(function (par) {
+        var c = document.getElementById(par[0]);
+        if (!c) return;
+        var vazio = !c.value.trim();
+        c.classList.toggle('precisa', vazio);
+        var tag = document.getElementById(par[1]);
+        if (tag) tag.hidden = !vazio;
+      });
+    }
+    function fecharNova() { estado.novoAberto = false; document.getElementById('novo').innerHTML = ''; }
+
+    function carregarOpcoes() {
+      if (estado.opcoes) return;
+      chamar('GET', '/api/expedicoes/opcoes').then(function (r) {
+        estado.opcoes = r.ok ? r.j.opcoes : [];
+        if (estado.novoAberto) sugerir();
+      }).catch(function () { estado.opcoes = []; });
+    }
+    function sugerir() {
+      var campo = document.getElementById('busca');
+      var lista = document.getElementById('sugestoes');
+      if (!campo || !lista) return;
+      var q = normalizar(campo.value);
+      var ops = (estado.opcoes || []).filter(function (o) {
+        return !q || normalizar([o.jira, o.nome, o.acs].join(' ')).indexOf(q) >= 0;
+      }).slice(0, 8);
+      if (!q && !ops.length) { lista.hidden = true; campo.setAttribute('aria-expanded', 'false'); return; }
+      lista.innerHTML = ops.length ? ops.map(function (o, idx) {
+        return '<li role="option" data-idx="' + (estado.opcoes || []).indexOf(o) + '"><span class="k">' + esc(o.jira || 'sem Jira') + '</span> ' + esc(o.nome) +
+          (o.acs ? ' <small>ACS ' + esc(o.acs) + '</small>' : '') +
+          ' <small>' + (o.origem === 'quadro' ? 'no quadro' : 'só em Demandas') + (o.responsavel ? ' · ' + esc(o.responsavel) : '') + '</small></li>';
+      }).join('') : '<li aria-disabled="true"><small>Nada encontrado — preencha os campos abaixo à mão.</small></li>';
+      lista.hidden = false;
+      campo.setAttribute('aria-expanded', 'true');
+    }
+    function escolher(o) {
+      estado.escolhida = o;
+      document.getElementById('nJira').value = o.jira || '';
+      document.getElementById('nNome').value = o.nome || '';
+      document.getElementById('nAcs').value = o.acs || '';
+      document.getElementById('nData').value = o.dataExpedicao || '';
+      marcarObrigatoriosNova();
+      document.getElementById('busca').value = [o.jira, o.nome].filter(Boolean).join(' - ');
+      document.getElementById('sugestoes').hidden = true;
+      document.getElementById('busca').setAttribute('aria-expanded', 'false');
+      document.getElementById('notaResp').textContent = o.responsavel
+        ? 'Responsável no Jira: ' + o.responsavel
+        : 'Este card não tem responsável no Jira: a expedição vai aparecer marcada como "sem responsável".';
+    }
+
+    document.getElementById('novo').addEventListener('input', function (ev) {
+      if (ev.target.id === 'busca') sugerir();
+      if (ev.target.id === 'nData' || ev.target.id === 'nAcs') marcarObrigatoriosNova();
+    });
+    document.getElementById('novo').addEventListener('change', function (ev) {
+      if (ev.target.id === 'nData' || ev.target.id === 'nAcs') marcarObrigatoriosNova();
+    });
+    document.getElementById('novo').addEventListener('focusin', function (ev) {
+      if (ev.target.id === 'busca') sugerir();
+    });
+    document.getElementById('novo').addEventListener('click', function (ev) {
+      var li = ev.target.closest('li[data-idx]');
+      if (li) return escolher(estado.opcoes[Number(li.getAttribute('data-idx'))]);
+      if (ev.target.id === 'cancelarExp') return fecharNova();
+      if (ev.target.id === 'criarExp') {
+        var corpo = {
+          artefatoJira: document.getElementById('nJira').value, nome: document.getElementById('nNome').value,
+          demandaAcs: document.getElementById('nAcs').value, dataExpedicao: document.getElementById('nData').value
+        };
+        executar(chamar('POST', '/api/expedicoes', corpo), function (j) {
+          fecharNova();
+          estado.abertas[j.expedicao.id] = true;
+          estado.expedicoes.push(j.expedicao);
+          ordenar(); renderTudo();
+          var el = area.querySelector('.exp[data-id="' + j.expedicao.id + '"]');
+          if (el && el.scrollIntoView) el.scrollIntoView({ block: 'center' });
+        });
+      }
+    });
+    document.getElementById('novo').addEventListener('keydown', function (ev) {
+      if (ev.key === 'Escape') fecharNova();
+    });
+
+    /* ---------- carga ---------- */
+    function carregar() {
+      return chamar('GET', '/api/expedicoes').then(function (r) {
+        if (!r.ok) { area.innerHTML = '<div class="vazio">' + esc(r.j.erro || 'Não foi possível carregar as expedições agora.') + '</div>'; return; }
+        estado.expedicoes = r.j.expedicoes;
+        estado.hoje = r.j.hoje;
+        if (!estado.filtro) { try { estado.filtro = localStorage.getItem('expedicoes.responsavel') || ''; } catch (e) { estado.filtro = ''; } }
+        renderTudo();
+      }).catch(function () { area.innerHTML = '<div class="vazio">Não foi possível carregar as expedições agora.</div>'; });
+    }
+
+    fetch('/api/eu').then(function (r) { return r.ok ? r.json() : null; }).then(function (eu) {
+      if (eu && eu.email) document.getElementById('quem').textContent = eu.email;
+    }).catch(function () {});
+
+    renderBarra();
+    carregar();
+  })();
+</script>

@@ -126,7 +126,14 @@
   </div>
 </main>
 
+<script src="/dialogo.js"></script>
 <script>
+    // Caixas de diálogo do sistema (/dialogo.js). Sem ele, cai no pop-up do navegador.
+    var Dlg = window.Dialogo || {
+      confirmar: function (o) { return Promise.resolve(window.confirm([o.titulo, o.destaque, o.mensagem].filter(Boolean).join('\n\n'))); },
+      avisar: function (o) { window.alert([o.titulo, o.mensagem].filter(Boolean).join('\n\n')); return Promise.resolve(); }
+    };
+
   function esc(s) {
     return String(s).replace(/[&<>"']/g, function (c) {
       return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
@@ -164,17 +171,23 @@
         alvo.querySelectorAll('.btn-confirmar').forEach(function (btn) {
           btn.addEventListener('click', function () {
             var email = btn.getAttribute('data-email');
-            if (!confirm('Confirmar o e-mail de ' + email + ' manualmente, sem esperar o link?')) return;
+            Dlg.confirmar({
+              titulo: 'Confirmar este e-mail manualmente?', destaque: email,
+              mensagem: 'A pessoa poderá entrar sem clicar no link de confirmação que o Supabase envia.',
+              rotuloConfirmar: 'Confirmar e-mail', tom: 'aviso'
+            }).then(function (sim) {
+            if (!sim) return;
             btn.disabled = true;
             btn.textContent = 'Confirmando…';
             fetch('/api/admin/usuarios/' + encodeURIComponent(btn.getAttribute('data-id')) + '/confirmar', { method: 'POST' })
               .then(function (r) { return r.json().then(function (corpo) { return { ok: r.ok, corpo: corpo }; }); })
               .then(function (res) {
-                if (!res.ok) { alert(res.corpo.erro || 'Falha ao confirmar.'); btn.disabled = false; btn.textContent = 'Confirmar manualmente'; return; }
+                if (!res.ok) { Dlg.avisar({ titulo: 'Não foi possível confirmar', mensagem: res.corpo.erro || 'Falha ao confirmar.' }); btn.disabled = false; btn.textContent = 'Confirmar manualmente'; return; }
                 carregarUsuarios();
                 carregarAcessos();
               })
-              .catch(function () { alert('Falha ao conversar com o servidor.'); btn.disabled = false; btn.textContent = 'Confirmar manualmente'; });
+              .catch(function () { Dlg.avisar({ titulo: 'Sem conexão', mensagem: 'Falha ao conversar com o servidor. Tente de novo.' }); btn.disabled = false; btn.textContent = 'Confirmar manualmente'; });
+            });
           });
         });
       })

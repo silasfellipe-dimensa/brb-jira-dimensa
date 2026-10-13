@@ -1,0 +1,291 @@
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Histórico de Demandas · Kanban BRB</title>
+
+<style>
+  :root {
+    color-scheme: light dark;
+    --bg: #F5F5F5;
+    --bg-panel: #FFFFFF;
+    --ink: #1E212C;
+    --ink-dim: #4B5A68;
+    --ink-faint: #7C8894;
+    --line: #E5E6E7;
+    --line-soft: #EFEFEF;
+    --accent: #FF6C0C;
+    --accent-soft: #FFE8D9;
+    --warn: #A8452E;
+    --warn-soft: #F8E1DB;
+    --ok: #0B9C7F;
+    --ok-soft: #D8F1EB;
+    --zebra: rgba(30,33,44,0.035);
+    --shadow: 0 1px 2px rgba(30,33,44,0.06), 0 1px 1px rgba(30,33,44,0.04);
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #1E212C;
+      --bg-panel: #262B38;
+      --ink: #F5F5F5;
+      --ink-dim: #A7B0BC;
+      --ink-faint: #78838F;
+      --line: #333846;
+      --line-soft: #2A2E3A;
+      --accent: #FF8A3D;
+      --accent-soft: #3A2A1C;
+      --warn: #E2725B;
+      --warn-soft: #3A2420;
+      --ok: #3EE8C4;
+      --ok-soft: #173A33;
+      --zebra: rgba(255,255,255,0.035);
+      --shadow: 0 1px 3px rgba(0,0,0,0.35);
+    }
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--ink);
+    font-family: Lato, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  header.top { background: var(--bg); border-bottom: 1px solid var(--line); padding: 22px 28px; }
+  .top-row { display: flex; align-items: center; justify-content: space-between; gap: 24px; flex-wrap: wrap; max-width: 1400px; margin: 0 auto; }
+  .titles h1 { margin: 0; font-size: 1.5rem; font-weight: 700; letter-spacing: -0.01em; }
+  .acoes-topo { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+  .link-topo {
+    display: inline-flex; align-items: center; gap: 6px; font-size: 0.8rem; color: var(--ink-dim); text-decoration: none;
+    border: 1px solid var(--line); border-radius: 7px; padding: 7px 12px; background: var(--bg-panel);
+  }
+  .link-topo:hover { border-color: var(--accent); color: var(--accent); }
+  .quem { font-size: 0.78rem; color: var(--ink-faint); }
+
+  main { max-width: 1400px; margin: 0 auto; padding: 22px 28px 60px; }
+  .cartao { background: var(--bg-panel); border: 1px solid var(--line-soft); border-radius: 10px; padding: 16px 18px 18px; box-shadow: var(--shadow); }
+  .cartao h2 { margin: 0 0 3px; font-size: 0.95rem; font-weight: 700; }
+  .ajuda { margin: 0 0 14px; font-size: 0.76rem; color: var(--ink-faint); line-height: 1.45; max-width: 800px; }
+
+  .barra { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 14px; }
+  .barra label { font-size: 0.78rem; font-weight: 700; color: var(--ink-dim); }
+  .barra select {
+    font: inherit; font-size: 0.85rem; color: var(--ink); background: var(--bg);
+    border: 1px solid var(--line); border-radius: 6px; padding: 7px 10px; min-width: 150px;
+  }
+  .barra select:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-soft); }
+  .contagem { font-size: 0.76rem; color: var(--ink-faint); }
+  .filtro-demanda {
+    display: inline-flex; align-items: center; gap: 8px; font-size: 0.78rem; padding: 5px 6px 5px 12px;
+    border-radius: 100px; background: var(--accent-soft); color: var(--accent); font-weight: 600;
+  }
+  .filtro-demanda a { color: inherit; text-decoration: none; border: 1px solid currentColor; border-radius: 100px; padding: 2px 10px; font-size: 0.72rem; }
+  .filtro-demanda a:hover { text-decoration: underline; }
+
+  .aviso { margin-bottom: 12px; padding: 9px 12px; border-left: 3px solid var(--warn); background: var(--line-soft); border-radius: 0 6px 6px 0; font-size: 0.78rem; }
+  .aviso[hidden] { display: none; }
+  .vazio { padding: 22px; text-align: center; color: var(--ink-faint); font-size: 0.8rem; line-height: 1.5; }
+
+  .tabela-scroll { overflow-x: auto; border: 1px solid var(--line-soft); border-radius: 8px; }
+  table.hist { border-collapse: collapse; width: 100%; min-width: 900px; font-size: 0.8rem; }
+  table.hist th {
+    text-align: left; font-size: 0.66rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em;
+    color: var(--ink-dim); background: var(--line-soft); padding: 10px; border-bottom: 2px solid var(--accent); white-space: nowrap;
+  }
+  table.hist td { padding: 9px 10px; border-bottom: 1px solid var(--line); vertical-align: top; overflow-wrap: anywhere; }
+  table.hist tbody tr:nth-child(even) td { background: var(--zebra); }
+  table.hist tbody tr:last-child td { border-bottom: 0; }
+  table.hist td.quando { white-space: nowrap; font-variant-numeric: tabular-nums; color: var(--ink-dim); }
+  table.hist td.dem { min-width: 220px; }
+  table.hist td.dem small { display: block; color: var(--ink-faint); font-size: 0.7rem; margin-top: 1px; }
+  table.hist td.dem a { color: var(--accent); text-decoration: none; font-weight: 700; }
+  table.hist td.dem a:hover { text-decoration: underline; }
+  .acao { display: inline-block; font-size: 0.68rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.03em; padding: 2px 9px; border-radius: 100px; white-space: nowrap; }
+  .acao.criou { background: var(--ok-soft); color: var(--ok); }
+  .acao.alterou { background: var(--accent-soft); color: var(--accent); }
+  .acao.removeu { background: var(--warn-soft); color: var(--warn); }
+  .acao.restaurou { background: var(--line-soft); color: var(--ink-dim); }
+  .campo { font-weight: 700; display: block; margin-bottom: 2px; }
+  .de-para { display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap; }
+  .de-para .antes { color: var(--ink-faint); text-decoration: line-through; white-space: pre-wrap; }
+  .de-para .depois { white-space: pre-wrap; }
+  .falta { color: var(--ink-faint); opacity: 0.7; }
+  .nota { margin: 8px 0 0; font-size: 0.72rem; color: var(--ink-faint); }
+</style>
+
+<header class="top">
+  <div class="top-row">
+    <div class="titles"><h1>Histórico de Demandas</h1></div>
+    <div class="acoes-topo">
+      <a class="link-topo" href="/demandas">Voltar às demandas</a>
+      <span class="quem" id="quem"></span>
+    </div>
+  </div>
+</header>
+
+<main>
+  <div class="cartao">
+    <h2>Quem mexeu, quando e no quê</h2>
+    <p class="ajuda">Cada criação, cada campo alterado (valor anterior → novo) e cada exclusão fica registrado, do mais recente para o mais antigo. As demandas excluídas continuam guardadas: aparecem aqui como "Removeu".</p>
+    <div class="barra" id="barra"></div>
+    <div class="aviso" id="aviso" role="alert" hidden></div>
+    <div id="area"><div class="vazio">Carregando…</div></div>
+  </div>
+</main>
+
+<script>
+  (function () {
+    var LIMITE = 1000;
+    var NOMES_MES = ['Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho', 'Julho', 'Agosto',
+      'Setembro', 'Outubro', 'Novembro', 'Dezembro'];
+    var ROTULOS = {
+      demanda_acs: 'Demanda/Sustentação ACS', artefato_jira: 'Artefato Jira', nome: 'Nome da demanda',
+      pontos_total: 'Pontos de Função (total)', em_analise: 'Pontos de Função "em análise"',
+      pontos_documentacao: 'Documentação (30%)', pontos_desenvolvimento: 'Desenvolvimento (40%)',
+      pontos_teste: 'Teste (20%)', pontos_implantacao: 'Implantação (10%)',
+      inicio_atendimento: 'Início do Atendimento - ACS', conclusao_prevista: 'Conclusão prevista (SLA)',
+      previsao_expedicao: 'Previsão de Expedição', observacoes: 'Observações'
+    };
+    var NUMEROS = ['pontos_total', 'pontos_documentacao', 'pontos_desenvolvimento', 'pontos_teste', 'pontos_implantacao'];
+    var DATAS = ['inicio_atendimento', 'conclusao_prevista', 'previsao_expedicao'];
+    var ACOES = { criou: 'Criou', alterou: 'Alterou', removeu: 'Removeu', restaurou: 'Restaurou' };
+
+    var params = new URLSearchParams(location.search);
+    var estado = { eventos: [], demanda: params.get('demanda') || '', mes: params.get('mes') || '', acao: '' };
+    var area = document.getElementById('area');
+    var aviso = document.getElementById('aviso');
+
+    function esc(s) {
+      return String(s).replace(/[&<>"']/g, function (c) {
+        return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+      });
+    }
+    function doisDigitos(n) { return n < 10 ? '0' + n : String(n); }
+    function rotuloMes(mes) {
+      var p = String(mes || '').split('-');
+      if (p.length !== 2 || !NOMES_MES[Number(p[1]) - 1]) return '';
+      return NOMES_MES[Number(p[1]) - 1] + ' de ' + p[0];
+    }
+    // Data e hora no relógio de quem está olhando (o banco guarda em UTC).
+    function fmtQuando(iso) {
+      var d = new Date(iso);
+      if (isNaN(d.getTime())) return '';
+      return doisDigitos(d.getDate()) + '/' + doisDigitos(d.getMonth() + 1) + '/' + d.getFullYear() + ' ' +
+        doisDigitos(d.getHours()) + ':' + doisDigitos(d.getMinutes());
+    }
+    function fmtValor(campo, v) {
+      if (v === null || v === undefined || v === '') return '<span class="falta">—</span>';
+      if (campo === 'em_analise') return v === 'true' ? 'Sim' : 'Não';
+      if (NUMEROS.indexOf(campo) >= 0 && isFinite(Number(v))) {
+        return esc(Number(v).toLocaleString('pt-BR', { maximumFractionDigits: 2 }));
+      }
+      if (DATAS.indexOf(campo) >= 0 && /^\d{4}-\d{2}-\d{2}$/.test(v)) {
+        return esc(v.slice(8, 10) + '/' + v.slice(5, 7) + '/' + v.slice(0, 4));
+      }
+      return esc(v);
+    }
+
+    function oQueMudou(e) {
+      if (e.acao === 'criou') return 'Linha criada em ' + esc(rotuloMes(e.mes) || e.mes || '');
+      if (e.acao === 'removeu') return 'Demanda excluída (continua guardada no banco)';
+      if (e.acao === 'restaurou') return 'Demanda restaurada';
+      return '<span class="campo">' + esc(ROTULOS[e.campo] || e.campo || '') + '</span> ' +
+        '<span class="de-para"><span class="antes">' + fmtValor(e.campo, e.anterior) + '</span> ' +
+        '<span aria-hidden="true">→</span> <span class="depois">' + fmtValor(e.campo, e.novo) + '</span></span>';
+    }
+
+    function linha(e) {
+      var rotuloDem = e.demandaAcs || e.nome
+        ? esc([e.demandaAcs, e.nome].filter(Boolean).join(' - '))
+        : '<span class="falta">linha em branco</span>';
+      return '<tr><td class="quando">' + esc(fmtQuando(e.quando)) + '</td>' +
+        '<td>' + esc(e.usuario || '—') + '</td>' +
+        '<td><span class="acao ' + esc(e.acao) + '">' + esc(ACOES[e.acao] || e.acao) + '</span></td>' +
+        '<td class="dem"><a href="/demandas/historico?demanda=' + esc(e.demandaId) + '">' + rotuloDem + '</a>' +
+          '<small>#' + esc(e.demandaId) + (e.mes ? ' · ' + esc(rotuloMes(e.mes)) : '') + '</small></td>' +
+        '<td>' + oQueMudou(e) + '</td></tr>';
+    }
+
+    function mostrarAviso(texto) {
+      aviso.textContent = texto || '';
+      aviso.hidden = !texto;
+    }
+
+    function render() {
+      var visiveis = estado.eventos.filter(function (e) { return !estado.acao || e.acao === estado.acao; });
+      var filtroDem = '';
+      if (estado.demanda) {
+        var ref = estado.eventos[0];
+        filtroDem = '<span class="filtro-demanda">Somente a demanda #' + esc(estado.demanda) +
+          (ref && (ref.demandaAcs || ref.nome) ? ' (' + esc([ref.demandaAcs, ref.nome].filter(Boolean).join(' - ')) + ')' : '') +
+          ' <a href="/demandas/historico">ver tudo</a></span>';
+      }
+      var meses = {};
+      estado.eventos.forEach(function (e) { if (e.mes) meses[e.mes] = true; });
+      if (estado.mes) meses[estado.mes] = true;
+      var opMes = '<option value="">Todos os meses</option>' + Object.keys(meses).sort().reverse().map(function (m) {
+        return '<option value="' + esc(m) + '"' + (m === estado.mes ? ' selected' : '') + '>' + esc(rotuloMes(m)) + '</option>';
+      }).join('');
+      var opAcao = '<option value="">Todas as ações</option>' + Object.keys(ACOES).map(function (a) {
+        return '<option value="' + a + '"' + (a === estado.acao ? ' selected' : '') + '>' + ACOES[a] + '</option>';
+      }).join('');
+      var foco = document.activeElement && document.activeElement.id;
+      document.getElementById('barra').innerHTML = filtroDem +
+        '<label for="selMes">Mês</label><select id="selMes">' + opMes + '</select>' +
+        '<label for="selAcao">Ação</label><select id="selAcao">' + opAcao + '</select>' +
+        '<span class="contagem">' + visiveis.length + (visiveis.length === 1 ? ' registro' : ' registros') + '</span>';
+      // a barra é refeita a cada filtro: devolve o foco para quem usa o teclado
+      if (foco && document.getElementById(foco)) document.getElementById(foco).focus();
+
+      if (!visiveis.length) {
+        area.innerHTML = '<div class="vazio">Nenhum registro para este filtro' +
+          (estado.eventos.length ? '.' : ' ainda. As alterações feitas daqui para frente aparecem aqui.') + '</div>';
+        return;
+      }
+      area.innerHTML = '<div class="tabela-scroll"><table class="hist"><thead><tr>' +
+        '<th>Quando</th><th>Quem</th><th>Ação</th><th>Demanda</th><th>O que mudou</th></tr></thead><tbody>' +
+        visiveis.map(linha).join('') + '</tbody></table></div>' +
+        (estado.eventos.length >= LIMITE ? '<p class="nota">Mostrando os ' + LIMITE + ' registros mais recentes. Use o filtro de mês ou de demanda para ver os mais antigos.</p>' : '');
+    }
+
+    function carregar() {
+      var q = new URLSearchParams({ limite: String(LIMITE) });
+      if (estado.demanda) q.set('demanda', estado.demanda);
+      if (estado.mes) q.set('mes', estado.mes);
+      mostrarAviso('');
+      return fetch('/api/demandas/historico?' + q.toString(), { cache: 'no-store' }).then(function (r) {
+        if (r.status === 401) { location.href = '/login.html'; return null; }
+        if (r.status === 403) { location.replace('/demandas'); return null; }
+        return r.json().then(function (j) { return { ok: r.ok, j: j }; });
+      }).then(function (res) {
+        if (!res) return;
+        if (!res.ok) {
+          estado.eventos = [];
+          area.innerHTML = '<div class="vazio">' + esc(res.j.erro || 'Não foi possível carregar o histórico agora.') + '</div>';
+          return;
+        }
+        estado.eventos = res.j.eventos;
+        render();
+      }).catch(function () {
+        area.innerHTML = '<div class="vazio">Não foi possível carregar o histórico agora.</div>';
+      });
+    }
+
+    function guardarNaUrl() {
+      var p = new URLSearchParams();
+      if (estado.demanda) p.set('demanda', estado.demanda);
+      if (estado.mes) p.set('mes', estado.mes);
+      var q = p.toString();
+      history.replaceState(null, '', location.pathname + (q ? '?' + q : ''));
+    }
+
+    document.getElementById('barra').addEventListener('change', function (e) {
+      if (e.target.id === 'selAcao') { estado.acao = e.target.value; return render(); }
+      if (e.target.id === 'selMes') { estado.mes = e.target.value; guardarNaUrl(); carregar(); }
+    });
+
+    fetch('/api/eu').then(function (r) { return r.ok ? r.json() : null; }).then(function (eu) {
+      if (eu && eu.email) document.getElementById('quem').textContent = eu.email;
+    }).catch(function () {});
+
+    carregar();
+  })();
+</script>

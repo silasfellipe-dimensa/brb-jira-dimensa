@@ -488,6 +488,10 @@
         <svg viewBox="0 0 24 24" stroke-linecap="round" stroke-linejoin="round"><path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"></path></svg>
         Demandas
       </a>
+      <a class="link-dashboard" href="/expedicoes" id="linkExpedicoes" style="display:none" title="Checklist do time antes de comitar e de expedir">
+        <svg viewBox="0 0 24 24" stroke-linecap="round" stroke-linejoin="round"><path d="M9 11l3 3L22 4M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"></path></svg>
+        Expedições
+      </a>
       <a class="link-dashboard" href="/admin" id="linkAdmin" style="display:none" title="Usuários e histórico de acessos">
         <svg viewBox="0 0 24 24" stroke-linecap="round" stroke-linejoin="round"><path d="M12 15a3 3 0 100-6 3 3 0 000 6z"></path><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 11-2.83 2.83l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 11-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 11-2.83-2.83l.06-.06A1.65 1.65 0 005 15a1.65 1.65 0 00-1.51-1H3.4a2 2 0 110-4H3.5a1.65 1.65 0 001-1.51 1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 112.83-2.83l.06.06A1.65 1.65 0 009 5a1.65 1.65 0 001-1.51V3a2 2 0 114 0v.09A1.65 1.65 0 0015 5a1.65 1.65 0 001.82.33l.06-.06a2 2 0 112.83 2.83l-.06.06A1.65 1.65 0 0019 9a1.65 1.65 0 001.51 1H20.6a2 2 0 110 4h-.09A1.65 1.65 0 0019 15z"></path></svg>
         Admin
@@ -769,6 +773,8 @@
       link.style.display = 'flex';
     }
     if (eu.admin) document.getElementById('linkAdmin').style.display = 'flex';
+    // Expedições é controle interno: o link só existe para Dimensa/Evertec
+    if (eu.editor) document.getElementById('linkExpedicoes').style.display = 'flex';
   });
 
   document.getElementById('btnSair').addEventListener('click', function () {

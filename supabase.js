@@ -1,5 +1,6 @@
 const { createClient } = require('@supabase/supabase-js');
 const { deLinha } = require('./demandas');
+const { ITENS_PADRAO, deLinhaExpedicao } = require('./expedicoes');
 
 // Dois clientes, de proposito:
 //
@@ -598,8 +599,176 @@ async function removerDemanda(id, email) {
   }
 }
 
+/** Historico de alteracoes das demandas (tabela demandas_pf_historico, preenchida
+ * por gatilho no banco - ver supabase-demandas-historico.sql). Mais recente
+ * primeiro. `semTabela` avisa que o SQL ainda nao foi rodado. */
+async function listarHistoricoDemandas({ demandaId, mes, limite } = {}) {
+  try {
+    let q = db().from('demandas_pf_historico')
+      .select('id,demanda_id,mes,demanda_acs,nome,acao,campo,valor_anterior,valor_novo,usuario,quando')
+      .order('quando', { ascending: false }).order('id', { ascending: false })
+      .limit(Math.min(Math.max(Number(limite) || 300, 1), 1000));
+    if (demandaId) q = q.eq('demanda_id', demandaId);
+    if (mes) q = q.eq('mes', mes);
+    const { data, error } = await q;
+    if (error) {
+      const semTabela = error.code === '42P01' || error.code === 'PGRST205' || /does not exist|schema cache/i.test(error.message);
+      console.error('[supabase] falha ao listar historico de demandas:', error.message);
+      return { ok: false, semTabela };
+    }
+    return {
+      ok: true,
+      eventos: (data || []).map((e) => ({
+        id: e.id, demandaId: e.demanda_id, mes: e.mes, demandaAcs: e.demanda_acs || '', nome: e.nome || '',
+        acao: e.acao, campo: e.campo, anterior: e.valor_anterior, novo: e.valor_novo,
+        usuario: e.usuario || '', quando: e.quando
+      }))
+    };
+  } catch (erro) {
+    console.error('[supabase] falha ao listar historico de demandas:', erro.message);
+    return { ok: false, semTabela: false };
+  }
+}
+
+/* ---- Expedicoes (tabelas expedicoes e expedicao_itens) ----
+ * Mesmo contrato das demandas: devolvem { ok, ... }, nunca lancam. A remocao
+ * da expedicao e de itens avulsos e logica; o historico quem grava e o banco
+ * (gatilhos em supabase-expedicoes.sql). */
+const COLUNAS_EXPEDICAO = 'id,artefato_jira,nome,demanda_acs,data_expedicao,responsavel,atualizado_por,atualizado_em';
+const COLUNAS_ITEM = 'id,expedicao_id,bloco,texto,padrao,estado,justificativa,atualizado_por,atualizado_em';
+
+function semTabelaExpedicoes(error) {
+  return error && (error.code === '42P01' || error.code === 'PGRST205' || /does not exist|schema cache/i.test(error.message || ''));
+}
+
+async function itensDasExpedicoes(ids) {
+  if (!ids.length) return [];
+  const { data, error } = await db().from('expedicao_itens').select(COLUNAS_ITEM)
+    .in('expedicao_id', ids).eq('removido', false).order('id', { ascending: true }).limit(20000);
+  if (error) throw Object.assign(new Error(error.message), { semTabela: semTabelaExpedicoes(error) });
+  return data || [];
+}
+
+async function listarExpedicoes() {
+  try {
+    const { data, error } = await db().from('expedicoes').select(COLUNAS_EXPEDICAO)
+      .eq('removido', false).order('data_expedicao', { ascending: true, nullsFirst: false })
+      .order('id', { ascending: true }).limit(1000);
+    if (error) throw Object.assign(new Error(error.message), { semTabela: semTabelaExpedicoes(error) });
+    const itens = await itensDasExpedicoes((data || []).map((l) => l.id));
+    return { ok: true, expedicoes: (data || []).map((l) => deLinhaExpedicao(l, itens.filter((i) => i.expedicao_id === l.id))) };
+  } catch (erro) {
+    console.error('[supabase] falha ao listar expedicoes:', erro.message);
+    return { ok: false, semTabela: !!erro.semTabela };
+  }
+}
+
+async function lerExpedicao(id) {
+  const { data, error } = await db().from('expedicoes').select(COLUNAS_EXPEDICAO).eq('id', id).eq('removido', false).maybeSingle();
+  if (error) throw new Error(error.message);
+  if (!data) return null;
+  return deLinhaExpedicao(data, await itensDasExpedicoes([id]));
+}
+
+async function criarExpedicao(email, registro) {
+  let criada = null;
+  try {
+    const { data, error } = await db().from('expedicoes')
+      .insert({ ...registro, criado_por: email, atualizado_por: email }).select('id').single();
+    if (error) throw new Error(error.message);
+    criada = data.id;
+    const itens = ITENS_PADRAO.map((i) => ({ expedicao_id: criada, bloco: i.bloco, texto: i.texto, padrao: true, atualizado_por: email }));
+    const { error: erroItens } = await db().from('expedicao_itens').insert(itens);
+    if (erroItens) throw new Error(erroItens.message);
+    return { ok: true, expedicao: await lerExpedicao(criada) };
+  } catch (erro) {
+    console.error('[supabase] falha ao criar expedicao:', erro.message);
+    // expedicao sem checklist nao serve: some da lista em vez de ficar pela metade
+    if (criada) await db().from('expedicoes').update({ removido: true, atualizado_por: email }).eq('id', criada).then(() => {}, () => {});
+    return { ok: false, semTabela: semTabelaExpedicoes(erro) };
+  }
+}
+
+async function atualizarExpedicao(id, registro, email) {
+  try {
+    const { data, error } = await db().from('expedicoes')
+      .update({ ...registro, atualizado_por: email, atualizado_em: new Date().toISOString() })
+      .eq('id', id).eq('removido', false).select('id').maybeSingle();
+    if (error) throw new Error(error.message);
+    if (!data) return { ok: false, naoEncontrada: true };
+    return { ok: true, expedicao: await lerExpedicao(id) };
+  } catch (erro) {
+    console.error('[supabase] falha ao atualizar expedicao:', erro.message);
+    return { ok: false };
+  }
+}
+
+async function removerExpedicao(id, email) {
+  try {
+    const { data, error } = await db().from('expedicoes')
+      .update({ removido: true, atualizado_por: email, atualizado_em: new Date().toISOString() })
+      .eq('id', id).eq('removido', false).select('id').maybeSingle();
+    if (error) throw new Error(error.message);
+    if (!data) return { ok: false, naoEncontrada: true };
+    return { ok: true };
+  } catch (erro) {
+    console.error('[supabase] falha ao remover expedicao:', erro.message);
+    return { ok: false };
+  }
+}
+
+async function criarItemExpedicao(expedicaoId, bloco, texto, email) {
+  try {
+    const existe = await lerExpedicao(expedicaoId);
+    if (!existe) return { ok: false, naoEncontrada: true };
+    const { error } = await db().from('expedicao_itens')
+      .insert({ expedicao_id: expedicaoId, bloco, texto, padrao: false, atualizado_por: email });
+    if (error) throw new Error(error.message);
+    return { ok: true, expedicao: await lerExpedicao(expedicaoId) };
+  } catch (erro) {
+    console.error('[supabase] falha ao criar item de expedicao:', erro.message);
+    return { ok: false };
+  }
+}
+
+async function atualizarItemExpedicao(expedicaoId, itemId, estado, justificativa, email) {
+  try {
+    const { data, error } = await db().from('expedicao_itens')
+      .update({ estado, justificativa, atualizado_por: email, atualizado_em: new Date().toISOString() })
+      .eq('id', itemId).eq('expedicao_id', expedicaoId).eq('removido', false).select('id').maybeSingle();
+    if (error) throw new Error(error.message);
+    if (!data) return { ok: false, naoEncontrada: true };
+    return { ok: true, expedicao: await lerExpedicao(expedicaoId) };
+  } catch (erro) {
+    console.error('[supabase] falha ao atualizar item de expedicao:', erro.message);
+    return { ok: false };
+  }
+}
+
+/** So item avulso sai. Os padrao ficam: o caminho para dispensar um deles e
+ * marcar "nao aplicavel" com o motivo. */
+async function removerItemExpedicao(expedicaoId, itemId, email) {
+  try {
+    const { data: item, error: erroLeitura } = await db().from('expedicao_itens').select('id,padrao')
+      .eq('id', itemId).eq('expedicao_id', expedicaoId).eq('removido', false).maybeSingle();
+    if (erroLeitura) throw new Error(erroLeitura.message);
+    if (!item) return { ok: false, naoEncontrada: true };
+    if (item.padrao) return { ok: false, padrao: true };
+    const { error } = await db().from('expedicao_itens')
+      .update({ removido: true, atualizado_por: email, atualizado_em: new Date().toISOString() })
+      .eq('id', itemId).eq('padrao', false);
+    if (error) throw new Error(error.message);
+    return { ok: true, expedicao: await lerExpedicao(expedicaoId) };
+  } catch (erro) {
+    console.error('[supabase] falha ao remover item de expedicao:', erro.message);
+    return { ok: false };
+  }
+}
+
 module.exports = {
-  listarDemandas, criarDemanda, atualizarDemanda, removerDemanda,
+  listarExpedicoes, criarExpedicao, atualizarExpedicao, removerExpedicao,
+  criarItemExpedicao, atualizarItemExpedicao, removerItemExpedicao,
+  listarDemandas, criarDemanda, atualizarDemanda, removerDemanda, listarHistoricoDemandas,
   cadastrar, entrar, lerSnapshot, gravarSnapshot, gravarHistorico, lerHistorico,
   gravarEntregas, lerEntregas, listarSprintsEntregas, listarMesesEntregas, limparEntregas,
   gravarPlanejamento, limparPlanejamento, lerPlanejamentoSprint, lerCarryOverEntregue,

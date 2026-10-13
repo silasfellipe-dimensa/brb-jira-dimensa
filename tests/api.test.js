@@ -190,6 +190,142 @@ describe('demandas — quem ve, quem edita', () => {
     assert.strictEqual(visualizacao.status, 200, 'editor tambem pode abrir a visualizacao');
   });
 
+  // Quem so visualiza nao pode nem LER o historico: ele traz e-mails da equipe
+  // e valores de cobranca, inclusive de demandas excluidas.
+  test('historico: sem sessao 401 e redireciona; BRB e TOTVS levam 403 na API e vao para /demandas na pagina', async () => {
+    assert.strictEqual((await pedir('/api/demandas/historico')).status, 401);
+    assert.strictEqual((await pedir('/demandas/historico')).headers.get('location'), '/login.html');
+    const totvs = `${COOKIE_NAME}=${criarSessao({ email: 'fulano@totvs.com.br' })}`;
+    for (const cookie of [cookieLeitor(), totvs]) {
+      assert.strictEqual((await pedir('/api/demandas/historico', { headers: { Cookie: cookie } })).status, 403);
+      assert.strictEqual((await pedir('/api/demandas/historico?demanda=1', { headers: { Cookie: cookie } })).status, 403);
+      const pagina = await pedir('/demandas/historico', { headers: { Cookie: cookie } });
+      assert.strictEqual(pagina.status, 302);
+      assert.strictEqual(pagina.headers.get('location'), '/demandas');
+    }
+  });
+
+  test('historico: editor abre a pagina; filtro invalido responde 400; banco fora vira 503 sem vazar detalhe', async () => {
+    const cookie = cookieEditor();
+    assert.strictEqual((await pedir('/demandas/historico', { headers: { Cookie: cookie } })).status, 200);
+    assert.strictEqual((await pedir('/api/demandas/historico?demanda=abc', { headers: { Cookie: cookie } })).status, 400);
+    assert.strictEqual((await pedir('/api/demandas/historico?mes=2026-13', { headers: { Cookie: cookie } })).status, 400);
+    const r = await pedir('/api/demandas/historico', { headers: { Cookie: cookie } });
+    assert.strictEqual(r.status, 503);
+    assert.ok(!vazamento.test(JSON.stringify(await r.json())));
+  });
+
+  // O guard compara o dominio inteiro. Tentar passar por Dimensa/Evertec com
+  // um e-mail parecido nao pode abrir nenhuma escrita nem o historico.
+  test('e-mails parecidos com Dimensa/Evertec nao editam nem leem o historico', async () => {
+    for (const email of ['x@naodimensa.com.br', 'x@sub.dimensa.com.br', 'x@dimensa.com.br.invasor.com', 'x@evertecinc.com', '@dimensa.com.br', 'a@b@dimensa.com.br']) {
+      const cookie = `${COOKIE_NAME}=${criarSessao({ email })}`;
+      const respostas = [
+        await enviarJson('POST', '/api/demandas', { mes: '2026-10' }, cookie),
+        await enviarJson('PATCH', '/api/demandas/1', { nome: 'x' }, cookie),
+        await enviarJson('DELETE', '/api/demandas/1', undefined, cookie),
+        await pedir('/api/demandas/historico', { headers: { Cookie: cookie } })
+      ];
+      respostas.forEach((r) => assert.strictEqual(r.status, 403, `${email} deveria levar 403, veio ${r.status}`));
+      const editar = await pedir('/demandas/editar', { headers: { Cookie: cookie } });
+      assert.strictEqual(editar.headers.get('location'), '/demandas', `${email} nao pode abrir a edicao`);
+    }
+  });
+
+  test('cookie adulterado ou de outra assinatura nao vale como sessao de editor', async () => {
+    const valido = cookieEditor();
+    const adulterado = valido.slice(0, -3) + (valido.endsWith('abc') ? 'xyz' : 'abc');
+    for (const cookie of [adulterado, `${COOKIE_NAME}=nao-e-um-token`]) {
+      assert.strictEqual((await enviarJson('PATCH', '/api/demandas/1', { nome: 'x' }, cookie)).status, 401);
+      assert.strictEqual((await pedir('/api/demandas/historico', { headers: { Cookie: cookie } })).status, 401);
+    }
+  });
+
+  /* ---- Expedicoes: controle interno do time. BRB e TOTVS nem veem. ---- */
+  const ROTAS_EXPEDICAO = [
+    ['GET', '/api/expedicoes'],
+    ['GET', '/api/expedicoes/opcoes'],
+    ['POST', '/api/expedicoes', { jira: 'JDCBBRB-1' }],
+    ['PATCH', '/api/expedicoes/1', { nome: 'x' }],
+    ['DELETE', '/api/expedicoes/1'],
+    ['POST', '/api/expedicoes/1/itens', { bloco: 'expedir', texto: 'item novo' }],
+    ['PATCH', '/api/expedicoes/1/itens/1', { estado: 'concluido' }],
+    ['DELETE', '/api/expedicoes/1/itens/1']
+  ];
+
+  test('expedicoes: sem sessao 401 em toda rota e a pagina manda para o login', async () => {
+    for (const [metodo, caminho, corpo] of ROTAS_EXPEDICAO) {
+      assert.strictEqual((await enviarJson(metodo, caminho, corpo)).status, 401, `${metodo} ${caminho}`);
+    }
+    assert.strictEqual((await pedir('/expedicoes')).headers.get('location'), '/login.html');
+  });
+
+  test('expedicoes: BRB e TOTVS levam 403 em TODA rota (ler e gravar) e a pagina volta para o board', async () => {
+    const totvs = `${COOKIE_NAME}=${criarSessao({ email: 'fulano@totvs.com.br' })}`;
+    for (const cookie of [cookieLeitor(), totvs]) {
+      for (const [metodo, caminho, corpo] of ROTAS_EXPEDICAO) {
+        assert.strictEqual((await enviarJson(metodo, caminho, corpo, cookie)).status, 403, `${metodo} ${caminho}`);
+      }
+      const pagina = await pedir('/expedicoes', { headers: { Cookie: cookie } });
+      assert.strictEqual(pagina.status, 302);
+      assert.strictEqual(pagina.headers.get('location'), '/');
+    }
+  });
+
+  test('expedicoes: e-mails parecidos com Dimensa/Evertec tambem levam 403', async () => {
+    for (const email of ['x@naodimensa.com.br', 'x@sub.dimensa.com.br', 'x@dimensa.com.br.invasor.com', 'x@evertecinc.com']) {
+      const cookie = `${COOKIE_NAME}=${criarSessao({ email })}`;
+      for (const [metodo, caminho, corpo] of ROTAS_EXPEDICAO) {
+        assert.strictEqual((await enviarJson(metodo, caminho, corpo, cookie)).status, 403, `${email} ${metodo} ${caminho}`);
+      }
+      assert.strictEqual((await pedir('/expedicoes', { headers: { Cookie: cookie } })).headers.get('location'), '/');
+    }
+  });
+
+  test('expedicoes: editor abre a pagina; entrada invalida responde 400 antes de tocar no banco', async () => {
+    const cookie = cookieEditor();
+    assert.strictEqual((await pedir('/expedicoes', { headers: { Cookie: cookie } })).status, 200);
+    const ruins = [
+      ['POST', '/api/expedicoes', {}],
+      ['POST', '/api/expedicoes', { nome: '   ' }],
+      ['POST', '/api/expedicoes', { nome: 'x', dataExpedicao: '2026-02-31' }],
+      ['PATCH', '/api/expedicoes/abc', { nome: 'x' }],
+      ['PATCH', '/api/expedicoes/1', { removido: true }],
+      ['PATCH', '/api/expedicoes/1', { dataExpedicao: 'amanha' }],
+      ['DELETE', '/api/expedicoes/0'],
+      ['POST', '/api/expedicoes/1/itens', { bloco: 'outro', texto: 'abc' }],
+      ['POST', '/api/expedicoes/1/itens', { bloco: 'expedir', texto: 'ab' }],
+      ['POST', '/api/expedicoes/x/itens', { bloco: 'expedir', texto: 'abc' }],
+      ['PATCH', '/api/expedicoes/1/itens/1', { estado: 'feito' }],
+      ['PATCH', '/api/expedicoes/1/itens/1', { estado: 'nao_aplicavel' }],
+      ['PATCH', '/api/expedicoes/1/itens/1', { estado: 'nao_aplicavel', justificativa: 'curto' }],
+      ['PATCH', '/api/expedicoes/1/itens/abc', { estado: 'concluido' }],
+      ['DELETE', '/api/expedicoes/1/itens/abc']
+    ];
+    for (const [metodo, caminho, corpo] of ruins) {
+      assert.strictEqual((await enviarJson(metodo, caminho, corpo, cookie)).status, 400, `${metodo} ${caminho} ${JSON.stringify(corpo)}`);
+    }
+    const r = await enviarJson('PATCH', '/api/expedicoes/1/itens/1', { estado: 'nao_aplicavel' }, cookie);
+    assert.match((await r.json()).erro, /Explique brevemente/);
+  });
+
+  test('expedicoes: com o banco fora do ar, listar vira 503 e gravar vira 500, sem vazar detalhe', async () => {
+    const cookie = cookieEditor();
+    const lista = await enviarJson('GET', '/api/expedicoes', undefined, cookie);
+    assert.strictEqual(lista.status, 503);
+    assert.ok(!vazamento.test(JSON.stringify(await lista.json())));
+    for (const [metodo, caminho, corpo] of [
+      // tres rotas bastam: cada chamada recusada demora alguns segundos no Windows
+      ['POST', '/api/expedicoes', { artefatoJira: 'JDCBBRB-1' }],
+      ['DELETE', '/api/expedicoes/1'],
+      ['PATCH', '/api/expedicoes/1/itens/1', { estado: 'concluido' }]
+    ]) {
+      const r = await enviarJson(metodo, caminho, corpo, cookie);
+      assert.strictEqual(r.status, 500, `${metodo} ${caminho}`);
+      assert.ok(!vazamento.test(JSON.stringify(await r.json())));
+    }
+  });
+
   test('filtro por meses invalido responde 400 antes de tocar no banco', async () => {
     const cookie = cookieValido();
     for (const q of ['?meses=abc', '?meses=', '?meses=2026-13', '?meses=2026-10,x', '?meses=2026-10&meses=2026-09']) {

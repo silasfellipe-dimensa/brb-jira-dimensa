@@ -10,12 +10,18 @@ const {
   gravarEntregas, lerEntregas, listarSprintsEntregas, listarMesesEntregas, gravarPlanejamento,
   lerPlanejamentoSprint, lerCarryOverEntregue, listarPlanejamentoPorSprint, listarItensPlanejamento,
   listarItensCarryOver, registrarAcesso, listarAcessos, listarUsuarios, confirmarUsuarioManualmente,
-  listarDemandas, criarDemanda, atualizarDemanda, removerDemanda
+  listarDemandas, criarDemanda, atualizarDemanda, removerDemanda, listarHistoricoDemandas,
+  listarExpedicoes, criarExpedicao, atualizarExpedicao, removerExpedicao,
+  criarItemExpedicao, atualizarItemExpedicao, removerItemExpedicao
 } = require('./supabase');
 const {
   normalizarCampos, idDemanda, interpretarMes, interpretarListaMeses, mesesDisponiveis,
   filtrarPorMeses, resumirMeses
 } = require('./demandas');
+const {
+  chaveJira, normalizarExpedicao, normalizarItemNovo, normalizarEstadoItem, itensDoQuadro, montarOpcoes,
+  decorar, hojeBrasilia, idExpedicao
+} = require('./expedicoes');
 const {
   COOKIE_NAME,
   SESSAO_DIAS,
@@ -28,6 +34,7 @@ const {
   exigirAdminApi,
   exigirEditorApi,
   exigirEditorPagina,
+  exigirEquipePagina,
   souAdmin,
   souEditor,
   limitarTentativas
@@ -71,7 +78,7 @@ app.use((req, res, next) => {
   // Sem isto ele reaproveita a versão antiga e o deploy "não aparece" - o que
   // já custou vários hard refresh. no-cache não proíbe guardar, obriga a
   // revalidar: com o ETag do Express, resposta igual continua saindo 304.
-  if (req.path === '/' || req.path.endsWith('.html') || ['/dashboard', '/admin', '/demandas', '/demandas/editar'].includes(req.path)) {
+  if (req.path === '/' || req.path.endsWith('.html') || ['/dashboard', '/admin', '/demandas', '/demandas/editar', '/demandas/historico', '/expedicoes'].includes(req.path)) {
     res.setHeader('Cache-Control', 'no-cache');
   }
 
@@ -140,6 +147,13 @@ function erroGenerico(res, status, erro, contexto) {
 }
 
 // ---- login / cadastro (nao exige sessao) ----
+
+// Caixas de diálogo compartilhadas pelas telas (pública, sem dado nenhum). Na Vercel
+// o arquivo sai direto da pasta static; esta rota serve o mesmo no ambiente local.
+app.get('/dialogo.js', (req, res) => {
+  res.setHeader('Cache-Control', 'no-cache');
+  res.type('application/javascript').sendFile(path.join(__dirname, 'static', 'dialogo.js'));
+});
 
 app.get('/login.html', (req, res) => {
   res.sendFile(path.join(PUBLIC_DIR, 'login.html'));
@@ -269,6 +283,32 @@ app.get('/demandas/editar', exigirSessaoPagina, exigirEditorPagina, (req, res) =
   res.sendFile(path.join(PUBLIC_DIR, 'demandas.html'));
 });
 
+/** Historico completo de alteracoes (quem, quando, o que mudou). So editor:
+ * mostra e-mails da equipe e valores de cobranca, e inclui o que foi removido. */
+app.get('/demandas/historico', exigirSessaoPagina, exigirEditorPagina, (req, res) => {
+  res.sendFile(path.join(PUBLIC_DIR, 'demandas-historico.html'));
+});
+
+app.get('/api/demandas/historico', exigirSessaoApi, exigirEditorApi, async (req, res) => {
+  let demandaId = null;
+  if (req.query.demanda !== undefined) {
+    demandaId = idDemanda(req.query.demanda);
+    if (!demandaId) return res.status(400).json({ erro: 'Identificador inválido.' });
+  }
+  let mes = null;
+  if (req.query.mes !== undefined) {
+    const m = interpretarMes(req.query.mes);
+    if (!m.ok) return res.status(400).json({ erro: m.erro });
+    mes = m.valor;
+  }
+  const r = await listarHistoricoDemandas({ demandaId, mes, limite: req.query.limite });
+  if (r.semTabela) {
+    return res.status(503).json({ erro: 'O histórico ainda não foi ativado no banco (falta rodar supabase-demandas-historico.sql).', semTabela: true });
+  }
+  if (!r.ok) return res.status(503).json({ erro: 'Não foi possível carregar o histórico agora.' });
+  res.json({ eventos: r.eventos });
+});
+
 /** ?meses=2026-09,2026-10 filtra; sem o parâmetro devolve todos os meses.
  * O resumo (por mês e consolidado) sai daqui, calculado numa função testada,
  * para a tela não reimplementar a regra do consolidado. */
@@ -319,6 +359,109 @@ app.delete('/api/demandas/:id', exigirSessaoApi, exigirEditorApi, async (req, re
   if (!r.ok) return res.status(500).json({ erro: 'Não foi possível remover.' });
   console.log(`[demandas] ${req.usuario.email} removeu #${id}`);
   res.json({ ok: true });
+});
+
+/** Expedições: checklist do time para expedições (usado na reunião diária). Controle interno -
+ * só Dimensa/Evertec veem e marcam; BRB e TOTVS nem abrem (página volta para o
+ * board, API responde 403). O responsável vem sempre do card no Jira. */
+const MSG_SEM_TABELA_EXPEDICOES = 'As expedições ainda não foram ativadas no banco (falta rodar supabase-expedicoes.sql).';
+
+function decorarExpedicao(e, snapshot) {
+  return decorar(e, snapshot, hojeBrasilia());
+}
+
+app.get('/expedicoes', exigirSessaoPagina, exigirEquipePagina, (req, res) => {
+  res.sendFile(path.join(PUBLIC_DIR, 'expedicoes.html'));
+});
+
+app.get('/api/expedicoes', exigirSessaoApi, exigirEditorApi, async (req, res) => {
+  const r = await listarExpedicoes();
+  if (r.semTabela) {
+    return res.status(503).json({ erro: MSG_SEM_TABELA_EXPEDICOES, semTabela: true });
+  }
+  if (!r.ok) return res.status(503).json({ erro: 'Não foi possível carregar as expedições agora.' });
+  const snapshot = await lerSnapshot();
+  res.json({ hoje: hojeBrasilia(), expedicoes: r.expedicoes.map((e) => decorarExpedicao(e, snapshot)) });
+});
+
+/** Autocomplete: o que está no quadro Kanban, com ACS e data já cadastrados em
+ * Demandas quando a chave bate. */
+app.get('/api/expedicoes/opcoes', exigirSessaoApi, exigirEditorApi, async (req, res) => {
+  const [snapshot, demandas] = await Promise.all([lerSnapshot(), listarDemandas()]);
+  res.json({ opcoes: montarOpcoes(snapshot, demandas.ok ? demandas.demandas : []) });
+});
+
+app.post('/api/expedicoes', exigirSessaoApi, exigirEditorApi, async (req, res) => {
+  const n = normalizarExpedicao(req.body, { criando: true });
+  if (!n.ok) return res.status(400).json({ erro: n.erro });
+  const snapshot = await lerSnapshot();
+  const doQuadro = itensDoQuadro(snapshot).get(chaveJira(n.registro.artefato_jira));
+  if (doQuadro && doQuadro.responsavel) n.registro.responsavel = doQuadro.responsavel;
+  const r = await criarExpedicao(req.usuario.email, n.registro);
+  if (r.semTabela) return res.status(503).json({ erro: MSG_SEM_TABELA_EXPEDICOES, semTabela: true });
+  if (!r.ok) return res.status(500).json({ erro: 'Não foi possível criar a expedição.' });
+  console.log(`[expedicoes] ${req.usuario.email} criou a expedição #${r.expedicao.id}`);
+  res.status(201).json({ expedicao: decorarExpedicao(r.expedicao, snapshot) });
+});
+
+app.patch('/api/expedicoes/:id', exigirSessaoApi, exigirEditorApi, async (req, res) => {
+  const id = idExpedicao(req.params.id);
+  if (!id) return res.status(400).json({ erro: 'Identificador inválido.' });
+  const n = normalizarExpedicao(req.body);
+  if (!n.ok) return res.status(400).json({ erro: n.erro });
+  const snapshot = await lerSnapshot();
+  if (n.registro.artefato_jira) {
+    const doQuadro = itensDoQuadro(snapshot).get(chaveJira(n.registro.artefato_jira));
+    if (doQuadro && doQuadro.responsavel) n.registro.responsavel = doQuadro.responsavel;
+  }
+  const r = await atualizarExpedicao(id, n.registro, req.usuario.email);
+  if (r.naoEncontrada) return res.status(404).json({ erro: 'Expedição não encontrada (pode ter sido removida).' });
+  if (!r.ok) return res.status(500).json({ erro: 'Não foi possível salvar.' });
+  res.json({ expedicao: decorarExpedicao(r.expedicao, snapshot) });
+});
+
+app.delete('/api/expedicoes/:id', exigirSessaoApi, exigirEditorApi, async (req, res) => {
+  const id = idExpedicao(req.params.id);
+  if (!id) return res.status(400).json({ erro: 'Identificador inválido.' });
+  const r = await removerExpedicao(id, req.usuario.email);
+  if (r.naoEncontrada) return res.status(404).json({ erro: 'Expedição não encontrada (pode já ter sido removida).' });
+  if (!r.ok) return res.status(500).json({ erro: 'Não foi possível remover.' });
+  console.log(`[expedicoes] ${req.usuario.email} removeu a expedição #${id}`);
+  res.json({ ok: true });
+});
+
+app.post('/api/expedicoes/:id/itens', exigirSessaoApi, exigirEditorApi, async (req, res) => {
+  const id = idExpedicao(req.params.id);
+  if (!id) return res.status(400).json({ erro: 'Identificador inválido.' });
+  const n = normalizarItemNovo(req.body);
+  if (!n.ok) return res.status(400).json({ erro: n.erro });
+  const r = await criarItemExpedicao(id, n.bloco, n.texto, req.usuario.email);
+  if (r.naoEncontrada) return res.status(404).json({ erro: 'Expedição não encontrada (pode ter sido removida).' });
+  if (!r.ok) return res.status(500).json({ erro: 'Não foi possível adicionar o item.' });
+  res.status(201).json({ expedicao: decorarExpedicao(r.expedicao, await lerSnapshot()) });
+});
+
+app.patch('/api/expedicoes/:id/itens/:itemId', exigirSessaoApi, exigirEditorApi, async (req, res) => {
+  const id = idExpedicao(req.params.id);
+  const itemId = idExpedicao(req.params.itemId);
+  if (!id || !itemId) return res.status(400).json({ erro: 'Identificador inválido.' });
+  const n = normalizarEstadoItem(req.body);
+  if (!n.ok) return res.status(400).json({ erro: n.erro });
+  const r = await atualizarItemExpedicao(id, itemId, n.estado, n.justificativa, req.usuario.email);
+  if (r.naoEncontrada) return res.status(404).json({ erro: 'Item não encontrado (pode ter sido removido).' });
+  if (!r.ok) return res.status(500).json({ erro: 'Não foi possível salvar.' });
+  res.json({ expedicao: decorarExpedicao(r.expedicao, await lerSnapshot()) });
+});
+
+app.delete('/api/expedicoes/:id/itens/:itemId', exigirSessaoApi, exigirEditorApi, async (req, res) => {
+  const id = idExpedicao(req.params.id);
+  const itemId = idExpedicao(req.params.itemId);
+  if (!id || !itemId) return res.status(400).json({ erro: 'Identificador inválido.' });
+  const r = await removerItemExpedicao(id, itemId, req.usuario.email);
+  if (r.padrao) return res.status(400).json({ erro: 'Item padrão não pode ser removido: marque como "não aplicável" e explique o motivo.' });
+  if (r.naoEncontrada) return res.status(404).json({ erro: 'Item não encontrado (pode já ter sido removido).' });
+  if (!r.ok) return res.status(500).json({ erro: 'Não foi possível remover o item.' });
+  res.json({ expedicao: decorarExpedicao(r.expedicao, await lerSnapshot()) });
 });
 
 app.get('/admin', exigirSessaoPagina, exigirAdminPagina, (req, res) => {

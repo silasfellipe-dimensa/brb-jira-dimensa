@@ -195,6 +195,7 @@
   .detalhe-dem .fechar { background: none; border: 1px solid var(--line); color: var(--ink-dim); border-radius: 6px; width: 28px; height: 28px;
     font-size: 1.1rem; line-height: 1; cursor: pointer; }
   .detalhe-dem .fechar:hover { color: var(--ink); border-color: var(--ink-faint); }
+  .detalhe-dem .acoes-det { display: flex; gap: 8px; flex-wrap: wrap; }
   .detalhe-dem .mes-det { font-size: 0.78rem; color: var(--ink-faint); }
   .detalhe-dem .rodape-det { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap;
     padding-top: 10px; border-top: 1px solid var(--line-soft); font-size: 0.74rem; color: var(--ink-faint); }
@@ -332,8 +333,15 @@
   </div>
 </main>
 
+<script src="/dialogo.js"></script>
 <script>
   (function () {
+    // Caixas de diálogo do sistema (/dialogo.js). Sem ele, cai no pop-up do navegador.
+    var Dlg = window.Dialogo || {
+      confirmar: function (o) { return Promise.resolve(window.confirm([o.titulo, o.destaque, o.mensagem].filter(Boolean).join('\n\n'))); },
+      avisar: function (o) { window.alert([o.titulo, o.mensagem].filter(Boolean).join('\n\n')); return Promise.resolve(); }
+    };
+
     // Mesma página em duas rotas: /demandas (ver) e /demandas/editar (preencher).
     var EDITANDO = /\/editar\/?$/.test(location.pathname);
 
@@ -630,18 +638,25 @@
 
     // Diz QUAL demanda vai sair: número e nome, e de que mês. Linha ainda em
     // branco (recém-criada, sem nada digitado) é dita como tal em vez de "#12".
-    function mensagemExcluir(d) {
+    // Texto da confirmação: o título pergunta, o destaque mostra QUAL demanda (número - nome).
+    function textosExcluir(d) {
       var mes = rotuloMes(d.mes || estado.mes);
       var quem = [d.demandaAcs, d.nome].filter(Boolean).join(' - ');
-      if (!quem) return 'Deseja realmente excluir esta linha em branco de ' + mes + '?';
-      return 'Deseja realmente excluir a demanda ' + quem + '?\n\nEla sai da lista de ' + mes + '.';
+      if (!quem) {
+        return { titulo: 'Deseja realmente excluir esta linha em branco?', destaque: '',
+          mensagem: 'A linha vazia de ' + mes + ' será removida.', rotuloConfirmar: 'Excluir', tom: 'perigo' };
+      }
+      return { titulo: 'Deseja realmente excluir a demanda?', destaque: quem,
+        mensagem: 'Ela sai da lista de ' + mes + '. O histórico de alterações continua guardado.',
+        rotuloConfirmar: 'Excluir', tom: 'perigo' };
     }
 
     function removerLinha(tr) {
       var d = demandaDaLinha(tr);
       if (!d) return;
-      if (!confirm(mensagemExcluir(d))) return;
-      pedir('/api/demandas/' + d.id, { method: 'DELETE' })
+      Dlg.confirmar(textosExcluir(d)).then(function (sim) {
+        if (!sim) return;
+        return pedir('/api/demandas/' + d.id, { method: 'DELETE' })
         .then(function (res) {
           if (!res.ok) { mostrarAviso(res.j.erro || 'Não foi possível remover.'); return; }
           estado.demandas = estado.demandas.filter(function (x) { return x.id !== d.id; });
@@ -650,6 +665,7 @@
           atualizarVazio();
         })
         .catch(function () { mostrarAviso('Falha ao conversar com o servidor.'); });
+      });
     }
 
     function adicionarLinha(botao) {
@@ -786,6 +802,12 @@
       ver.className = 'link-topo destaque';
       ver.id = 'linkVisualizar';
       ver.textContent = 'Visualizar';
+      var hist = document.createElement('a');
+      hist.className = 'link-topo';
+      hist.id = 'linkHistorico';
+      hist.href = '/demandas/historico';
+      hist.textContent = 'Histórico';
+      document.getElementById('acoesCartao').appendChild(hist);
       document.getElementById('acoesCartao').appendChild(ver);
 
       document.getElementById('selo').textContent = 'Edição liberada';
@@ -926,6 +948,8 @@
       }).join('');
       var editar = estado.editor
         ? '<a class="link-topo destaque" id="editarDemanda" href="/demandas/editar?mes=' + esc(d.mes) + '&amp;demanda=' + esc(d.id) + '">Editar esta demanda</a>' : '';
+      var historico = estado.editor
+        ? '<a class="link-topo" id="historicoDemanda" href="/demandas/historico?demanda=' + esc(d.id) + '">Histórico desta demanda</a>' : '';
       return '<article class="detalhe-dem" role="dialog" aria-modal="true" aria-label="Detalhe da demanda" data-id="' + d.id + '">' +
         '<div class="topo">' + cabecaDemanda(d) + seloPf(d) +
           '<button type="button" class="fechar" id="fecharDetalhe" aria-label="Fechar">×</button></div>' +
@@ -934,7 +958,7 @@
         '<div class="etapas">' + etapas + '</div>' +
         '<div class="datas">' + datas + '</div>' +
         '<div class="obs"><span class="rot">Observações</span> <p>' + (d.observacoes ? esc(d.observacoes) : '<span class="falta">—</span>') + '</p></div>' +
-        '<div class="rodape-det"><span>' + esc(quemQuando(d)) + '</span> ' + editar + '</div>' +
+        '<div class="rodape-det"><span>' + esc(quemQuando(d)) + '</span> <span class="acoes-det">' + historico + ' ' + editar + '</span></div>' +
         '</article>';
     }
 
@@ -1126,6 +1150,12 @@
           ed.id = 'linkEditar';
           ed.href = '/demandas/editar';
           ed.textContent = 'Editar';
+          var hist = document.createElement('a');
+          hist.className = 'link-topo';
+          hist.id = 'linkHistorico';
+          hist.href = '/demandas/historico';
+          hist.textContent = 'Histórico';
+          document.getElementById('acoesCartao').appendChild(hist);
           document.getElementById('acoesCartao').appendChild(ed);
         }
 
@@ -1152,6 +1182,15 @@
 
     fetch('/api/eu').then(function (r) { return r.ok ? r.json() : null; }).then(function (eu) {
       if (eu && eu.email) document.getElementById('quem').textContent = eu.email;
+      if (eu && eu.editor) {
+        var exp = document.createElement('a');
+        exp.className = 'link-topo';
+        exp.id = 'linkExpedicoes';
+        exp.href = '/expedicoes';
+        exp.textContent = 'Expedições';
+        var topo = document.getElementById('acoesTopo');
+        topo.insertBefore(exp, document.getElementById('quem'));
+      }
     }).catch(function () {});
 
     if (EDITANDO) iniciarEdicao(); else iniciarVisualizacao();
