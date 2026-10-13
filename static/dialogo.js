@@ -6,6 +6,9 @@
  *       -> Promise<boolean>   (true = confirmou; Esc, clique fora e Cancelar = false)
  *   Dialogo.avisar({ titulo, mensagem, rotulo, tom })
  *       -> Promise<void>
+ *   Dialogo.texto({ titulo, destaque, mensagem, campo: { valor, maxlength, placeholder, rotulo }, nota,
+ *                   rotuloConfirmar, rotuloCancelar })
+ *       -> Promise<string|null>   (texto digitado; null = cancelou. Ctrl+Enter salva)
  *
  *   tom: 'perigo' (excluir; o foco já começa em Cancelar, para Enter nunca
  *        apagar sem querer), 'aviso' ou 'info'.
@@ -32,13 +35,21 @@
     '.dlgx-icone{flex:0 0 auto;width:44px;height:44px;border-radius:50%;display:flex;align-items:center;justify-content:center;',
     'background:color-mix(in srgb,var(--dx-tom) 15%,transparent);color:var(--dx-tom)}',
     '.dlgx-icone svg{width:22px;height:22px}',
-    'dialog.dlgx.perigo{--dx-tom:var(--dx-warn)}dialog.dlgx.aviso{--dx-tom:var(--dx-accent)}dialog.dlgx.info{--dx-tom:var(--dx-accent)}',
+    'dialog.dlgx.perigo{--dx-tom:var(--dx-warn)}dialog.dlgx.aviso{--dx-tom:var(--dx-accent)}dialog.dlgx.info,dialog.dlgx.nota{--dx-tom:var(--dx-accent)}',
     '.dlgx-texto{min-width:0;flex:1}',
     '.dlgx-titulo{margin:2px 0 0;font-size:1.05rem;font-weight:700;line-height:1.3;letter-spacing:-.005em}',
     '.dlgx-destaque{margin:12px 0 0;padding:9px 12px;border-radius:10px;border-left:4px solid var(--dx-tom);',
     'background:var(--dx-soft);font-size:.86rem;font-weight:600;line-height:1.4;overflow-wrap:anywhere;font-variant-numeric:tabular-nums}',
     '.dlgx-msg{margin:12px 0 0;font-size:.84rem;line-height:1.5;color:var(--dx-dim);overflow-wrap:anywhere}',
     '.dlgx-msg+.dlgx-msg{margin-top:8px}',
+    '.dlgx-campo{display:block;margin-top:14px}.dlgx-campo>span{display:block;font-size:.7rem;font-weight:700;text-transform:uppercase;',
+    'letter-spacing:.03em;color:var(--dx-faint);margin-bottom:5px}',
+    '.dlgx-campo textarea{display:block;width:100%;min-height:120px;resize:vertical;font:inherit;font-size:.86rem;line-height:1.5;',
+    'color:var(--dx-ink);background:var(--bg,var(--dx-bg));border:1px solid var(--dx-line);border-radius:10px;padding:10px 12px}',
+    '.dlgx-campo textarea:focus{outline:none;border-color:var(--dx-tom);box-shadow:0 0 0 3px color-mix(in srgb,var(--dx-tom) 25%,transparent)}',
+    '.dlgx-campo textarea::placeholder{color:var(--dx-faint);opacity:.8}',
+    '.dlgx-contador{display:flex;justify-content:space-between;gap:10px;margin-top:6px;font-size:.72rem;color:var(--dx-faint)}',
+    '.dlgx-contador .cheio{color:var(--dx-warn);font-weight:700}',
     '.dlgx-rodape{display:flex;gap:10px;justify-content:flex-end;padding:18px 24px 22px}',
     '.dlgx-btn{font:inherit;font-size:.84rem;font-weight:600;cursor:pointer;border-radius:10px;padding:9px 18px;min-width:96px;',
     'border:1px solid var(--dx-line);background:transparent;color:var(--dx-dim);transition:background .12s,border-color .12s,box-shadow .12s}',
@@ -56,7 +67,8 @@
   var ICONES = {
     perigo: '<path d="M3 6h18M8 6V4h8v2M6 6l1 14h10l1-14M10 11v6M14 11v6"/>',
     aviso: '<path d="M12 3l10 18H2L12 3zM12 10v5M12 18h.01"/>',
-    info: '<circle cx="12" cy="12" r="9"/><path d="M12 11v6M12 7.5h.01"/>'
+    info: '<circle cx="12" cy="12" r="9"/><path d="M12 11v6M12 7.5h.01"/>',
+    nota: '<path d="M14 3H6a2 2 0 00-2 2v14a2 2 0 002 2h12a2 2 0 002-2V9z"/><path d="M14 3v6h6M8 13h8M8 17h5"/>'
   };
 
   var fila = Promise.resolve();
@@ -80,7 +92,9 @@
   function abrir(opcoes, comCancelar) {
     return new Promise(function (resolve) {
       injetarCss();
-      var tom = ['perigo', 'aviso', 'info'].indexOf(opcoes.tom) >= 0 ? opcoes.tom : (comCancelar ? 'aviso' : 'info');
+      var comCampo = !!opcoes.campo;
+      var tom = ['perigo', 'aviso', 'info', 'nota'].indexOf(opcoes.tom) >= 0 ? opcoes.tom : (comCampo ? 'nota' : (comCancelar ? 'aviso' : 'info'));
+      var vazio = comCampo ? null : false; // o que a promessa devolve ao cancelar
       var id = 'dlgx-' + (++contador);
       var anterior = document.activeElement;
 
@@ -103,6 +117,34 @@
         if (i === 0) { m.id = id + '-d'; caixa.setAttribute('aria-describedby', id + '-d'); }
         texto.appendChild(m);
       });
+      var area = null;
+      if (comCampo) {
+        var rotuloCampo = el('label', 'dlgx-campo');
+        if (opcoes.campo.rotulo) rotuloCampo.appendChild(el('span', '', opcoes.campo.rotulo));
+        area = el('textarea');
+        area.value = opcoes.campo.valor || '';
+        if (opcoes.campo.maxlength) area.maxLength = opcoes.campo.maxlength;
+        if (opcoes.campo.placeholder) area.placeholder = opcoes.campo.placeholder;
+        area.setAttribute('aria-label', opcoes.campo.rotulo || opcoes.titulo || 'Texto');
+        rotuloCampo.appendChild(area);
+        var contador = el('div', 'dlgx-contador');
+        var nota = el('span', '', opcoes.nota || '');
+        var qtd = el('span', 'dlgx-qtd');
+        contador.appendChild(nota);
+        contador.appendChild(qtd);
+        var atualizarQtd = function () {
+          var max = opcoes.campo.maxlength;
+          qtd.textContent = max ? area.value.length + '/' + max : String(area.value.length);
+          qtd.className = 'dlgx-qtd' + (max && area.value.length >= max ? ' cheio' : '');
+        };
+        area.addEventListener('input', atualizarQtd);
+        atualizarQtd();
+        texto.appendChild(rotuloCampo);
+        texto.appendChild(contador);
+        area.addEventListener('keydown', function (ev) {
+          if (ev.key === 'Enter' && (ev.ctrlKey || ev.metaKey)) { ev.preventDefault(); fechar(area.value); }
+        });
+      }
       corpo.appendChild(icone);
       corpo.appendChild(texto);
 
@@ -131,21 +173,22 @@
         resolve(resultado);
       }
       function teclas(ev) {
-        if (ev.key === 'Escape') { ev.preventDefault(); ev.stopPropagation(); fechar(false); }
+        if (ev.key === 'Escape') { ev.preventDefault(); ev.stopPropagation(); fechar(vazio); }
       }
 
-      ok.addEventListener('click', function () { fechar(true); });
-      if (cancelar) cancelar.addEventListener('click', function () { fechar(false); });
+      ok.addEventListener('click', function () { fechar(comCampo ? area.value : true); });
+      if (cancelar) cancelar.addEventListener('click', function () { fechar(vazio); });
       // clique no fundo (fora da caixa) cancela; o <dialog> não tem padding, então só o fundo chega aqui
-      caixa.addEventListener('click', function (ev) { if (ev.target === caixa) fechar(false); });
-      caixa.addEventListener('cancel', function (ev) { ev.preventDefault(); fechar(false); });
+      caixa.addEventListener('click', function (ev) { if (ev.target === caixa) fechar(vazio); });
+      caixa.addEventListener('cancel', function (ev) { ev.preventDefault(); fechar(vazio); });
       document.addEventListener('keydown', teclas, true);
 
       document.body.appendChild(caixa);
       if (typeof caixa.showModal === 'function') caixa.showModal();
       else caixa.setAttribute('open', '');
       // Excluir: o foco começa em "Cancelar" - Enter sem querer nunca apaga.
-      (tom === 'perigo' && cancelar ? cancelar : ok).focus();
+      if (area) { area.focus(); area.setSelectionRange(area.value.length, area.value.length); }
+      else (tom === 'perigo' && cancelar ? cancelar : ok).focus();
     });
   }
 
@@ -158,6 +201,7 @@
 
   window.Dialogo = {
     confirmar: function (opcoes) { return enfileirar(function () { return abrir(opcoes || {}, true); }); },
+    texto: function (opcoes) { return enfileirar(function () { return abrir(opcoes || {}, true); }); },
     avisar: function (opcoes) { return enfileirar(function () { return abrir(opcoes || {}, false).then(function () {}); }); }
   };
 })();

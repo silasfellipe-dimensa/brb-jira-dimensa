@@ -87,6 +87,7 @@
     background: var(--line-soft); border-radius: 0 6px 6px 0; font-size: 0.78rem; color: var(--ink);
   }
   .aviso[hidden] { display: none; }
+  .aviso.info { border-left-color: var(--ok); }
 
   /* barra de escolha do mes */
   .barra { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 16px; }
@@ -440,10 +441,17 @@
 
     function mostrarAviso(msg) {
       var el = document.getElementById('aviso');
+      el.classList.remove('info');
       el.textContent = msg;
       el.hidden = false;
       clearTimeout(timerAviso);
       timerAviso = setTimeout(function () { el.hidden = true; }, 8000);
+    }
+    // Recado da sincronia da data de expedição com a tela de Expedições (verde quando deu certo).
+    function mostrarSincronia(s) {
+      if (!s || !s.texto) return;
+      mostrarAviso(s.texto);
+      if (s.status === 'atualizada') document.getElementById('aviso').classList.add('info');
     }
     function falhaAoCarregar(msg) {
       area.innerHTML = '<div class="vazio">' + esc(msg || 'Não foi possível carregar.') + '</div>';
@@ -629,6 +637,7 @@
           mesclar(d, res.j.demanda, campo);
           refletir(tr, d, campo);
           marcar(tr, 'salvo');
+          mostrarSincronia(res.j.sincronia);
         })
         .catch(function () {
           marcar(tr, 'erro', 'Falha ao conversar com o servidor.');

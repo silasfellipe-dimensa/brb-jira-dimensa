@@ -11,16 +11,16 @@ const {
   lerPlanejamentoSprint, lerCarryOverEntregue, listarPlanejamentoPorSprint, listarItensPlanejamento,
   listarItensCarryOver, registrarAcesso, listarAcessos, listarUsuarios, confirmarUsuarioManualmente,
   listarDemandas, criarDemanda, atualizarDemanda, removerDemanda, listarHistoricoDemandas,
-  listarExpedicoes, criarExpedicao, atualizarExpedicao, removerExpedicao,
-  criarItemExpedicao, atualizarItemExpedicao, removerItemExpedicao
+  listarChavesExpedicoes, listarExpedicoes, criarExpedicao, atualizarExpedicao, removerExpedicao,
+  criarItemExpedicao, atualizarItemExpedicao, atualizarObservacaoItem, removerItemExpedicao
 } = require('./supabase');
 const {
   normalizarCampos, idDemanda, interpretarMes, interpretarListaMeses, mesesDisponiveis,
   filtrarPorMeses, resumirMeses
 } = require('./demandas');
 const {
-  chaveJira, normalizarExpedicao, normalizarItemNovo, normalizarEstadoItem, itensDoQuadro, montarOpcoes,
-  decorar, hojeBrasilia, idExpedicao
+  chaveJira, normalizarExpedicao, normalizarItemNovo, normalizarEstadoItem, normalizarObservacao, itensDoQuadro, montarOpcoes,
+  decorar, hojeBrasilia, idExpedicao, planoParaDemandas, planoParaExpedicao, recadoSincronia
 } = require('./expedicoes');
 const {
   COOKIE_NAME,
@@ -348,7 +348,8 @@ app.patch('/api/demandas/:id', exigirSessaoApi, exigirEditorApi, async (req, res
   if (r.naoEncontrada) return res.status(404).json({ erro: 'Linha não encontrada (pode ter sido removida).' });
   if (!r.ok) return res.status(500).json({ erro: 'Não foi possível salvar.' });
   console.log(`[demandas] ${req.usuario.email} alterou #${id}: ${Object.keys(n.registro).join(', ')}`);
-  res.json({ demanda: r.demanda });
+  const sincronia = n.registro.previsao_expedicao ? await sincronizarParaExpedicao(r.demanda, req.usuario.email) : null;
+  res.json({ demanda: r.demanda, sincronia });
 });
 
 app.delete('/api/demandas/:id', exigirSessaoApi, exigirEditorApi, async (req, res) => {
@@ -364,6 +365,42 @@ app.delete('/api/demandas/:id', exigirSessaoApi, exigirEditorApi, async (req, re
 /** Expedições: checklist do time para expedições (usado na reunião diária). Controle interno -
  * só Dimensa/Evertec veem e marcam; BRB e TOTVS nem abrem (página volta para o
  * board, API responde 403). O responsável vem sempre do card no Jira. */
+/** Data de expedição: Expedições -> Demandas. Nunca derruba a gravação principal. */
+async function sincronizarParaDemandas(expedicao, email) {
+  try {
+    const [ex, dem] = await Promise.all([listarChavesExpedicoes(), listarDemandas()]);
+    if (!ex.ok || !dem.ok) return null; // sem como conferir: segue sem sincronizar
+    const plano = planoParaDemandas(expedicao, ex.expedicoes, dem.demandas);
+    let gravou = true;
+    if (plano.acao === 'atualizar') {
+      gravou = (await atualizarDemanda(plano.demandaId, { previsao_expedicao: plano.data }, email)).ok;
+      if (gravou) console.log(`[sincronia] ${email}: expedição #${expedicao.id} -> demanda #${plano.demandaId} (${plano.mes}) previsão ${plano.data}`);
+    }
+    return recadoSincronia('demandas', plano, gravou);
+  } catch (erro) {
+    console.error('[sincronia] expedição -> demandas falhou:', erro.message);
+    return { destino: 'demandas', status: 'erro', texto: 'A data foi salva aqui, mas não consegui atualizá-la em Demandas.' };
+  }
+}
+
+/** Data de expedição: Demandas -> Expedições. */
+async function sincronizarParaExpedicao(demanda, email) {
+  try {
+    const [ex, dem] = await Promise.all([listarChavesExpedicoes(), listarDemandas()]);
+    if (!ex.ok || !dem.ok) return null; // tabela de expedições ainda não existe, ou banco fora
+    const plano = planoParaExpedicao(demanda, dem.demandas, ex.expedicoes);
+    let gravou = true;
+    if (plano.acao === 'atualizar') {
+      gravou = (await atualizarExpedicao(plano.expedicaoId, { data_expedicao: plano.data }, email)).ok;
+      if (gravou) console.log(`[sincronia] ${email}: demanda #${demanda.id} -> expedição #${plano.expedicaoId} data ${plano.data}`);
+    }
+    return recadoSincronia('expedicoes', plano, gravou);
+  } catch (erro) {
+    console.error('[sincronia] demandas -> expedição falhou:', erro.message);
+    return { destino: 'expedicoes', status: 'erro', texto: 'A data foi salva aqui, mas não consegui atualizá-la em Expedições.' };
+  }
+}
+
 const MSG_SEM_TABELA_EXPEDICOES = 'As expedições ainda não foram ativadas no banco (falta rodar supabase-expedicoes.sql).';
 
 function decorarExpedicao(e, snapshot) {
@@ -401,7 +438,8 @@ app.post('/api/expedicoes', exigirSessaoApi, exigirEditorApi, async (req, res) =
   if (r.semTabela) return res.status(503).json({ erro: MSG_SEM_TABELA_EXPEDICOES, semTabela: true });
   if (!r.ok) return res.status(500).json({ erro: 'Não foi possível criar a expedição.' });
   console.log(`[expedicoes] ${req.usuario.email} criou a expedição #${r.expedicao.id}`);
-  res.status(201).json({ expedicao: decorarExpedicao(r.expedicao, snapshot) });
+  const sincronia = r.expedicao.dataExpedicao ? await sincronizarParaDemandas(r.expedicao, req.usuario.email) : null;
+  res.status(201).json({ expedicao: decorarExpedicao(r.expedicao, snapshot), sincronia });
 });
 
 app.patch('/api/expedicoes/:id', exigirSessaoApi, exigirEditorApi, async (req, res) => {
@@ -415,9 +453,12 @@ app.patch('/api/expedicoes/:id', exigirSessaoApi, exigirEditorApi, async (req, r
     if (doQuadro && doQuadro.responsavel) n.registro.responsavel = doQuadro.responsavel;
   }
   const r = await atualizarExpedicao(id, n.registro, req.usuario.email);
+  if (r.semColuna) return res.status(503).json({ erro: 'O campo PF ainda não foi ativado no banco (falta rodar supabase-expedicoes-campos.sql).', semTabela: true });
   if (r.naoEncontrada) return res.status(404).json({ erro: 'Expedição não encontrada (pode ter sido removida).' });
   if (!r.ok) return res.status(500).json({ erro: 'Não foi possível salvar.' });
-  res.json({ expedicao: decorarExpedicao(r.expedicao, snapshot) });
+  // só uma data PREENCHIDA propaga; apagar nunca (ver sincronia em expedicoes.js)
+  const sincronia = n.registro.data_expedicao ? await sincronizarParaDemandas(r.expedicao, req.usuario.email) : null;
+  res.json({ expedicao: decorarExpedicao(r.expedicao, snapshot), sincronia });
 });
 
 app.delete('/api/expedicoes/:id', exigirSessaoApi, exigirEditorApi, async (req, res) => {
@@ -450,6 +491,19 @@ app.patch('/api/expedicoes/:id/itens/:itemId', exigirSessaoApi, exigirEditorApi,
   const r = await atualizarItemExpedicao(id, itemId, n.estado, n.justificativa, req.usuario.email);
   if (r.naoEncontrada) return res.status(404).json({ erro: 'Item não encontrado (pode ter sido removido).' });
   if (!r.ok) return res.status(500).json({ erro: 'Não foi possível salvar.' });
+  res.json({ expedicao: decorarExpedicao(r.expedicao, await lerSnapshot()) });
+});
+
+app.patch('/api/expedicoes/:id/itens/:itemId/observacao', exigirSessaoApi, exigirEditorApi, async (req, res) => {
+  const id = idExpedicao(req.params.id);
+  const itemId = idExpedicao(req.params.itemId);
+  if (!id || !itemId) return res.status(400).json({ erro: 'Identificador inválido.' });
+  const n = normalizarObservacao(req.body);
+  if (!n.ok) return res.status(400).json({ erro: n.erro });
+  const r = await atualizarObservacaoItem(id, itemId, n.observacao, req.usuario.email);
+  if (r.semColuna) return res.status(503).json({ erro: 'As observações ainda não foram ativadas no banco (falta rodar supabase-expedicoes-observacao.sql).', semTabela: true });
+  if (r.naoEncontrada) return res.status(404).json({ erro: 'Item não encontrado (pode ter sido removido).' });
+  if (!r.ok) return res.status(500).json({ erro: 'Não foi possível salvar a observação.' });
   res.json({ expedicao: decorarExpedicao(r.expedicao, await lerSnapshot()) });
 });
 

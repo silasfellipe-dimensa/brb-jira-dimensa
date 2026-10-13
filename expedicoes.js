@@ -1,16 +1,18 @@
 // Regras puras da tela "Expedições" (checklist do time) - sem banco, sem rede.
 // Ficam aqui, e não no supabase.js, para serem testadas isoladamente.
 
-const { interpretarData, idDemanda, urlJira } = require('./demandas');
+const { interpretarData, interpretarNumero, idDemanda, urlJira } = require('./demandas');
 
-const LIMITE = { jira: 40, nome: 300, acs: 40, item: 200, justificativa: 500 };
+const LIMITE = { jira: 40, nome: 300, acs: 40, item: 200, justificativa: 500, observacao: 1000 };
 const MIN_JUSTIFICATIVA = 10;
 const BLOCOS = ['comitar', 'expedir'];
 const ESTADOS = ['pendente', 'concluido', 'nao_aplicavel'];
 const FUSO = 'America/Sao_Paulo';
 
 /** Itens que toda expedição ganha ao ser criada: a união das duas listas do
- * time (checklist rápido + pré-expedição), sem repetir. São COPIADOS para cada
+ * time (checklist rápido + pré-expedição), sem repetir. Descrição, Documentos de
+ * Configuração e Solução são itens do "antes de comitar" (não campos de texto);
+ * "Solução" saiu do "antes de expedir" para não ficar duplicada. São COPIADOS para cada
  * expedição: mudar a lista aqui vale só para as novas, as antigas ficam como
  * foram conferidas. */
 const ITENS_PADRAO = [
@@ -20,11 +22,13 @@ const ITENS_PADRAO = [
   { bloco: 'comitar', texto: 'Se houver banco, subtarefa GCAD com os requisitos ok?' },
   { bloco: 'comitar', texto: 'Data interna acordada registrada? (boa prática)' },
   { bloco: 'comitar', texto: 'Branch: VERSÃO FIX → master | VERSÃO RELEASE → Developer?' },
+  { bloco: 'comitar', texto: 'Descrição preenchida?' },
+  { bloco: 'comitar', texto: 'Documentos de Configuração preenchidos?' },
+  { bloco: 'comitar', texto: 'Solução preenchida?' },
   { bloco: 'expedir', texto: 'Status: Teste de aceitação concluído' },
   { bloco: 'expedir', texto: 'Todas as subtarefas concluídas' },
   { bloco: 'expedir', texto: 'Apontamentos de horas realizados' },
   { bloco: 'expedir', texto: 'Situação / Requisito preenchido' },
-  { bloco: 'expedir', texto: 'Solução preenchida' },
   { bloco: 'expedir', texto: 'Demais Documentações preenchidas' },
   { bloco: 'expedir', texto: 'Release Note em linguagem de usuário' },
   { bloco: 'expedir', texto: 'Release Note com mais de 60 caracteres, objetivo e sem detalhes técnicos' },
@@ -62,6 +66,12 @@ function normalizarExpedicao(corpo, { criando } = {}) {
     registro.data_expedicao = d.valor;
   }
   // O responsável não é digitado: vem do card no Jira (quem chama preenche).
+  // PF da expedição (opcional; vazio apaga)
+  if (tem(corpo, 'pontosFuncao')) {
+    const n = interpretarNumero(corpo.pontosFuncao);
+    if (!n.ok) return { ok: false, erro: `PF: ${n.erro}` };
+    registro.pontos_funcao = n.valor;
+  }
   if (criando && !(registro.artefato_jira || registro.nome || registro.demanda_acs)) {
     return { ok: false, erro: 'Informe ao menos o Jira, o nome ou o número ACS.' };
   }
@@ -92,6 +102,16 @@ function normalizarEstadoItem(corpo) {
   }
   if (j.length > LIMITE.justificativa) return { ok: false, erro: `Motivo longo demais (máximo ${LIMITE.justificativa} caracteres).` };
   return { ok: true, estado: 'nao_aplicavel', justificativa: j };
+}
+
+/** Observação do item: texto livre e opcional, em qualquer estado. Vazio apaga
+ * (guarda null). Não tem relação com o motivo do N/A, que é obrigatório. */
+function normalizarObservacao(corpo) {
+  if (!corpo || typeof corpo !== 'object' || !tem(corpo, 'observacao')) return { ok: false, erro: 'Corpo inválido.' };
+  if (corpo.observacao !== null && typeof corpo.observacao !== 'string') return { ok: false, erro: 'Observação inválida.' };
+  const t = texto(corpo.observacao);
+  if (t.length > LIMITE.observacao) return { ok: false, erro: `Observação longa demais (máximo ${LIMITE.observacao} caracteres).` };
+  return { ok: true, observacao: t === '' ? null : t };
 }
 
 /** Concluído e N/A (com motivo) contam como resolvidos; só pendente falta. */
@@ -156,6 +176,11 @@ function itensDoQuadro(snapshot) {
   return saida;
 }
 
+/** PF de Demandas para pré-preencher: só o número (demanda "em análise" ou sem total não tem PF). */
+function pfDe(d) {
+  return d && !d.emAnalise && typeof d.pontosTotal === 'number' ? d.pontosTotal : null;
+}
+
 /** Lista do autocomplete: o que está no quadro, enriquecido com o que a tela de
  * Demandas já sabe daquela chave (ACS e previsão de expedição), mais as
  * demandas que ainda não estão no quadro. `demandas` vem do banco, em ordem de
@@ -175,15 +200,15 @@ function montarOpcoes(snapshot, demandas) {
     const d = porJira.get(k);
     opcoes.push({
       jira: k, nome: q.nome || (d && d.nome) || '', acs: (d && d.demandaAcs) || '',
-      dataExpedicao: (d && d.previsaoExpedicao) || null, responsavel: q.responsavel, origem: 'quadro'
+      dataExpedicao: (d && d.previsaoExpedicao) || null, pf: pfDe(d), responsavel: q.responsavel, origem: 'quadro'
     });
     porJira.delete(k);
   }
   for (const [k, d] of porJira) {
-    opcoes.push({ jira: k, nome: d.nome || '', acs: d.demandaAcs || '', dataExpedicao: d.previsaoExpedicao || null, responsavel: '', origem: 'demandas' });
+    opcoes.push({ jira: k, nome: d.nome || '', acs: d.demandaAcs || '', dataExpedicao: d.previsaoExpedicao || null, pf: pfDe(d), responsavel: '', origem: 'demandas' });
   }
   for (const d of semJira) {
-    opcoes.push({ jira: '', nome: d.nome || '', acs: d.demandaAcs, dataExpedicao: d.previsaoExpedicao || null, responsavel: '', origem: 'demandas' });
+    opcoes.push({ jira: '', nome: d.nome || '', acs: d.demandaAcs, dataExpedicao: d.previsaoExpedicao || null, pf: pfDe(d), responsavel: '', origem: 'demandas' });
   }
   return opcoes;
 }
@@ -201,12 +226,103 @@ function responsavelAtual(expedicao, snapshot) {
   return { nome: '', origem: 'nenhum' };
 }
 
+/* ---- Sincronia da data de expedição com a tela de Demandas ----
+ * A data de expedição existe nas duas telas (Demandas: "Previsão de Expedição",
+ * uma por linha/mês; Expedições: uma por expedição). Mudou numa, muda na outra.
+ *
+ * Regras (decididas com o usuário; cada uma evita um estrago real):
+ * - A ligação é pela chave do Jira; sem Jira dos dois lados, pelo número ACS.
+ * - Em Demandas só vale a linha do MÊS MAIS RECENTE da demanda: mexer em mês
+ *   fechado reescreveria o histórico de cobrança. Editar um mês antigo não
+ *   propaga nada.
+ * - Apagar a data nunca propaga (um apagão acidental não limpa a outra tela).
+ * - Com mais de uma expedição ativa para a mesma demanda não há "a" data certa:
+ *   não sincroniza e avisa.
+ * - A sincronia nunca derruba a gravação principal: quem chama trata falha. */
+const NOMES_MES = ['Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho', 'Julho', 'Agosto',
+  'Setembro', 'Outubro', 'Novembro', 'Dezembro'];
+function rotuloMes(mes) {
+  const m = /^(\d{4})-(\d{2})$/.exec(String(mes || ''));
+  return m && NOMES_MES[Number(m[2]) - 1] ? `${NOMES_MES[Number(m[2]) - 1]} de ${m[1]}` : '';
+}
+
+const acsDe = (x) => texto(x && x.demandaAcs);
+const temChave = (x) => !!(chaveJira(x && x.artefatoJira) || acsDe(x));
+
+/** Mesma demanda? Jira dos dois lados decide; senão, o ACS (nunca vazio). */
+function mesmaDemanda(a, b) {
+  const ka = chaveJira(a.artefatoJira);
+  const kb = chaveJira(b.artefatoJira);
+  if (ka && kb) return ka === kb;
+  const aa = acsDe(a);
+  return !!aa && aa === acsDe(b);
+}
+
+/** Linha de Demandas do mês mais recente (desempate pelo id) para essa demanda. */
+function linhaMaisRecente(demandas, ref) {
+  let melhor = null;
+  for (const d of demandas) {
+    if (!mesmaDemanda(d, ref)) continue;
+    const dm = d.mes || '';
+    const bm = melhor ? (melhor.mes || '') : '';
+    if (!melhor || dm > bm || (dm === bm && d.id > melhor.id)) melhor = d;
+  }
+  return melhor;
+}
+
+/** Expedição gravada com data -> o que fazer em Demandas.
+ * `expedicoesAtivas` já inclui a própria expedição (gravada). */
+function planoParaDemandas(expedicao, expedicoesAtivas, demandas) {
+  if (!expedicao.dataExpedicao) return { acao: 'nenhuma', motivo: 'sem-data' };
+  if (!temChave(expedicao)) return { acao: 'nenhuma', motivo: 'sem-chave' };
+  const mesmas = expedicoesAtivas.filter((e) => e.id === expedicao.id || mesmaDemanda(e, expedicao));
+  if (mesmas.length > 1) return { acao: 'avisar', motivo: 'varias-expedicoes' };
+  const alvo = linhaMaisRecente(demandas, expedicao);
+  if (!alvo) return { acao: 'avisar', motivo: 'sem-demanda' };
+  if (alvo.previsaoExpedicao === expedicao.dataExpedicao) return { acao: 'nenhuma', motivo: 'igual', mes: alvo.mes };
+  return { acao: 'atualizar', demandaId: alvo.id, mes: alvo.mes, data: expedicao.dataExpedicao };
+}
+
+/** Demanda gravada com previsão -> o que fazer em Expedições. */
+function planoParaExpedicao(demanda, demandas, expedicoesAtivas) {
+  if (!demanda.previsaoExpedicao) return { acao: 'nenhuma', motivo: 'sem-data' };
+  if (!temChave(demanda)) return { acao: 'nenhuma', motivo: 'sem-chave' };
+  const recente = linhaMaisRecente(demandas, demanda);
+  if (!recente || recente.id !== demanda.id) return { acao: 'nenhuma', motivo: 'mes-anterior' };
+  const exps = expedicoesAtivas.filter((e) => mesmaDemanda(e, demanda));
+  if (!exps.length) return { acao: 'nenhuma', motivo: 'sem-expedicao' };
+  if (exps.length > 1) return { acao: 'avisar', motivo: 'varias-expedicoes' };
+  if (exps[0].dataExpedicao === demanda.previsaoExpedicao) return { acao: 'nenhuma', motivo: 'igual' };
+  return { acao: 'atualizar', expedicaoId: exps[0].id, data: demanda.previsaoExpedicao };
+}
+
+/** Recado para a tela de quem mexeu. `destino` é onde a data foi (ou não) parar;
+ * `gravou` diz se a segunda gravação deu certo. Sem recado = null. */
+function recadoSincronia(destino, plano, gravou) {
+  const onde = destino === 'demandas' ? 'Demandas' : 'Expedições';
+  if (plano.acao === 'atualizar') {
+    if (!gravou) return { destino, status: 'erro', texto: `A data foi salva aqui, mas não consegui atualizá-la em ${onde}.` };
+    const mes = destino === 'demandas' && plano.mes ? ` (${rotuloMes(plano.mes)})` : '';
+    return { destino, status: 'atualizada', texto: `Data de expedição atualizada também em ${onde}${mes}.` };
+  }
+  if (plano.acao === 'avisar') {
+    if (plano.motivo === 'varias-expedicoes') {
+      return { destino, status: 'aviso', texto: `Há mais de uma expedição ativa para esta demanda; a data não foi enviada para ${onde}.` };
+    }
+    if (plano.motivo === 'sem-demanda') {
+      return { destino, status: 'aviso', texto: 'Não encontrei esta demanda em Demandas (confira o Jira ou o ACS); a data ficou só aqui.' };
+    }
+  }
+  return null;
+}
+
 /* ---- Banco -> API ---- */
 
 function deLinhaItem(i) {
   return {
     id: i.id, bloco: i.bloco, texto: i.texto, padrao: !!i.padrao, estado: i.estado,
-    justificativa: i.justificativa || '', atualizadoPor: i.atualizado_por || '', atualizadoEm: i.atualizado_em || null
+    justificativa: i.justificativa || '', atualizadoPor: i.atualizado_por || '', atualizadoEm: i.atualizado_em || null,
+    observacao: i.observacao || '', observacaoPor: i.observacao_por || '', observacaoEm: i.observacao_em || null
   };
 }
 
@@ -214,6 +330,7 @@ function deLinhaExpedicao(l, itens) {
   return {
     id: l.id, artefatoJira: l.artefato_jira || '', artefatoUrl: urlJira(l.artefato_jira), nome: l.nome || '', demandaAcs: l.demanda_acs || '',
     dataExpedicao: l.data_expedicao || null, responsavelGuardado: l.responsavel || '',
+    pontosFuncao: l.pontos_funcao === null || l.pontos_funcao === undefined ? null : Number(l.pontos_funcao),
     atualizadoPor: l.atualizado_por || '', atualizadoEm: l.atualizado_em || null,
     itens: (itens || []).map(deLinhaItem)
   };
@@ -226,13 +343,14 @@ function decorar(expedicao, snapshot, hoje) {
     ...expedicao,
     responsavel: responsavelAtual(expedicao, snapshot),
     progresso: prog,
+    observacoes: expedicao.itens.filter((i) => !i.removido && i.observacao).length,
     ...classificar(expedicao.dataExpedicao, prog.pendentes, hoje)
   };
 }
 
 module.exports = {
-  decorar,
-  ITENS_PADRAO, BLOCOS, ESTADOS, MIN_JUSTIFICATIVA, chaveJira, normalizarExpedicao, normalizarItemNovo,
+  decorar, mesmaDemanda, linhaMaisRecente, planoParaDemandas, planoParaExpedicao, recadoSincronia, rotuloMes,
+  ITENS_PADRAO, BLOCOS, ESTADOS, MIN_JUSTIFICATIVA, normalizarObservacao, chaveJira, normalizarExpedicao, normalizarItemNovo,
   normalizarEstadoItem, progresso, hojeBrasilia, classificar, itensDoQuadro, montarOpcoes,
   responsavelAtual, deLinhaItem, deLinhaExpedicao, idExpedicao: idDemanda
 };

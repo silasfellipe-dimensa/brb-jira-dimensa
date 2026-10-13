@@ -250,7 +250,9 @@ describe('demandas — quem ve, quem edita', () => {
     ['DELETE', '/api/expedicoes/1'],
     ['POST', '/api/expedicoes/1/itens', { bloco: 'expedir', texto: 'item novo' }],
     ['PATCH', '/api/expedicoes/1/itens/1', { estado: 'concluido' }],
-    ['DELETE', '/api/expedicoes/1/itens/1']
+    ['DELETE', '/api/expedicoes/1/itens/1'],
+    ['PATCH', '/api/expedicoes/1/itens/1/observacao', { observacao: 'nota' }],
+    ['PATCH', '/api/expedicoes/1', { pontosFuncao: '3' }]
   ];
 
   test('expedicoes: sem sessao 401 em toda rota e a pagina manda para o login', async () => {
@@ -300,7 +302,15 @@ describe('demandas — quem ve, quem edita', () => {
       ['PATCH', '/api/expedicoes/1/itens/1', { estado: 'nao_aplicavel' }],
       ['PATCH', '/api/expedicoes/1/itens/1', { estado: 'nao_aplicavel', justificativa: 'curto' }],
       ['PATCH', '/api/expedicoes/1/itens/abc', { estado: 'concluido' }],
-      ['DELETE', '/api/expedicoes/1/itens/abc']
+      ['DELETE', '/api/expedicoes/1/itens/abc'],
+      ['PATCH', '/api/expedicoes/1/itens/1/observacao', {}],
+      ['PATCH', '/api/expedicoes/1/itens/1/observacao', { observacao: 123 }],
+      ['PATCH', '/api/expedicoes/1/itens/1/observacao', { observacao: 'x'.repeat(1001) }],
+      ['PATCH', '/api/expedicoes/abc/itens/1/observacao', { observacao: 'nota' }],
+      ['PATCH', '/api/expedicoes/1/itens/0/observacao', { observacao: 'nota' }],
+      ['PATCH', '/api/expedicoes/1', { pontosFuncao: 'abc' }],
+      ['PATCH', '/api/expedicoes/1', { pontosFuncao: -2 }],
+      ['POST', '/api/expedicoes', { nome: 'x', pontosFuncao: '1,234' }]
     ];
     for (const [metodo, caminho, corpo] of ruins) {
       assert.strictEqual((await enviarJson(metodo, caminho, corpo, cookie)).status, 400, `${metodo} ${caminho} ${JSON.stringify(corpo)}`);

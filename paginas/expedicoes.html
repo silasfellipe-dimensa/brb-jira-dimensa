@@ -84,6 +84,7 @@
 
   .aviso { margin-bottom: 12px; padding: 9px 12px; border-left: 3px solid var(--warn); background: var(--line-soft); border-radius: 0 6px 6px 0; font-size: 0.78rem; }
   .aviso[hidden] { display: none; }
+  .aviso.info { border-left-color: var(--ok); }
   .vazio { padding: 26px; text-align: center; color: var(--ink-faint); font-size: 0.82rem; line-height: 1.5; }
 
   /* nova expedição */
@@ -125,7 +126,7 @@
   .exp-toggle { flex-shrink: 0; width: 28px; height: 28px; margin-top: 18px; border: 1px solid var(--line); border-radius: 6px; background: var(--bg-panel); color: var(--ink-dim); transition: transform 0.12s ease; }
   .exp-toggle[aria-expanded="true"] { transform: rotate(90deg); }
   .exp-main { flex: 1; min-width: 0; }
-  .exp .grade-campos { grid-template-columns: 170px 1fr 190px 220px; }
+  .exp .grade-campos { grid-template-columns: 170px 1fr 190px 220px 100px; }
   .exp .campo input { padding: 6px 9px; font-size: 0.82rem; }
   .jira-link { font-size: 0.7rem; color: var(--accent); text-decoration: none; margin-left: 6px; font-weight: 600; }
   .jira-link:hover { text-decoration: underline; }
@@ -154,6 +155,17 @@
   .mini { font-size: 0.7rem; padding: 2px 8px; border: 1px solid var(--line); border-radius: 5px; background: var(--bg-panel); color: var(--ink-dim); white-space: nowrap; }
   .mini:hover { border-color: var(--accent); color: var(--accent); }
   .mini.perigo:hover { border-color: var(--warn); color: var(--warn); }
+  /* observação do item: ícone de nota ao lado do N/A; preenchida ganha cor e um pontinho */
+  .mini.obs { position: relative; display: inline-flex; align-items: center; justify-content: center; padding: 3px 6px; }
+  .mini.obs svg { width: 13px; height: 13px; display: block; }
+  .mini.obs.tem { color: var(--accent); border-color: var(--accent); background: var(--accent-soft); }
+  .mini.obs.tem::after { content: ''; position: absolute; top: -3px; right: -3px; width: 8px; height: 8px; border-radius: 50%;
+    background: var(--accent); border: 1.5px solid var(--bg); }
+  /* item com observação: faixa leve à esquerda, para achar de relance na lista */
+  li.item { margin-left: -8px; padding-left: 8px; border-radius: 6px; }
+  li.item.com-obs { background: linear-gradient(90deg, var(--accent-soft), transparent 60%); box-shadow: inset 3px 0 0 var(--accent); }
+  .chip-obs { display: inline-flex; align-items: center; gap: 5px; font-weight: 600; color: var(--accent); }
+  .chip-obs svg { width: 13px; height: 13px; }
   .motivo { margin: 4px 0 0 26px; font-size: 0.76rem; color: var(--ink-dim); line-height: 1.4; }
   .motivo small { color: var(--ink-faint); }
   .motivo-form { margin: 6px 0 0 26px; display: flex; flex-direction: column; gap: 6px; }
@@ -199,7 +211,9 @@
 <script>
   (function () {
     // Caixas de diálogo do sistema (/dialogo.js). Sem ele, cai no pop-up do navegador.
+    var ICONE_NOTA = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 3H6a2 2 0 00-2 2v14a2 2 0 002 2h12a2 2 0 002-2V9z"/><path d="M14 3v6h6M8 13h8M8 17h5"/></svg>';
     var Dlg = window.Dialogo || {
+      texto: function (o) { return Promise.resolve(window.prompt(o.titulo, (o.campo && o.campo.valor) || '')); },
       confirmar: function (o) { return Promise.resolve(window.confirm([o.titulo, o.destaque, o.mensagem].filter(Boolean).join('\n\n'))); },
       avisar: function (o) { window.alert([o.titulo, o.mensagem].filter(Boolean).join('\n\n')); return Promise.resolve(); }
     };
@@ -232,7 +246,18 @@
         return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
       });
     }
-    function mostrarAviso(t) { aviso.textContent = t || ''; aviso.hidden = !t; }
+    var timerInfo = null;
+    function mostrarAviso(t) { clearTimeout(timerInfo); aviso.classList.remove('info'); aviso.textContent = t || ''; aviso.hidden = !t; }
+    // Recado da sincronia da data com a tela de Demandas: verde e some sozinho quando
+    // deu certo; laranja/vermelho (fica até a próxima ação) quando não sincronizou.
+    function mostrarSincronia(s) {
+      if (!s || !s.texto) return;
+      mostrarAviso(s.texto);
+      if (s.status === 'atualizada') {
+        aviso.classList.add('info');
+        timerInfo = setTimeout(function () { aviso.hidden = true; aviso.classList.remove('info'); }, 7000);
+      }
+    }
     function normalizar(t) {
       return String(t || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
     }
@@ -245,6 +270,9 @@
       if (valor) p.set('responsavel', valor); else p.delete('responsavel');
       var q = p.toString();
       history.replaceState(null, '', location.pathname + (q ? '?' + q : ''));
+    }
+    function fmtPf(v) {
+      return v === null || v === undefined ? '' : Number(v).toLocaleString('pt-BR', { maximumFractionDigits: 2 });
     }
     function rotuloExpedicao(e) {
       return [e.artefatoJira, e.nome, e.demandaAcs].filter(Boolean).join(' - ');
@@ -320,6 +348,10 @@
           ' aria-label="' + esc(i.texto) + '"> <span class="txt">' + esc(i.texto) + '</span></label>';
       }
       if (!i.padrao) linha += '<span class="tag-avulso">avulso</span>';
+      var temObs = !!i.observacao;
+      linha += '<button type="button" class="mini obs' + (temObs ? ' tem' : '') + '" data-acao="obs" data-item="' + i.id + '" aria-label="' +
+        (temObs ? 'Ver ou editar a observação deste item' : 'Adicionar observação a este item') + '" title="' +
+        esc(temObs ? (i.observacao.length > 160 ? i.observacao.slice(0, 160) + '…' : i.observacao) : 'Adicionar observação') + '">' + ICONE_NOTA + '</button>';
       if (na) linha += '<button type="button" class="mini" data-acao="desfazer-na" data-item="' + i.id + '">Desfazer</button>';
       else linha += '<button type="button" class="mini" data-acao="abrir-na" data-item="' + i.id + '" title="Não se aplica a esta demanda">N/A</button>';
       if (!i.padrao) linha += '<button type="button" class="mini perigo" data-acao="remover-item" data-item="' + i.id + '" aria-label="Remover item" title="Remover item">×</button>';
@@ -336,7 +368,7 @@
           '<button type="button" class="btn" data-acao="cancelar-na" data-item="' + i.id + '">Cancelar</button>' +
           '<span class="erro-inline" data-erro="' + i.id + '"></span></div></div>';
       }
-      return '<li class="item est-' + esc(i.estado) + '" data-item="' + i.id + '">' + linha + extra + '</li>';
+      return '<li class="item est-' + esc(i.estado) + (temObs ? ' com-obs' : '') + '" data-item="' + i.id + '">' + linha + extra + '</li>';
     }
 
     function blocoHtml(e, bloco) {
@@ -370,9 +402,11 @@
           '<div class="campo"><span class="rot">Nome</span><input data-campo="nome" aria-label="Nome" value="' + esc(e.nome) + '" maxlength="300" placeholder="nome da demanda"></div>' +
           '<div class="campo"><span class="rot">ACS' + (semAcs ? tag : '') + '</span><input data-campo="demandaAcs" aria-label="ACS' + (semAcs ? ' (obrigatório preencher)' : '') + '"' + (semAcs ? ' class="precisa" aria-invalid="true"' : '') + ' value="' + esc(e.demandaAcs) + '" maxlength="40" placeholder="número ACS"></div>' +
           '<div class="campo"><span class="rot">Data de expedição' + (semData ? tag : '') + '</span><input type="date" data-campo="dataExpedicao" aria-label="Data de expedição' + (semData ? ' (obrigatório preencher)' : '') + '"' + (semData ? ' class="precisa" aria-invalid="true"' : '') + ' value="' + esc(e.dataExpedicao || '') + '"></div>' +
+          '<div class="campo"><span class="rot">PF</span><input data-campo="pontosFuncao" inputmode="decimal" maxlength="9" aria-label="PF (pontos de função)" placeholder="0,0" value="' + esc(fmtPf(e.pontosFuncao)) + '"></div>' +
         '</div><div class="exp-resumo">' + resp +
           '<span class="barra-prog" role="progressbar" aria-valuenow="' + pct + '" aria-valuemin="0" aria-valuemax="100"><i style="width:' + pct + '%"></i></span>' +
           '<span class="prog-txt">' + resolvidos + ' de ' + p.total + (p.naoAplicaveis ? ' · ' + p.naoAplicaveis + ' N/A' : '') + '</span> ' + estadoTxt +
+          (e.observacoes ? ' <span class="chip-obs">' + ICONE_NOTA + e.observacoes + (e.observacoes === 1 ? ' observação' : ' observações') + '</span>' : '') +
         '</div></div></div>';
       if (aberto) {
         h += '<div class="exp-corpo">' + blocoHtml(e, 'comitar') + blocoHtml(e, 'expedir') +
@@ -422,6 +456,7 @@
         if (ativo.getAttribute('data-campo')) seletorFoco = '[data-campo="' + ativo.getAttribute('data-campo') + '"]';
         else if (ativo.getAttribute('data-novo-item')) seletorFoco = 'input[data-novo-item="' + ativo.getAttribute('data-novo-item') + '"]';
         else if (ativo.getAttribute('data-motivo')) seletorFoco = 'textarea[data-motivo="' + ativo.getAttribute('data-motivo') + '"]';
+        else if (ativo.getAttribute('data-acao') === 'obs') seletorFoco = 'button[data-acao="obs"][data-item="' + ativo.getAttribute('data-item') + '"]';
         else if (ativo.getAttribute('data-acao') === 'marcar') seletorFoco = 'input[data-acao="marcar"][data-item="' + ativo.getAttribute('data-item') + '"]';
       }
       var tmp = document.createElement('div');
@@ -467,7 +502,7 @@
     function salvarCampo(e, input) {
       var campo = input.getAttribute('data-campo');
       var corpo = {}; corpo[campo] = input.value;
-      executar(chamar('PATCH', '/api/expedicoes/' + e.id, corpo), function (j) { atualizarExpedicao(j.expedicao); });
+      executar(chamar('PATCH', '/api/expedicoes/' + e.id, corpo), function (j) { atualizarExpedicao(j.expedicao); mostrarSincronia(j.sincronia); });
     }
 
     function marcar(e, i, marcado) {
@@ -491,6 +526,33 @@
       if (texto.length < 3) { mostrarAviso('Descreva o item (mínimo 3 caracteres).'); if (campo) campo.focus(); return; }
       executar(chamar('POST', '/api/expedicoes/' + e.id + '/itens', { bloco: bloco, texto: texto }),
         function (j) { atualizarExpedicao(j.expedicao); });
+    }
+
+    function fmtQuando(iso) {
+      var d = new Date(iso);
+      if (isNaN(d.getTime())) return '';
+      var dois = function (n) { return n < 10 ? '0' + n : String(n); };
+      return dois(d.getDate()) + '/' + dois(d.getMonth() + 1) + ' ' + dois(d.getHours()) + ':' + dois(d.getMinutes());
+    }
+
+    // Observação do item: janela sobre a tela, texto livre e opcional (vazio apaga).
+    function editarObservacao(e, i) {
+      var nota = i.observacao
+        ? (i.observacaoPor ? 'Última edição: ' + i.observacaoPor + (i.observacaoEm ? ' · ' + fmtQuando(i.observacaoEm) : '') + '. ' : '') + 'Deixe vazio para apagar.'
+        : 'Opcional. Vale para qualquer estado do item.';
+      Dlg.texto({
+        titulo: 'Observação do item', destaque: i.texto,
+        campo: { valor: i.observacao || '', maxlength: 1000, rotulo: 'Observação', placeholder: 'Ex.: aguardando validação do BRB; script rodado em homologação…' },
+        nota: nota, rotuloConfirmar: 'Salvar', rotuloCancelar: 'Cancelar'
+      }).then(function (texto) {
+        if (texto === null || texto === undefined) return; // cancelou
+        if (String(texto).trim() === (i.observacao || '')) return; // nada mudou
+        executar(chamar('PATCH', '/api/expedicoes/' + e.id + '/itens/' + i.id + '/observacao', { observacao: texto }), function (j) {
+          atualizarExpedicao(j.expedicao);
+          var b = area.querySelector('button[data-acao="obs"][data-item="' + i.id + '"]');
+          if (b) b.focus();
+        });
+      });
     }
 
     function removerItem(e, i) {
@@ -539,6 +601,7 @@
       }
       else if (acao === 'add-item') adicionarItem(e, b.getAttribute('data-bloco'), card);
       else if (acao === 'remover-item' && i) removerItem(e, i);
+      else if (acao === 'obs' && i) editarObservacao(e, i);
       else if (acao === 'excluir') excluirExpedicao(e);
     });
 
@@ -672,9 +735,12 @@
           artefatoJira: document.getElementById('nJira').value, nome: document.getElementById('nNome').value,
           demandaAcs: document.getElementById('nAcs').value, dataExpedicao: document.getElementById('nData').value
         };
+        // o PF vem de Demandas quando a opção escolhida tem (aparece no cartão depois de criado)
+        if (estado.escolhida && estado.escolhida.pf !== null && estado.escolhida.pf !== undefined) corpo.pontosFuncao = estado.escolhida.pf;
         executar(chamar('POST', '/api/expedicoes', corpo), function (j) {
           fecharNova();
           estado.abertas[j.expedicao.id] = true;
+          mostrarSincronia(j.sincronia);
           estado.expedicoes.push(j.expedicao);
           ordenar(); renderTudo();
           var el = area.querySelector('.exp[data-id="' + j.expedicao.id + '"]');

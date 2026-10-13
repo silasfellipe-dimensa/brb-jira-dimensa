@@ -634,8 +634,13 @@ async function listarHistoricoDemandas({ demandaId, mes, limite } = {}) {
  * Mesmo contrato das demandas: devolvem { ok, ... }, nunca lancam. A remocao
  * da expedicao e de itens avulsos e logica; o historico quem grava e o banco
  * (gatilhos em supabase-expedicoes.sql). */
-const COLUNAS_EXPEDICAO = 'id,artefato_jira,nome,demanda_acs,data_expedicao,responsavel,atualizado_por,atualizado_em';
-const COLUNAS_ITEM = 'id,expedicao_id,bloco,texto,padrao,estado,justificativa,atualizado_por,atualizado_em';
+const COLUNAS_EXPEDICAO_BASE = 'id,artefato_jira,nome,demanda_acs,data_expedicao,responsavel,atualizado_por,atualizado_em';
+// campo PF (supabase-expedicoes-campos.sql): sem o SQL, tudo segue funcionando sem ele
+const COLUNAS_EXPEDICAO_NOVAS = ['pontos_funcao'];
+const COLUNAS_EXPEDICAO = COLUNAS_EXPEDICAO_BASE + ',' + COLUNAS_EXPEDICAO_NOVAS.join(',');
+const semColunaNova = (error) => !!error && (error.code === '42703' || /pontos_funcao/i.test(error.message || ''));
+const COLUNAS_ITEM_BASE = 'id,expedicao_id,bloco,texto,padrao,estado,justificativa,atualizado_por,atualizado_em';
+const COLUNAS_ITEM = COLUNAS_ITEM_BASE + ',observacao,observacao_por,observacao_em';
 
 function semTabelaExpedicoes(error) {
   return error && (error.code === '42P01' || error.code === 'PGRST205' || /does not exist|schema cache/i.test(error.message || ''));
@@ -643,17 +648,25 @@ function semTabelaExpedicoes(error) {
 
 async function itensDasExpedicoes(ids) {
   if (!ids.length) return [];
-  const { data, error } = await db().from('expedicao_itens').select(COLUNAS_ITEM)
+  const consulta = (colunas) => db().from('expedicao_itens').select(colunas)
     .in('expedicao_id', ids).eq('removido', false).order('id', { ascending: true }).limit(20000);
+  let { data, error } = await consulta(COLUNAS_ITEM);
+  // Código novo com o banco ainda sem as colunas de observação (SQL não rodado):
+  // a lista continua funcionando, só sem observações.
+  if (error && (error.code === '42703' || /observacao/i.test(error.message || ''))) {
+    ({ data, error } = await consulta(COLUNAS_ITEM_BASE));
+  }
   if (error) throw Object.assign(new Error(error.message), { semTabela: semTabelaExpedicoes(error) });
   return data || [];
 }
 
 async function listarExpedicoes() {
   try {
-    const { data, error } = await db().from('expedicoes').select(COLUNAS_EXPEDICAO)
+    const consulta = (colunas) => db().from('expedicoes').select(colunas)
       .eq('removido', false).order('data_expedicao', { ascending: true, nullsFirst: false })
       .order('id', { ascending: true }).limit(1000);
+    let { data, error } = await consulta(COLUNAS_EXPEDICAO);
+    if (semColunaNova(error)) ({ data, error } = await consulta(COLUNAS_EXPEDICAO_BASE));
     if (error) throw Object.assign(new Error(error.message), { semTabela: semTabelaExpedicoes(error) });
     const itens = await itensDasExpedicoes((data || []).map((l) => l.id));
     return { ok: true, expedicoes: (data || []).map((l) => deLinhaExpedicao(l, itens.filter((i) => i.expedicao_id === l.id))) };
@@ -663,8 +676,26 @@ async function listarExpedicoes() {
   }
 }
 
+/** So o que a sincronia de datas precisa: chave (Jira/ACS) e data de cada expedicao ativa. */
+async function listarChavesExpedicoes() {
+  try {
+    const { data, error } = await db().from('expedicoes').select('id,artefato_jira,demanda_acs,data_expedicao')
+      .eq('removido', false).limit(2000);
+    if (error) throw new Error(error.message);
+    return {
+      ok: true,
+      expedicoes: (data || []).map((l) => ({ id: l.id, artefatoJira: l.artefato_jira || '', demandaAcs: l.demanda_acs || '', dataExpedicao: l.data_expedicao || null }))
+    };
+  } catch (erro) {
+    console.error('[supabase] falha ao listar chaves de expedicoes:', erro.message);
+    return { ok: false };
+  }
+}
+
 async function lerExpedicao(id) {
-  const { data, error } = await db().from('expedicoes').select(COLUNAS_EXPEDICAO).eq('id', id).eq('removido', false).maybeSingle();
+  const consulta = (colunas) => db().from('expedicoes').select(colunas).eq('id', id).eq('removido', false).maybeSingle();
+  let { data, error } = await consulta(COLUNAS_EXPEDICAO);
+  if (semColunaNova(error)) ({ data, error } = await consulta(COLUNAS_EXPEDICAO_BASE));
   if (error) throw new Error(error.message);
   if (!data) return null;
   return deLinhaExpedicao(data, await itensDasExpedicoes([id]));
@@ -673,8 +704,14 @@ async function lerExpedicao(id) {
 async function criarExpedicao(email, registro) {
   let criada = null;
   try {
-    const { data, error } = await db().from('expedicoes')
-      .insert({ ...registro, criado_por: email, atualizado_por: email }).select('id').single();
+    const inserir = (reg) => db().from('expedicoes').insert({ ...reg, criado_por: email, atualizado_por: email }).select('id').single();
+    let { data, error } = await inserir(registro);
+    if (semColunaNova(error)) {
+      // banco sem os campos extras: cria a expedição sem eles em vez de falhar
+      const sem = { ...registro };
+      COLUNAS_EXPEDICAO_NOVAS.forEach((c) => { delete sem[c]; });
+      ({ data, error } = await inserir(sem));
+    }
     if (error) throw new Error(error.message);
     criada = data.id;
     const itens = ITENS_PADRAO.map((i) => ({ expedicao_id: criada, bloco: i.bloco, texto: i.texto, padrao: true, atualizado_por: email }));
@@ -694,6 +731,7 @@ async function atualizarExpedicao(id, registro, email) {
     const { data, error } = await db().from('expedicoes')
       .update({ ...registro, atualizado_por: email, atualizado_em: new Date().toISOString() })
       .eq('id', id).eq('removido', false).select('id').maybeSingle();
+    if (semColunaNova(error)) return { ok: false, semColuna: true };
     if (error) throw new Error(error.message);
     if (!data) return { ok: false, naoEncontrada: true };
     return { ok: true, expedicao: await lerExpedicao(id) };
@@ -745,6 +783,25 @@ async function atualizarItemExpedicao(expedicaoId, itemId, estado, justificativa
   }
 }
 
+/** Observação do item (texto livre, opcional, vazio apaga). Guarda quem e quando. */
+async function atualizarObservacaoItem(expedicaoId, itemId, observacao, email) {
+  try {
+    const { data, error } = await db().from('expedicao_itens')
+      .update({ observacao, observacao_por: email, observacao_em: new Date().toISOString() })
+      .eq('id', itemId).eq('expedicao_id', expedicaoId).eq('removido', false).select('id').maybeSingle();
+    if (error) {
+      const semColuna = error.code === '42703' || /observacao/i.test(error.message || '');
+      if (semColuna) return { ok: false, semColuna: true };
+      throw new Error(error.message);
+    }
+    if (!data) return { ok: false, naoEncontrada: true };
+    return { ok: true, expedicao: await lerExpedicao(expedicaoId) };
+  } catch (erro) {
+    console.error('[supabase] falha ao salvar observacao de item de expedicao:', erro.message);
+    return { ok: false };
+  }
+}
+
 /** So item avulso sai. Os padrao ficam: o caminho para dispensar um deles e
  * marcar "nao aplicavel" com o motivo. */
 async function removerItemExpedicao(expedicaoId, itemId, email) {
@@ -766,8 +823,8 @@ async function removerItemExpedicao(expedicaoId, itemId, email) {
 }
 
 module.exports = {
-  listarExpedicoes, criarExpedicao, atualizarExpedicao, removerExpedicao,
-  criarItemExpedicao, atualizarItemExpedicao, removerItemExpedicao,
+  listarChavesExpedicoes, listarExpedicoes, criarExpedicao, atualizarExpedicao, removerExpedicao,
+  criarItemExpedicao, atualizarItemExpedicao, atualizarObservacaoItem, removerItemExpedicao,
   listarDemandas, criarDemanda, atualizarDemanda, removerDemanda, listarHistoricoDemandas,
   cadastrar, entrar, lerSnapshot, gravarSnapshot, gravarHistorico, lerHistorico,
   gravarEntregas, lerEntregas, listarSprintsEntregas, listarMesesEntregas, limparEntregas,

@@ -32,7 +32,7 @@ describe('telas usam o diálogo do sistema, não o pop-up do navegador', () => {
     test(`${tela}: nenhum confirm()/alert() solto (só a reserva window.confirm/window.alert)`, () => {
       const solto = html.match(/(^|[^.\w])(confirm|alert|prompt)\(/g) || [];
       assert.deepStrictEqual(solto, [], `pop-up nativo encontrado: ${solto.join(' ')}`);
-      assert.ok(!/\bprompt\(/.test(html));
+      // a reserva (o arquivo do diálogo não carregou) pode usar window.prompt/confirm/alert; solto, nunca
     });
 
     test(`${tela}: usa Dlg.confirmar/avisar`, () => {
