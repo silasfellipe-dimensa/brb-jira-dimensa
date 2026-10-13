@@ -2,6 +2,7 @@
 // Ficam aqui, e não no supabase.js, para serem testadas isoladamente.
 
 const { interpretarData, interpretarNumero, idDemanda, urlJira } = require('./demandas');
+const { TEXTOS_JIRA } = require('./checklistJira');
 
 const LIMITE = { jira: 40, nome: 300, acs: 40, item: 200, justificativa: 500, observacao: 1000 };
 const MIN_JUSTIFICATIVA = 10;
@@ -336,20 +337,51 @@ function deLinhaExpedicao(l, itens) {
   };
 }
 
+/** Itens que o Jira confirma sozinho (ver checklistJira.js). `verificacao` é o que o
+ * Jira disse sobre a chave da expedição (ou null se ela não tem chave).
+ * - campo PREENCHIDO no Jira: o item fica marcado e TRAVADO (ninguém desmarca);
+ * - campo vazio: o item continua livre, como qualquer outro (marca-se à mão); o
+ *   motivo aparece só como informação;
+ * - chave que o Jira não achou, ou Jira fora do ar: tudo manual, sem trava. */
+function aplicarVerificacao(itens, verificacao) {
+  if (!verificacao || verificacao.status === 'nao-encontrada' || verificacao.status === 'indisponivel') return itens;
+  return itens.map((i) => {
+    if (i.removido || !i.padrao || !TEXTOS_JIRA.includes(i.texto)) return i;
+    const r = verificacao.itens && verificacao.itens[i.texto];
+    const ok = !!(r && r.ok);
+    const jira = { ok, motivo: r ? r.motivo : 'o épico não tem tasks no Jira', detalhe: (r && r.detalhe) || '' };
+    if (ok) return { ...i, estado: 'concluido', automatico: true, bloqueado: true, jira };
+    return { ...i, automatico: true, bloqueado: false, jira };
+  });
+}
+
+/** O item está confirmado no Jira e por isso não pode mais ser alterado aqui? */
+function somenteLeituraPeloJira(item, verificacao) {
+  if (!item || !item.padrao || !TEXTOS_JIRA.includes(item.texto)) return false;
+  if (!verificacao || verificacao.status !== 'ok') return false;
+  const r = verificacao.itens && verificacao.itens[item.texto];
+  return !!(r && r.ok);
+}
+
 /** Expedição pronta para a tela: responsável de hoje, progresso e urgência. */
-function decorar(expedicao, snapshot, hoje) {
-  const prog = progresso(expedicao.itens);
+function decorar(expedicao, snapshot, hoje, verificacao) {
+  const itens = aplicarVerificacao(expedicao.itens, verificacao || null);
+  const prog = progresso(itens);
   return {
     ...expedicao,
+    itens,
+    jira: verificacao
+      ? { status: verificacao.status, tipo: verificacao.tipo || '', filhos: verificacao.filhos || 0, lidoEm: verificacao.lidoEm || null, desatualizado: !!verificacao.desatualizado }
+      : { status: 'sem-chave' },
     responsavel: responsavelAtual(expedicao, snapshot),
     progresso: prog,
-    observacoes: expedicao.itens.filter((i) => !i.removido && i.observacao).length,
+    observacoes: itens.filter((i) => !i.removido && i.observacao).length,
     ...classificar(expedicao.dataExpedicao, prog.pendentes, hoje)
   };
 }
 
 module.exports = {
-  decorar, mesmaDemanda, linhaMaisRecente, planoParaDemandas, planoParaExpedicao, recadoSincronia, rotuloMes,
+  decorar, aplicarVerificacao, somenteLeituraPeloJira, mesmaDemanda, linhaMaisRecente, planoParaDemandas, planoParaExpedicao, recadoSincronia, rotuloMes,
   ITENS_PADRAO, BLOCOS, ESTADOS, MIN_JUSTIFICATIVA, normalizarObservacao, chaveJira, normalizarExpedicao, normalizarItemNovo,
   normalizarEstadoItem, progresso, hojeBrasilia, classificar, itensDoQuadro, montarOpcoes,
   responsavelAtual, deLinhaItem, deLinhaExpedicao, idExpedicao: idDemanda

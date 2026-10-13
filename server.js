@@ -4,14 +4,14 @@ const express = require('express');
 const cookieParser = require('cookie-parser');
 const crypto = require('crypto');
 const path = require('path');
-const { buscarBoard, buscarEntregasHistoricas } = require('./jira');
+const { buscarBoard, buscarEntregasHistoricas, chamarJira } = require('./jira');
 const {
   cadastrar, entrar, lerSnapshot, gravarSnapshot, gravarHistorico, lerHistorico,
   gravarEntregas, lerEntregas, listarSprintsEntregas, listarMesesEntregas, gravarPlanejamento,
   lerPlanejamentoSprint, lerCarryOverEntregue, listarPlanejamentoPorSprint, listarItensPlanejamento,
   listarItensCarryOver, registrarAcesso, listarAcessos, listarUsuarios, confirmarUsuarioManualmente,
   listarDemandas, criarDemanda, atualizarDemanda, removerDemanda, listarHistoricoDemandas,
-  listarChavesExpedicoes, listarExpedicoes, criarExpedicao, atualizarExpedicao, removerExpedicao,
+  lerExpedicao, listarChavesExpedicoes, listarExpedicoes, criarExpedicao, atualizarExpedicao, removerExpedicao,
   criarItemExpedicao, atualizarItemExpedicao, atualizarObservacaoItem, removerItemExpedicao
 } = require('./supabase');
 const {
@@ -20,8 +20,9 @@ const {
 } = require('./demandas');
 const {
   chaveJira, normalizarExpedicao, normalizarItemNovo, normalizarEstadoItem, normalizarObservacao, itensDoQuadro, montarOpcoes,
-  decorar, hojeBrasilia, idExpedicao, planoParaDemandas, planoParaExpedicao, recadoSincronia
+  decorar, hojeBrasilia, idExpedicao, planoParaDemandas, planoParaExpedicao, recadoSincronia, somenteLeituraPeloJira
 } = require('./expedicoes');
+const { criarCache, verificar, verificarVarias } = require('./checklistJira');
 const {
   COOKIE_NAME,
   SESSAO_DIAS,
@@ -401,11 +402,19 @@ async function sincronizarParaExpedicao(demanda, email) {
   }
 }
 
-const MSG_SEM_TABELA_EXPEDICOES = 'As expedições ainda não foram ativadas no banco (falta rodar supabase-expedicoes.sql).';
-
-function decorarExpedicao(e, snapshot) {
-  return decorar(e, snapshot, hojeBrasilia());
+// O Jira responde parte do checklist (checklistJira.js). Cache curto em memória; o botão
+// "Atualizar do Jira" passa por cima dele.
+const cacheJira = criarCache();
+async function verificacaoJira(expedicao, forcar) {
+  const chave = chaveJira(expedicao.artefatoJira);
+  if (!chave) return null;
+  return verificar(chave, chamarJira, { cache: cacheJira, forcar: !!forcar });
 }
+async function decorarExpedicao(e, snapshot, forcar) {
+  return decorar(e, snapshot, hojeBrasilia(), await verificacaoJira(e, forcar));
+}
+
+const MSG_SEM_TABELA_EXPEDICOES = 'As expedições ainda não foram ativadas no banco (falta rodar supabase-expedicoes.sql).';
 
 app.get('/expedicoes', exigirSessaoPagina, exigirEquipePagina, (req, res) => {
   res.sendFile(path.join(PUBLIC_DIR, 'expedicoes.html'));
@@ -418,7 +427,15 @@ app.get('/api/expedicoes', exigirSessaoApi, exigirEditorApi, async (req, res) =>
   }
   if (!r.ok) return res.status(503).json({ erro: 'Não foi possível carregar as expedições agora.' });
   const snapshot = await lerSnapshot();
-  res.json({ hoje: hojeBrasilia(), expedicoes: r.expedicoes.map((e) => decorarExpedicao(e, snapshot)) });
+  // ?atualizarJira=1 (botão "Atualizar do Jira") passa por cima do cache
+  const forcar = req.query.atualizarJira === '1';
+  const chaves = r.expedicoes.map((e) => chaveJira(e.artefatoJira)).filter(Boolean);
+  const lidas = await verificarVarias(chaves, chamarJira, { cache: cacheJira, forcar });
+  const hoje = hojeBrasilia();
+  res.json({
+    hoje,
+    expedicoes: r.expedicoes.map((e) => decorar(e, snapshot, hoje, lidas[chaveJira(e.artefatoJira)] || null))
+  });
 });
 
 /** Autocomplete: o que está no quadro Kanban, com ACS e data já cadastrados em
@@ -439,7 +456,7 @@ app.post('/api/expedicoes', exigirSessaoApi, exigirEditorApi, async (req, res) =
   if (!r.ok) return res.status(500).json({ erro: 'Não foi possível criar a expedição.' });
   console.log(`[expedicoes] ${req.usuario.email} criou a expedição #${r.expedicao.id}`);
   const sincronia = r.expedicao.dataExpedicao ? await sincronizarParaDemandas(r.expedicao, req.usuario.email) : null;
-  res.status(201).json({ expedicao: decorarExpedicao(r.expedicao, snapshot), sincronia });
+  res.status(201).json({ expedicao: await decorarExpedicao(r.expedicao, snapshot, true), sincronia });
 });
 
 app.patch('/api/expedicoes/:id', exigirSessaoApi, exigirEditorApi, async (req, res) => {
@@ -458,7 +475,7 @@ app.patch('/api/expedicoes/:id', exigirSessaoApi, exigirEditorApi, async (req, r
   if (!r.ok) return res.status(500).json({ erro: 'Não foi possível salvar.' });
   // só uma data PREENCHIDA propaga; apagar nunca (ver sincronia em expedicoes.js)
   const sincronia = n.registro.data_expedicao ? await sincronizarParaDemandas(r.expedicao, req.usuario.email) : null;
-  res.json({ expedicao: decorarExpedicao(r.expedicao, snapshot), sincronia });
+  res.json({ expedicao: await decorarExpedicao(r.expedicao, snapshot, n.registro.artefato_jira !== undefined), sincronia });
 });
 
 app.delete('/api/expedicoes/:id', exigirSessaoApi, exigirEditorApi, async (req, res) => {
@@ -479,7 +496,7 @@ app.post('/api/expedicoes/:id/itens', exigirSessaoApi, exigirEditorApi, async (r
   const r = await criarItemExpedicao(id, n.bloco, n.texto, req.usuario.email);
   if (r.naoEncontrada) return res.status(404).json({ erro: 'Expedição não encontrada (pode ter sido removida).' });
   if (!r.ok) return res.status(500).json({ erro: 'Não foi possível adicionar o item.' });
-  res.status(201).json({ expedicao: decorarExpedicao(r.expedicao, await lerSnapshot()) });
+  res.status(201).json({ expedicao: await decorarExpedicao(r.expedicao, await lerSnapshot()) });
 });
 
 app.patch('/api/expedicoes/:id/itens/:itemId', exigirSessaoApi, exigirEditorApi, async (req, res) => {
@@ -488,10 +505,22 @@ app.patch('/api/expedicoes/:id/itens/:itemId', exigirSessaoApi, exigirEditorApi,
   if (!id || !itemId) return res.status(400).json({ erro: 'Identificador inválido.' });
   const n = normalizarEstadoItem(req.body);
   if (!n.ok) return res.status(400).json({ erro: n.erro });
+  // Item cujo campo já está preenchido no Jira fica marcado e travado: não se desmarca nem se
+  // dispensa aqui. Item que ainda falta no Jira segue livre.
+  try {
+    const atual = await lerExpedicao(id);
+    const item = atual && atual.itens.find((i) => i.id === itemId);
+    if (item && somenteLeituraPeloJira(item, await verificacaoJira(atual))) {
+      return res.status(400).json({ erro: 'Este item já está confirmado no Jira e não pode ser alterado aqui.' });
+    }
+  } catch (erro) {
+    // sem como conferir agora: segue, e a gravação abaixo trata a falha do banco
+    console.error('[expedicoes] não consegui conferir o item no Jira:', erro.message);
+  }
   const r = await atualizarItemExpedicao(id, itemId, n.estado, n.justificativa, req.usuario.email);
   if (r.naoEncontrada) return res.status(404).json({ erro: 'Item não encontrado (pode ter sido removido).' });
   if (!r.ok) return res.status(500).json({ erro: 'Não foi possível salvar.' });
-  res.json({ expedicao: decorarExpedicao(r.expedicao, await lerSnapshot()) });
+  res.json({ expedicao: await decorarExpedicao(r.expedicao, await lerSnapshot()) });
 });
 
 app.patch('/api/expedicoes/:id/itens/:itemId/observacao', exigirSessaoApi, exigirEditorApi, async (req, res) => {
@@ -504,7 +533,7 @@ app.patch('/api/expedicoes/:id/itens/:itemId/observacao', exigirSessaoApi, exigi
   if (r.semColuna) return res.status(503).json({ erro: 'As observações ainda não foram ativadas no banco (falta rodar supabase-expedicoes-observacao.sql).', semTabela: true });
   if (r.naoEncontrada) return res.status(404).json({ erro: 'Item não encontrado (pode ter sido removido).' });
   if (!r.ok) return res.status(500).json({ erro: 'Não foi possível salvar a observação.' });
-  res.json({ expedicao: decorarExpedicao(r.expedicao, await lerSnapshot()) });
+  res.json({ expedicao: await decorarExpedicao(r.expedicao, await lerSnapshot()) });
 });
 
 app.delete('/api/expedicoes/:id/itens/:itemId', exigirSessaoApi, exigirEditorApi, async (req, res) => {
@@ -515,7 +544,7 @@ app.delete('/api/expedicoes/:id/itens/:itemId', exigirSessaoApi, exigirEditorApi
   if (r.padrao) return res.status(400).json({ erro: 'Item padrão não pode ser removido: marque como "não aplicável" e explique o motivo.' });
   if (r.naoEncontrada) return res.status(404).json({ erro: 'Item não encontrado (pode já ter sido removido).' });
   if (!r.ok) return res.status(500).json({ erro: 'Não foi possível remover o item.' });
-  res.json({ expedicao: decorarExpedicao(r.expedicao, await lerSnapshot()) });
+  res.json({ expedicao: await decorarExpedicao(r.expedicao, await lerSnapshot()) });
 });
 
 app.get('/admin', exigirSessaoPagina, exigirAdminPagina, (req, res) => {

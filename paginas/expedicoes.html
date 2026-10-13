@@ -151,6 +151,16 @@
   .item-linha input[type="checkbox"] { width: 17px; height: 17px; margin: 1px 0 0; accent-color: var(--ok); flex-shrink: 0; }
   li.item.est-concluido .txt { color: var(--ink-faint); }
   .tag-na { font-size: 0.66rem; font-weight: 700; padding: 1px 7px; border-radius: 4px; background: var(--accent-soft); color: var(--accent); flex-shrink: 0; margin-top: 1px; }
+  /* itens lidos do Jira: só leitura */
+  .tag-jira { font-size: 0.64rem; font-weight: 700; padding: 1px 6px; border-radius: 4px; border: 1px solid var(--line); color: var(--ink-dim); background: var(--line-soft); white-space: nowrap; margin-top: 1px; }
+  .tag-jira.ok { color: var(--ok); border-color: var(--ok); background: var(--ok-soft); }
+  .tag-jira.indisp { opacity: 0.7; }
+  label.somente-leitura { cursor: default; }
+  .item-linha input[type="checkbox"]:disabled { cursor: not-allowed; opacity: 0.85; }
+  .falta-jira { margin: 3px 0 0 26px; font-size: 0.72rem; line-height: 1.4; color: var(--ink-faint); }
+  .falta-jira small { color: var(--ink-faint); margin-left: 4px; }
+  .nota-jira { grid-column: 1 / -1; font-size: 0.74rem; color: var(--ink-faint); padding: 7px 10px; border-radius: 6px; background: var(--line-soft); }
+  .nota-jira.aviso-j { color: var(--accent); background: var(--accent-soft); }
   .tag-avulso { font-size: 0.64rem; padding: 1px 6px; border-radius: 4px; border: 1px solid var(--line); color: var(--ink-faint); margin-left: 6px; white-space: nowrap; }
   .mini { font-size: 0.7rem; padding: 2px 8px; border: 1px solid var(--line); border-radius: 5px; background: var(--bg-panel); color: var(--ink-dim); white-space: nowrap; }
   .mini:hover { border-color: var(--accent); color: var(--accent); }
@@ -318,6 +328,7 @@
         '<label for="selResp">Responsável</label><select id="selResp">' + ops + '</select>' +
         '<label><input type="checkbox" id="ocultarConc"' + (estado.ocultarConcluidas ? ' checked' : '') + '> Ocultar concluídas</label>' +
         '<span class="empurra">' +
+          '<button type="button" class="btn" data-acao="atualizar-jira" title="Lê de novo no Jira os itens que ele responde">Atualizar do Jira</button>' +
           '<button type="button" class="btn" data-acao="expandir-tudo">Expandir tudo</button>' +
           '<button type="button" class="btn" data-acao="recolher-tudo">Recolher tudo</button>' +
           '<button type="button" class="btn primario" data-acao="nova">+ Nova expedição</button></span>';
@@ -342,10 +353,16 @@
     function itemHtml(e, i) {
       var na = i.estado === 'nao_aplicavel';
       var linha = '<div class="item-linha">';
+      // Campo preenchido no Jira: marcado e TRAVADO. Campo vazio: item livre, com a informação do que falta.
+      var travado = !!i.bloqueado;
+      var temInfo = !!i.automatico && !!i.jira && !travado;
+      var dicaJira = travado ? 'Preenchido no Jira: já conferido' : '';
       if (na) linha += '<span class="tag-na">N/A</span><span class="txt">' + esc(i.texto) + '</span>';
       else {
-        linha += '<label><input type="checkbox" data-acao="marcar" data-item="' + i.id + '"' + (i.estado === 'concluido' ? ' checked' : '') +
-          ' aria-label="' + esc(i.texto) + '"> <span class="txt">' + esc(i.texto) + '</span></label>';
+        linha += '<label' + (travado ? ' class="somente-leitura" title="' + esc(dicaJira) + '"' : '') + '><input type="checkbox" data-acao="marcar" data-item="' + i.id + '"' +
+          (i.estado === 'concluido' ? ' checked' : '') + (travado ? ' disabled' : '') +
+          ' aria-label="' + esc(i.texto + (travado ? ' (confirmado no Jira)' : '')) + '"> <span class="txt">' + esc(i.texto) + '</span></label>';
+        if (travado) linha += '<span class="tag-jira ok" title="' + esc(dicaJira) + '">Jira ✓</span>';
       }
       if (!i.padrao) linha += '<span class="tag-avulso">avulso</span>';
       var temObs = !!i.observacao;
@@ -353,13 +370,16 @@
         (temObs ? 'Ver ou editar a observação deste item' : 'Adicionar observação a este item') + '" title="' +
         esc(temObs ? (i.observacao.length > 160 ? i.observacao.slice(0, 160) + '…' : i.observacao) : 'Adicionar observação') + '">' + ICONE_NOTA + '</button>';
       if (na) linha += '<button type="button" class="mini" data-acao="desfazer-na" data-item="' + i.id + '">Desfazer</button>';
-      else linha += '<button type="button" class="mini" data-acao="abrir-na" data-item="' + i.id + '" title="Não se aplica a esta demanda">N/A</button>';
+      else if (!travado) linha += '<button type="button" class="mini" data-acao="abrir-na" data-item="' + i.id + '" title="Não se aplica a esta demanda">N/A</button>';
       if (!i.padrao) linha += '<button type="button" class="mini perigo" data-acao="remover-item" data-item="' + i.id + '" aria-label="Remover item" title="Remover item">×</button>';
       linha += '</div>';
       var extra = '';
       if (na) {
         extra += '<div class="motivo"><strong>Não aplicável:</strong> ' + esc(i.justificativa) +
           (i.atualizadoPor ? ' <small>· ' + esc(i.atualizadoPor) + '</small>' : '') + '</div>';
+      }
+      if (temInfo && !na && i.estado !== 'concluido') {
+        extra += '<div class="falta-jira">' + esc(i.jira.motivo) + (i.jira.detalhe ? ' <small>' + esc(i.jira.detalhe) + '</small>' : '') + '</div>';
       }
       if (estado.motivo[i.id]) {
         extra += '<div class="motivo-form"><textarea maxlength="500" data-motivo="' + i.id + '" ' +
@@ -369,6 +389,42 @@
           '<span class="erro-inline" data-erro="' + i.id + '"></span></div></div>';
       }
       return '<li class="item est-' + esc(i.estado) + (temObs ? ' com-obs' : '') + '" data-item="' + i.id + '">' + linha + extra + '</li>';
+    }
+
+    function horaLocal(iso) {
+      var d = new Date(iso);
+      if (isNaN(d.getTime())) return '';
+      var dois = function (n) { return n < 10 ? '0' + n : String(n); };
+      return dois(d.getHours()) + ':' + dois(d.getMinutes());
+    }
+    // O que o Jira disse sobre a chave desta expedição (e como isso muda os itens).
+    function notaJira(e) {
+      var j = e.jira || { status: 'sem-chave' };
+      if (j.status === 'sem-chave') return '<div class="nota-jira">Sem chave do Jira nesta expedição: os itens são marcados à mão.</div>';
+      if (j.status === 'nao-encontrada') return '<div class="nota-jira aviso-j">O Jira não encontrou a chave ' + esc(e.artefatoJira) + ': os itens ficam manuais até a chave estar certa.</div>';
+      if (j.status === 'indisponivel') return '<div class="nota-jira aviso-j">Não consegui consultar o Jira agora: por enquanto os itens ficam manuais.</div>';
+      if (j.status === 'sem-filhos') return '<div class="nota-jira aviso-j">Este épico ainda não tem tasks no Jira: nada foi conferido, marque os itens à mão.</div>';
+      return '<div class="nota-jira">Itens com <strong>Jira ✓</strong> já estão preenchidos no Jira: ficam marcados e travados. Os que ainda faltam lá você marca à mão' +
+        (j.tipo === 'epico' ? ' (épico com ' + j.filhos + (j.filhos === 1 ? ' task' : ' tasks') + ': só fica ✓ quando todas cumprem)' : '') +
+        (j.lidoEm ? ' · lido às ' + horaLocal(j.lidoEm) : '') + (j.desatualizado ? ' (desatualizado: o Jira não respondeu agora)' : '') + '.</div>';
+    }
+    // Recado depois de criar a expedição ou trocar a chave do Jira.
+    function recadoJira(e) {
+      var j = e && e.jira;
+      if (!j || j.status === 'sem-chave') return null;
+      if (j.status === 'ok') {
+        var auto = e.itens.filter(function (i) { return i.automatico; });
+        var oks = auto.filter(function (i) { return i.estado === 'concluido'; }).length;
+        return { status: 'atualizada', texto: 'Jira conferido: ' + oks + ' de ' + auto.length + ' itens já estão preenchidos lá e foram marcados.' };
+      }
+      if (j.status === 'nao-encontrada') return { status: 'aviso', texto: 'O Jira não encontrou a chave ' + e.artefatoJira + ': os itens ficam manuais.' };
+      if (j.status === 'sem-filhos') return { status: 'aviso', texto: 'Este épico ainda não tem tasks no Jira.' };
+      return { status: 'aviso', texto: 'Não consegui consultar o Jira agora: marque os itens à mão ou use "Atualizar do Jira" daqui a pouco.' };
+    }
+    function juntarRecados(lista) {
+      var partes = lista.filter(Boolean);
+      if (!partes.length) return null;
+      return { status: partes.some(function (p) { return p.status !== 'atualizada'; }) ? 'aviso' : 'atualizada', texto: partes.map(function (p) { return p.texto; }).join(' ') };
     }
 
     function blocoHtml(e, bloco) {
@@ -409,7 +465,7 @@
           (e.observacoes ? ' <span class="chip-obs">' + ICONE_NOTA + e.observacoes + (e.observacoes === 1 ? ' observação' : ' observações') + '</span>' : '') +
         '</div></div></div>';
       if (aberto) {
-        h += '<div class="exp-corpo">' + blocoHtml(e, 'comitar') + blocoHtml(e, 'expedir') +
+        h += '<div class="exp-corpo">' + notaJira(e) + blocoHtml(e, 'comitar') + blocoHtml(e, 'expedir') +
           '<div class="exp-rodape"><span>' + (e.atualizadoPor ? 'Última alteração: ' + esc(e.atualizadoPor) : '') + '</span>' +
           '<button type="button" class="mini perigo" data-acao="excluir">Excluir expedição</button></div></div>';
       }
@@ -489,25 +545,31 @@
       return e.itens.filter(function (i) { return i.id === id; })[0] || null;
     }
 
-    function executar(promessa, aoConcluir) {
+    // aoFalhar (opcional): desfaz o que a tela já mostrou antes de o servidor responder
+    // (ex.: um checkbox marcado), para ela nunca ficar diferente do que está gravado.
+    function executar(promessa, aoConcluir, aoFalhar) {
       if (ocupado) return;
       ocupado = true; mostrarAviso('');
       promessa.then(function (r) {
         ocupado = false;
-        if (!r.ok) { mostrarAviso(r.j.erro || 'Não foi possível salvar agora.'); return; }
+        if (!r.ok) { mostrarAviso(r.j.erro || 'Não foi possível salvar agora.'); if (aoFalhar) aoFalhar(); return; }
         aoConcluir(r.j);
-      }).catch(function () { ocupado = false; mostrarAviso('Sem conexão com o servidor. Tente de novo.'); });
+      }).catch(function () { ocupado = false; mostrarAviso('Sem conexão com o servidor. Tente de novo.'); if (aoFalhar) aoFalhar(); });
     }
 
     function salvarCampo(e, input) {
       var campo = input.getAttribute('data-campo');
       var corpo = {}; corpo[campo] = input.value;
-      executar(chamar('PATCH', '/api/expedicoes/' + e.id, corpo), function (j) { atualizarExpedicao(j.expedicao); mostrarSincronia(j.sincronia); });
+      executar(chamar('PATCH', '/api/expedicoes/' + e.id, corpo), function (j) {
+        atualizarExpedicao(j.expedicao);
+        mostrarSincronia(juntarRecados([campo === 'artefatoJira' ? recadoJira(j.expedicao) : null, j.sincronia]));
+      });
     }
 
     function marcar(e, i, marcado) {
       executar(chamar('PATCH', '/api/expedicoes/' + e.id + '/itens/' + i.id, { estado: marcado ? 'concluido' : 'pendente' }),
-        function (j) { atualizarExpedicao(j.expedicao); });
+        function (j) { atualizarExpedicao(j.expedicao); },
+        function () { atualizarCartaoLocal(e); });
     }
 
     function confirmarNa(e, i, card) {
@@ -614,6 +676,7 @@
       var e = expedicaoDe(t);
       if (!e) return;
       if (t.getAttribute('data-acao') === 'marcar') {
+        if (t.disabled) return; // item lido do Jira: só muda lá
         var i = itemDe(e, t);
         if (i) marcar(e, i, t.checked);
       } else if (t.getAttribute('data-campo')) {
@@ -641,6 +704,9 @@
       if (acao === 'expandir-tudo' || acao === 'recolher-tudo') {
         visiveis().forEach(function (e) { estado.abertas[e.id] = acao === 'expandir-tudo'; });
         renderLista();
+      } else if (acao === 'atualizar-jira') {
+        b.disabled = true; b.textContent = 'Atualizando…';
+        carregar(true);
       } else if (acao === 'nova') abrirNova();
     });
 
@@ -740,7 +806,7 @@
         executar(chamar('POST', '/api/expedicoes', corpo), function (j) {
           fecharNova();
           estado.abertas[j.expedicao.id] = true;
-          mostrarSincronia(j.sincronia);
+          mostrarSincronia(juntarRecados([recadoJira(j.expedicao), j.sincronia]));
           estado.expedicoes.push(j.expedicao);
           ordenar(); renderTudo();
           var el = area.querySelector('.exp[data-id="' + j.expedicao.id + '"]');
@@ -753,13 +819,14 @@
     });
 
     /* ---------- carga ---------- */
-    function carregar() {
-      return chamar('GET', '/api/expedicoes').then(function (r) {
+    function carregar(forcarJira) {
+      return chamar('GET', '/api/expedicoes' + (forcarJira ? '?atualizarJira=1' : '')).then(function (r) {
         if (!r.ok) { area.innerHTML = '<div class="vazio">' + esc(r.j.erro || 'Não foi possível carregar as expedições agora.') + '</div>'; return; }
         estado.expedicoes = r.j.expedicoes;
         estado.hoje = r.j.hoje;
         if (!estado.filtro) { try { estado.filtro = localStorage.getItem('expedicoes.responsavel') || ''; } catch (e) { estado.filtro = ''; } }
         renderTudo();
+        if (forcarJira) mostrarSincronia({ status: 'atualizada', texto: 'Itens do Jira atualizados agora.' });
       }).catch(function () { area.innerHTML = '<div class="vazio">Não foi possível carregar as expedições agora.</div>'; });
     }
 

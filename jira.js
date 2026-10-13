@@ -839,7 +839,7 @@ async function buscarEntregasHistoricas() {
 }
 
 module.exports = {
-  SITE,
+  SITE, chamarJira,
   buscarBoard, mapearColunas, montarColunas, montarMetricas, epicoDe, ehSubtarefa,
   sprintsDaIssue, montarEntregas, montarPlanejamento, buscarEntregasHistoricas, agruparPorEpico, statusFechamento
 };
