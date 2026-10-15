@@ -197,11 +197,7 @@
 <header class="top">
   <div class="top-row">
     <div class="titles"><h1>Expedições</h1></div>
-    <div class="acoes-topo">
-      <a class="link-topo" href="/">Voltar ao board</a>
-      <a class="link-topo" href="/demandas">Demandas</a>
-      <span class="quem" id="quem"></span>
-    </div>
+    <nav data-menu="expedicoes"></nav>
   </div>
 </header>
 
@@ -217,6 +213,7 @@
   </div>
 </main>
 
+<script src="/menu.js"></script>
 <script src="/dialogo.js"></script>
 <script>
   (function () {
@@ -829,10 +826,6 @@
         if (forcarJira) mostrarSincronia({ status: 'atualizada', texto: 'Itens do Jira atualizados agora.' });
       }).catch(function () { area.innerHTML = '<div class="vazio">Não foi possível carregar as expedições agora.</div>'; });
     }
-
-    fetch('/api/eu').then(function (r) { return r.ok ? r.json() : null; }).then(function (eu) {
-      if (eu && eu.email) document.getElementById('quem').textContent = eu.email;
-    }).catch(function () {});
 
     renderBarra();
     carregar();

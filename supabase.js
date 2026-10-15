@@ -464,11 +464,44 @@ function porSemanaPlanejamento(linhas, sprintOrigemId) {
  * ainda não existe (script supabase-acessos.sql não rodou) ou o Supabase
  * falhar, loga e segue - login não pode depender disto pra funcionar. */
 async function registrarAcesso(email, tipo) {
+  // Quem chama ESPERA (await): na Vercel a função pode ser congelada assim que
+  // a resposta sai, e uma gravação solta se perderia sem erro nenhum.
   try {
-    const { error } = await db().from('acessos').insert({ email, tipo });
+    // Minúsculo, para bater com a conferência da visita do dia.
+    const { error } = await db().from('acessos').insert({ email: String(email || '').trim().toLowerCase(), tipo });
     if (error) throw new Error(error.message);
   } catch (erro) {
     console.error('[supabase] falha ao registrar acesso (login segue normal):', erro.message);
+  }
+}
+
+/** "Visita do dia": a primeira vez no dia (horário de Brasília) que alguém
+ * usa o sistema, mesmo já logado. O login vale 7 dias, então só "login" no
+ * histórico mostrava uma linha por semana de quem usa todo dia.
+ *
+ * No máximo uma linha por pessoa por dia: se já há QUALQUER registro dela
+ * hoje (login ou visita), não grava. A memória abaixo evita ir ao banco a cada
+ * tela aberta; ela é por instância do servidor, então a conferência no banco é
+ * o que vale - duas instâncias ao mesmo tempo podem, raramente, gravar duas.
+ * Falha só loga: nunca derruba a tela de ninguém. */
+const visitasDoDia = new Map(); // email -> 'AAAA-MM-DD' já conferido nesta instância
+
+async function registrarVisitaDoDia(email, hoje) {
+  const chave = String(email || '').trim().toLowerCase();
+  if (!chave || visitasDoDia.get(chave) === hoje) return;
+  try {
+    // Brasília não tem horário de verão: o dia começa às 00:00 -03:00.
+    const { data, error } = await db().from('acessos')
+      .select('id').eq('email', chave).gte('criado_em', `${hoje}T00:00:00-03:00`).limit(1);
+    if (error) throw new Error(error.message);
+    if (!data || !data.length) {
+      const ins = await db().from('acessos').insert({ email: chave, tipo: 'visita' });
+      if (ins.error) throw new Error(ins.error.message);
+    }
+    visitasDoDia.set(chave, hoje);
+    if (visitasDoDia.size > 5000) visitasDoDia.clear();
+  } catch (erro) {
+    console.error('[supabase] falha ao registrar visita (tela segue normal):', erro.message);
   }
 }
 
@@ -831,5 +864,5 @@ module.exports = {
   gravarPlanejamento, limparPlanejamento, lerPlanejamentoSprint, lerCarryOverEntregue,
   listarPlanejamentoPorSprint, resumirPlanejamento, porSemanaPlanejamento, listarItensPlanejamento,
   classificarItensPlanejamento, listarItensCarryOver, montarItensCarryOver, contarCarryOverPorSprint,
-  registrarAcesso, listarAcessos, listarUsuarios, montarListaUsuarios, confirmarUsuarioManualmente
+  registrarAcesso, registrarVisitaDoDia, listarAcessos, listarUsuarios, montarListaUsuarios, confirmarUsuarioManualmente
 };

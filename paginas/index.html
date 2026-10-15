@@ -109,6 +109,18 @@
 
   .controls { display: flex; align-items: center; gap: 10px; }
 
+  /* Segunda linha do topo: o que é desta tela (daily, atualizar, filtro). O
+   * menu, igual em todas as telas, fica na linha do título (/menu.js). */
+  .acoes-linha {
+    max-width: 1400px;
+    margin: 16px auto 0;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    flex-wrap: wrap;
+  }
+
   .search { position: relative; }
 
   .search input {
@@ -163,63 +175,6 @@
     stroke: currentColor; fill: none; stroke-width: 2;
   }
 
-  .usuario {
-    display: flex; align-items: center; gap: 8px;
-    padding-right: 8px; margin-right: 2px;
-    border-right: 1px solid var(--line);
-  }
-
-  .usuario img {
-    width: 26px; height: 26px; border-radius: 50%; display: block;
-  }
-
-  .usuario .nome { font-size: 0.8rem; color: var(--ink-dim); }
-
-  .usuario .sair {
-    font-size: 0.76rem;
-    color: var(--ink-faint);
-    background: none; border: none; cursor: pointer;
-    text-decoration: underline;
-    font-family: inherit;
-    padding: 0;
-  }
-
-  .usuario .sair:hover { color: var(--warn); }
-
-  .link-portal {
-    display: none;
-    align-items: center;
-    gap: 5px;
-    padding-right: 10px;
-    margin-right: 2px;
-    border-right: 1px solid var(--line);
-    color: var(--ink-faint);
-    font-size: 0.8rem;
-    text-decoration: none;
-  }
-  .link-portal:hover { color: var(--accent); }
-
-  /* Peso proprio, nao o apagado do .link-portal: aquele foi pensado para um
-   * link secundario e opcional (so aparece com HUB_URL configurada); o
-   * Dashboard e recurso de verdade e sempre visivel, merece se destacar. */
-  .link-dashboard {
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-    padding: 7px 13px;
-    margin-right: 6px;
-    border-radius: 8px;
-    border: 1px solid var(--accent);
-    background: var(--accent-soft);
-    color: var(--accent);
-    font-size: 0.8rem;
-    font-weight: 600;
-    text-decoration: none;
-    transition: opacity 0.15s ease;
-  }
-  .link-dashboard:hover { opacity: 0.8; }
-  .link-dashboard svg { width: 14px; height: 14px; stroke: currentColor; fill: none; stroke-width: 2; }
-  .link-portal svg { width: 13px; height: 13px; stroke: currentColor; fill: none; stroke-width: 2; }
 
   .btn-refresh.girando svg { animation: girar 0.8s linear infinite; }
 
@@ -227,6 +182,92 @@
 
   @media (prefers-reduced-motion: reduce) {
     .btn-refresh.girando svg { animation: none; }
+  }
+
+  /* ---- daily ----
+   * Igual ao "Iniciar daily" do Jira: percorre o time uma pessoa por vez,
+   * filtrando o quadro. Só filtro de tela - nada é gravado. */
+  .btn-refresh[aria-pressed="true"] {
+    border-color: var(--accent); background: var(--accent); color: #fff;
+  }
+  .btn-refresh[aria-pressed="true"]:hover:not(:disabled) { color: #fff; opacity: 0.88; }
+
+  .daily {
+    max-width: 1400px;
+    margin: 14px auto 0;
+    padding: 8px 10px;
+    border-radius: 10px;
+    border: 1px solid var(--accent);
+    background: var(--accent-soft);
+    display: none;
+    align-items: center;
+    gap: 10px;
+  }
+  .daily.on { display: flex; }
+  .daily-rotulo {
+    font-family: ui-monospace, "Cascadia Mono", Consolas, monospace;
+    font-size: 0.7rem; font-weight: 700; letter-spacing: 0.06em;
+    text-transform: uppercase; color: var(--accent); flex-shrink: 0;
+  }
+  .daily .btn-refresh { flex-shrink: 0; padding: 6px 10px; }
+  .daily-pessoas { display: flex; flex-wrap: wrap; gap: 6px; flex: 1; min-width: 0; }
+
+  .chip-pessoa {
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 3px 10px 3px 3px;
+    border-radius: 100px;
+    border: 1px solid var(--line);
+    background: var(--bg-panel);
+    color: var(--ink);
+    font-family: inherit; font-size: 0.78rem;
+    cursor: pointer;
+    transition: border-color 0.12s ease;
+  }
+  .chip-pessoa:hover { border-color: var(--accent); }
+  .chip-pessoa.sem-foto { padding-left: 10px; }
+  .chip-pessoa .n {
+    font-family: ui-monospace, Consolas, monospace;
+    font-size: 0.66rem; color: var(--ink-faint);
+    font-variant-numeric: tabular-nums;
+  }
+  .chip-pessoa[aria-pressed="true"] {
+    border-color: var(--accent); background: var(--accent); color: #fff; font-weight: 700;
+  }
+  .chip-pessoa[aria-pressed="true"] .n { color: #fff; opacity: 0.85; }
+  /* Do time, mas sem card hoje: continua na fila (fala na daily), só mais apagado. */
+  .chip-pessoa.zero:not([aria-pressed="true"]) { color: var(--ink-faint); border-style: dashed; }
+  .chip-pessoa.zero:not([aria-pressed="true"]) .avatar { opacity: 0.6; }
+
+  /* Dentro do card, na vez de alguém: as tarefas DELA naquele épico. O card
+   * mostra só o responsável principal; sem isto, quem tem uma subtarefa num
+   * épico de outra pessoa não acharia o que falar. */
+  .card-daily {
+    margin-top: 9px; padding-top: 8px;
+    border-top: 1px dashed var(--line);
+    display: flex; flex-direction: column; gap: 5px;
+  }
+  .card-daily .quem-vez { font-size: 0.66rem; font-weight: 700; color: var(--accent); }
+  /* Chave e status em cima, título embaixo: lado a lado, numa coluna estreita,
+   * o título virava uma tira de uma palavra por linha (mesmo caso do painel). */
+  .card-daily .t { font-size: 0.74rem; line-height: 1.35; }
+  .card-daily .t .linha1 { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+  .card-daily .t .k {
+    font-family: ui-monospace, Consolas, monospace;
+    font-size: 0.64rem; color: var(--ink-faint);
+  }
+  .card-daily .t .nome-t { display: block; color: var(--ink); }
+  .card-daily .t .st {
+    flex-shrink: 0; font-size: 0.6rem; font-weight: 600;
+    text-transform: uppercase; letter-spacing: 0.04em; white-space: nowrap;
+  }
+  .card-daily .t.feito .nome-t { color: var(--ink-faint); text-decoration: line-through; }
+
+  .popover li.minha .txt { font-weight: 700; }
+  .popover li.minha { background: var(--accent-soft); border-radius: 6px; margin: -3px -6px; padding: 3px 6px; }
+
+  @media (max-width: 700px) {
+    .daily { flex-wrap: wrap; }
+    .daily-pessoas { order: 3; flex-basis: 100%; }
   }
 
   .aviso {
@@ -465,6 +506,7 @@
 
   @media (max-width: 1080px) {
     .board { grid-auto-flow: row; grid-auto-columns: unset; }
+    .controls { flex-wrap: wrap; }
     .search input { width: 100%; }
   }
 
@@ -479,41 +521,38 @@
       <h1>Kanban BRB <span class="badge" id="badgeSprint"><span class="dot"></span></span></h1>
       <p id="subtitulo">Equipe Exclusiva — Tarefas Dimensa</p>
     </div>
+    <nav data-menu="kanban"></nav>
+  </div>
+  <div class="acoes-linha">
     <div class="controls">
-      <a class="link-dashboard" href="/dashboard" title="Métricas e andamento do sprint">
-        <svg viewBox="0 0 24 24" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19V10M10 19V5M16 19v-6M22 19H2"></path></svg>
-        Dashboard
-      </a>
-      <a class="link-dashboard" href="/demandas" title="Demandas, pontos de função e o que cada etapa já entregou">
-        <svg viewBox="0 0 24 24" stroke-linecap="round" stroke-linejoin="round"><path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"></path></svg>
-        Demandas
-      </a>
-      <a class="link-dashboard" href="/expedicoes" id="linkExpedicoes" style="display:none" title="Checklist do time antes de comitar e de expedir">
-        <svg viewBox="0 0 24 24" stroke-linecap="round" stroke-linejoin="round"><path d="M9 11l3 3L22 4M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"></path></svg>
-        Expedições
-      </a>
-      <a class="link-dashboard" href="/admin" id="linkAdmin" style="display:none" title="Usuários e histórico de acessos">
-        <svg viewBox="0 0 24 24" stroke-linecap="round" stroke-linejoin="round"><path d="M12 15a3 3 0 100-6 3 3 0 000 6z"></path><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 11-2.83 2.83l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 11-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 11-2.83-2.83l.06-.06A1.65 1.65 0 005 15a1.65 1.65 0 00-1.51-1H3.4a2 2 0 110-4H3.5a1.65 1.65 0 001-1.51 1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 112.83-2.83l.06.06A1.65 1.65 0 009 5a1.65 1.65 0 001-1.51V3a2 2 0 114 0v.09A1.65 1.65 0 0015 5a1.65 1.65 0 001.82.33l.06-.06a2 2 0 112.83 2.83l-.06.06A1.65 1.65 0 0019 9a1.65 1.65 0 001.51 1H20.6a2 2 0 110 4h-.09A1.65 1.65 0 0019 15z"></path></svg>
-        Admin
-      </a>
-      <a class="link-portal" id="linkPortal" href="#">
-        <svg viewBox="0 0 24 24" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5M12 19l-7-7 7-7"></path></svg>
-        Portal
-      </a>
-      <div class="usuario" id="usuario" style="display:none">
-        <span class="nome" id="usuarioNome"></span>
-        <button class="sair" id="btnSair" type="button">Sair</button>
-      </div>
+      <button class="btn-refresh" id="btnDaily" type="button" aria-pressed="false" title="Percorre o time uma pessoa por vez, filtrando o quadro">
+        <svg viewBox="0 0 24 24" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="8" r="3"></circle><path d="M3.5 20c0-3 2.5-4.7 5.5-4.7s5.5 1.7 5.5 4.7"></path><path d="M16.5 5.5a3 3 0 0 1 0 5.6M18 20c0-2.2-.8-3.7-2-4.6"></path></svg>
+        <span id="btnDailyTexto">Iniciar daily</span>
+      </button>
       <button class="btn-refresh" id="btnAtualizar" type="button">
         <svg viewBox="0 0 24 24" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-2.64-6.36"></path><polyline points="21 3 21 9 15 9"></polyline></svg>
         <span id="btnAtualizarTexto">Atualizar agora</span>
       </button>
+    </div>
+    <div class="controls">
       <div class="search-count" id="searchCount"></div>
       <div class="search">
         <svg viewBox="0 0 24 24" stroke-linecap="round"><circle cx="11" cy="11" r="7"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
         <input type="text" id="filtro" placeholder="Filtrar tarefas..." autocomplete="off">
       </div>
     </div>
+  </div>
+  <div class="daily" id="daily" role="toolbar" aria-label="Daily: um responsável por vez">
+    <span class="daily-rotulo">Daily</span>
+    <button class="btn-refresh" id="dailyAnt" type="button" title="Pessoa anterior (seta ←)">
+      <svg viewBox="0 0 24 24" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"></path></svg>
+      Anterior
+    </button>
+    <div class="daily-pessoas" id="dailyPessoas"></div>
+    <button class="btn-refresh" id="dailyProx" type="button" title="Próxima pessoa (seta →)">
+      Próximo
+      <svg viewBox="0 0 24 24" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18l6-6-6-6"></path></svg>
+    </button>
   </div>
   <div class="aviso" id="aviso" style="display:none"></div>
 </header>
@@ -525,8 +564,33 @@
   <span id="rodapeDir"></span>
 </footer>
 
+<script src="/menu.js"></script>
 <script>
   var dados = { vazio: true, colunas: [], pessoas: {} };
+
+  // Daily: pessoa = accountId do Jira, SEM_RESP, FORA_TIME, ou null (todos).
+  var SEM_RESP = '__sem';
+  var FORA_TIME = '__fora';
+  var daily = { ativa: false, pessoa: null };
+
+  /* Quem participa da daily: o time, com o nome como aparece no Teams. Pelo
+   * accountId do Jira, nunca pelo nome - lá os nomes variam ("marcelo.aaraujo",
+   * "Leandro Mesquita Gaya") e há homônimos. Quem é de fora e mexeu em algum
+   * card continua no quadro, só não tem vez na daily. Entrou ou saiu alguém do
+   * time: é aqui. */
+  var TIME_DAILY = {
+    '627d204e694943006f35c668': 'Eldon Elias Oliveira',
+    '712020:2ed7d65a-7f6f-45e0-a97b-0b96524ddc6f': 'Eric Aguiar',
+    '712020:0ada5872-30e6-4b3b-affd-c5b855cd3896': 'Fabiana Araujo',
+    '64120897c35660c269ba3904': 'Leandro Gaya',
+    '712020:df7beb21-9c3a-45e5-af1e-9ad56881de90': 'Leonardo Carneiro',
+    '712020:7f99b41c-6e99-43d4-8c8f-b675a5832526': 'Marcelo Araujo',
+    '712020:35784b3f-4035-4d9c-bbb5-f9bc05e547fe': 'Paulo R. Barros',
+    '712020:e3b0428d-8321-4080-969b-a9daa6e19cf7': 'Rafael Tettamanzy',
+    '712020:3b07b390-b117-47b2-85c8-d532bac84789': 'Ricardo Sousa',
+    '712020:7a1d248d-e8cd-432e-a938-c0049ef0a463': 'Sam Ludwig',
+    '712020:69da5bed-1321-4791-a58a-432b90921148': 'Silas Fellipe'
+  };
 
   function esc(s) {
     return String(s).replace(/[&<>"']/g, function (c) {
@@ -590,6 +654,20 @@
     return 'concluido';
   }
 
+  function avatarHtml(p) {
+    var cor = 'hsl(' + matiz(p.nome) + ', 42%, 40%)';
+    // Sem foto (quem do time ainda não tem card no quadro): só as iniciais.
+    if (!p.avatar) {
+      return '<span class="avatar"><span class="avatar-fallback" style="display:flex;background:' + cor + '">' +
+               esc(iniciais(p.nome)) + '</span></span>';
+    }
+    return '<span class="avatar">' +
+             '<img src="' + esc(p.avatar) + '" alt="" loading="lazy" ' +
+               'onerror="this.style.display=\'none\';this.nextElementSibling.style.display=\'flex\'">' +
+             '<span class="avatar-fallback" style="background:' + cor + '">' + esc(iniciais(p.nome)) + '</span>' +
+           '</span>';
+  }
+
   function montarCard(card, iCol, iCard) {
     var tarefas = card.tarefas || [];
 
@@ -630,14 +708,9 @@
       });
 
       if (p) {
-        var cor = 'hsl(' + matiz(p.nome) + ', 42%, 40%)';
         html += '<div class="card-meta">' +
                   '<span class="assignee-name">' + esc(p.nome) + '</span>' +
-                  '<span class="avatar">' +
-                    '<img src="' + esc(p.avatar) + '" alt="" loading="lazy" ' +
-                      'onerror="this.style.display=\'none\';this.nextElementSibling.style.display=\'flex\'">' +
-                    '<span class="avatar-fallback" style="background:' + cor + '">' + iniciais(p.nome) + '</span>' +
-                  '</span>' +
+                  avatarHtml(p) +
                 '</div>';
       } else {
         html += '<div class="card-meta">' +
@@ -735,6 +808,10 @@
       : totalCards + ' tarefas · ' + dados.colunas.length + ' colunas';
     document.getElementById('rodapeDir').textContent =
       'Atualizado em ' + formatarData(dados.atualizadoEm);
+
+    // A lista de pessoas pode mudar a cada atualização (alguém pegou ou
+    // largou uma tarefa): refaz a faixa sem encerrar a daily.
+    if (daily.ativa) renderDaily();
   }
 
   function carregarDados() {
@@ -763,25 +840,8 @@
       render({ vazio: true, erro: String(erro && erro.message || erro), colunas: [], pessoas: {} });
     });
 
-  fetch('/api/eu').then(function (r) { return r.ok ? r.json() : null; }).then(function (eu) {
-    if (!eu) return;
-    document.getElementById('usuarioNome').textContent = eu.email;
-    document.getElementById('usuario').style.display = 'flex';
-    if (eu.hubUrl) {
-      var link = document.getElementById('linkPortal');
-      link.href = eu.hubUrl;
-      link.style.display = 'flex';
-    }
-    if (eu.admin) document.getElementById('linkAdmin').style.display = 'flex';
-    // Expedições é controle interno: o link só existe para Dimensa/Evertec
-    if (eu.editor) document.getElementById('linkExpedicoes').style.display = 'flex';
-  });
-
-  document.getElementById('btnSair').addEventListener('click', function () {
-    fetch('/auth/logout', { method: 'POST' }).then(function () {
-      window.location.href = '/login.html';
-    });
-  });
+  // Menu, Portal, quem está logado e Sair: tudo no /menu.js, igual em todas
+  // as telas. O Admin fica só no Portal.
 
   var btnAtualizar = document.getElementById('btnAtualizar');
   var btnAtualizarTexto = document.getElementById('btnAtualizarTexto');
@@ -817,23 +877,206 @@
 
   function aplicarFiltro() {
     var q = filtro.value.trim().toLowerCase();
+    var porPessoa = daily.ativa && daily.pessoa !== null;
     var visiveis = 0, total = 0;
 
     document.querySelectorAll('.cards').forEach(function (colEl) {
       var cards = colEl.querySelectorAll('.card');
       var naColuna = 0;
-      cards.forEach(function (card) {
+      cards.forEach(function (el) {
         total++;
-        var bate = !q || card.getAttribute('data-text').indexOf(q) !== -1;
-        card.classList.toggle('hidden', !bate);
+        var card = cardDe(el);
+        var bate = (!q || el.getAttribute('data-text').indexOf(q) !== -1) &&
+          (!porPessoa || (card && cardDaVez(card)));
+        el.classList.toggle('hidden', !bate);
         if (bate) { naColuna++; visiveis++; }
+
+        var velha = el.querySelector('.card-daily');
+        if (velha) velha.remove();
+        var nota = bate && card ? notaDaily(card) : null;
+        if (nota) el.appendChild(nota);
       });
       var nm = colEl.querySelector('.no-match');
-      if (nm) nm.style.display = (q && naColuna === 0 && cards.length > 0) ? 'block' : 'none';
+      if (nm) {
+        nm.style.display = ((q || porPessoa) && naColuna === 0 && cards.length > 0) ? 'block' : 'none';
+        nm.textContent = (porPessoa && !q) ? 'Nada aqui nesta vez' : 'Nenhum resultado';
+      }
     });
 
-    contador.textContent = q ? visiveis + ' de ' + total : '';
+    contador.textContent = (q || porPessoa) ? visiveis + ' de ' + total : '';
   }
+
+  /* ---- daily ----
+   * Regra combinada com o time: na vez de alguém, aparece todo card em que a
+   * pessoa tem QUALQUER tarefa ou subtarefa - mesmo que o épico esteja no nome
+   * de outro. É o jeito de ninguém ficar de fora só porque trabalha num épico
+   * alheio. "Sem responsável" segue o que o card mostra (card.pessoa vazio).
+   * "Fora do time": card com gente, mas ninguém do time - sem esta parada ele
+   * nunca apareceria em vez nenhuma. */
+  function cardDaVez(card) {
+    if (daily.pessoa === SEM_RESP) return !card.pessoa;
+    if (daily.pessoa === FORA_TIME) return ehForaDoTime(card);
+    return (card.tarefas || []).some(function (t) { return t.pessoa === daily.pessoa; });
+  }
+
+  function ehForaDoTime(card) {
+    var tarefas = card.tarefas || [];
+    return tarefas.some(function (t) { return t.pessoa; }) &&
+      !tarefas.some(function (t) { return t.pessoa && TIME_DAILY[t.pessoa]; });
+  }
+
+  /* O time inteiro, em ordem alfabética - inclusive quem não tem card hoje
+   * (aparece com 0 e tem a vez do mesmo jeito: fala mesmo sem card). Depois,
+   * "Fora do time" e "Sem responsável", só se existirem. */
+  function pessoasDaDaily() {
+    var cont = {};
+    var semResp = 0, fora = 0;
+    (dados.colunas || []).forEach(function (col) {
+      col.cards.forEach(function (card) {
+        var ids = {};
+        (card.tarefas || []).forEach(function (t) { if (t.pessoa) ids[t.pessoa] = true; });
+        Object.keys(ids).forEach(function (id) { cont[id] = (cont[id] || 0) + 1; });
+        if (!card.pessoa) semResp++;
+        if (ehForaDoTime(card)) fora++;
+      });
+    });
+    var lista = Object.keys(TIME_DAILY).map(function (id) {
+      return { id: id, nome: TIME_DAILY[id], n: cont[id] || 0 };
+    });
+    lista.sort(function (a, b) { return a.nome.localeCompare(b.nome, 'pt-BR', { sensitivity: 'base' }); });
+    if (fora) lista.push({ id: FORA_TIME, nome: 'Fora do time', n: fora });
+    if (semResp) lista.push({ id: SEM_RESP, nome: 'Sem responsável', n: semResp });
+    return lista;
+  }
+
+  /* As tarefas da pessoa da vez dentro do card. Dispensada quando não acrescenta
+   * nada: card de uma tarefa só, já no nome dela. Montada com textContent - os
+   * títulos vêm do Jira. */
+  function notaDaily(card) {
+    if (!daily.ativa || !TIME_DAILY[daily.pessoa]) return null;
+    var tarefas = card.tarefas || [];
+    var minhas = tarefas.filter(function (t) { return t.pessoa === daily.pessoa; });
+    if (!minhas.length) return null;
+    if (tarefas.length === 1 && card.pessoa === daily.pessoa) return null;
+    minhas.sort(function (a, b) { return (a.subtarefa ? 1 : 0) - (b.subtarefa ? 1 : 0); });
+
+    var div = document.createElement('div');
+    div.className = 'card-daily';
+    var topo = document.createElement('div');
+    topo.className = 'quem-vez';
+    topo.textContent = (minhas.length === 1 ? 'Tarefa de ' : 'Tarefas de ') +
+      TIME_DAILY[daily.pessoa].split(/\s+/)[0] + ' neste card:';
+    div.appendChild(topo);
+    minhas.forEach(function (t) {
+      var linha = document.createElement('div');
+      linha.className = 't' + (t.concluida ? ' feito' : '');
+      var k = document.createElement('span');
+      k.className = 'k';
+      k.textContent = t.chave || '';
+      var nome = document.createElement('span');
+      nome.className = 'nome-t';
+      nome.textContent = (t.subtarefa ? '↳ ' : '') + t.titulo;
+      var st = document.createElement('span');
+      st.className = 'st';
+      st.style.color = 'var(--c-' + corDaColuna(t.coluna) + ')';
+      st.textContent = ROTULO_STATUS[t.coluna] || t.coluna;
+      var linha1 = document.createElement('div');
+      linha1.className = 'linha1';
+      linha1.appendChild(k);
+      linha1.appendChild(st);
+      linha.appendChild(linha1);
+      linha.appendChild(nome);
+      div.appendChild(linha);
+    });
+    return div;
+  }
+
+  var btnDaily = document.getElementById('btnDaily');
+  var faixaDaily = document.getElementById('daily');
+  var pessoasEl = document.getElementById('dailyPessoas');
+
+  function renderDaily() {
+    btnDaily.setAttribute('aria-pressed', daily.ativa ? 'true' : 'false');
+    document.getElementById('btnDailyTexto').textContent = daily.ativa ? 'Encerrar daily' : 'Iniciar daily';
+    faixaDaily.classList.toggle('on', daily.ativa);
+    if (!daily.ativa) { pessoasEl.innerHTML = ''; return; }
+
+    var lista = pessoasDaDaily();
+    // Quem saiu do quadro numa atualização no meio da daily: volta para "Todos"
+    // em vez de mostrar um quadro vazio sem explicação.
+    if (daily.pessoa && !lista.some(function (x) { return x.id === daily.pessoa; })) daily.pessoa = null;
+
+    var h = '<button type="button" class="chip-pessoa sem-foto" data-p="" aria-pressed="' +
+      (daily.pessoa === null ? 'true' : 'false') + '">Todos</button>';
+    lista.forEach(function (x) {
+      // Nome do Teams com a foto do Jira (quando a pessoa já tem card).
+      var noJira = dados.pessoas && dados.pessoas[x.id];
+      var p = TIME_DAILY[x.id] ? { nome: x.nome, avatar: noJira ? noJira.avatar : '' } : null;
+      h += '<button type="button" class="chip-pessoa' + (p ? '' : ' sem-foto') + (x.n ? '' : ' zero') + '" data-p="' + esc(x.id) + '" ' +
+             'aria-pressed="' + (daily.pessoa === x.id ? 'true' : 'false') + '" ' +
+             'title="' + esc(x.nome) + ' · ' + x.n + (x.n === 1 ? ' card' : ' cards') + '">' +
+             (p ? avatarHtml(p) : '') + esc(x.nome) + ' <span class="n">' + x.n + '</span>' +
+           '</button>';
+    });
+    pessoasEl.innerHTML = h;
+
+    var ativo = pessoasEl.querySelector('[aria-pressed="true"]');
+    if (ativo && ativo.scrollIntoView) ativo.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+  }
+
+  function escolherPessoa(id) {
+    daily.pessoa = id;
+    fecharPopover();
+    renderDaily();
+    aplicarFiltro();
+  }
+
+  // Anterior/Próximo percorrem só as pessoas, em ordem alfabética e em volta;
+  // "Todos" é a pausa, fora do ciclo.
+  function andarDaily(passo) {
+    var lista = pessoasDaDaily();
+    if (!lista.length) return;
+    var i = -1;
+    for (var j = 0; j < lista.length; j++) if (lista[j].id === daily.pessoa) i = j;
+    if (i === -1) i = passo > 0 ? 0 : lista.length - 1;
+    else i = (i + passo + lista.length) % lista.length;
+    escolherPessoa(lista[i].id);
+  }
+
+  function alternarDaily() {
+    daily.ativa = !daily.ativa;
+    daily.pessoa = null;
+    if (daily.ativa) {
+      // Começa já na primeira pessoa: é o que a reunião faz ao abrir.
+      var lista = pessoasDaDaily();
+      daily.pessoa = lista.length ? lista[0].id : null;
+    }
+    fecharPopover();
+    renderDaily();
+    aplicarFiltro();
+  }
+
+  btnDaily.addEventListener('click', alternarDaily);
+  document.getElementById('dailyProx').addEventListener('click', function () { andarDaily(1); });
+  document.getElementById('dailyAnt').addEventListener('click', function () { andarDaily(-1); });
+  pessoasEl.addEventListener('click', function (e) {
+    var chip = e.target.closest ? e.target.closest('.chip-pessoa') : null;
+    if (!chip) return;
+    escolherPessoa(chip.getAttribute('data-p') || null);
+  });
+
+  // Setas trocam de pessoa e Esc encerra - menos quando se está digitando.
+  document.addEventListener('keydown', function (e) {
+    if (!daily.ativa || e.altKey || e.ctrlKey || e.metaKey) return;
+    var alvo = e.target;
+    if (alvo && (alvo.tagName === 'INPUT' || alvo.tagName === 'TEXTAREA' || alvo.isContentEditable)) return;
+    if (e.key === 'ArrowRight') { e.preventDefault(); andarDaily(1); }
+    else if (e.key === 'ArrowLeft') { e.preventDefault(); andarDaily(-1); }
+    else if (e.key === 'Escape') {
+      // Primeiro Esc fecha o detalhe aberto; o seguinte encerra a daily.
+      if (popover.classList.contains('on')) fecharPopover(); else alternarDaily();
+    }
+  });
 
   filtro.addEventListener('input', aplicarFiltro);
 
@@ -871,7 +1114,8 @@
     tarefas.forEach(function (t) {
       var p = t.pessoa ? dados.pessoas[t.pessoa] : null;
       var cor = corDaColuna(t.coluna);
-      h += '<li class="' + (t.subtarefa ? 'sub' : '') + (t.concluida ? ' feito' : '') + '">' +
+      var daVez = daily.ativa && daily.pessoa && t.pessoa === daily.pessoa;
+      h += '<li class="' + (t.subtarefa ? 'sub' : '') + (t.concluida ? ' feito' : '') + (daVez ? ' minha' : '') + '">' +
              '<span class="marca" style="background:var(--c-' + cor + ')"></span>' +
              '<div class="corpo">' +
                '<div class="meta">' +

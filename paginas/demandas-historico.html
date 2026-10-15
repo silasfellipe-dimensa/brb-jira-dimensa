@@ -114,10 +114,7 @@
 <header class="top">
   <div class="top-row">
     <div class="titles"><h1>Histórico de Demandas</h1></div>
-    <div class="acoes-topo">
-      <a class="link-topo" href="/demandas">Voltar às demandas</a>
-      <span class="quem" id="quem"></span>
-    </div>
+    <nav data-menu=""></nav>
   </div>
 </header>
 
@@ -131,6 +128,7 @@
   </div>
 </main>
 
+<script src="/menu.js"></script>
 <script>
   (function () {
     var LIMITE = 1000;
@@ -281,10 +279,6 @@
       if (e.target.id === 'selAcao') { estado.acao = e.target.value; return render(); }
       if (e.target.id === 'selMes') { estado.mes = e.target.value; guardarNaUrl(); carregar(); }
     });
-
-    fetch('/api/eu').then(function (r) { return r.ok ? r.json() : null; }).then(function (eu) {
-      if (eu && eu.email) document.getElementById('quem').textContent = eu.email;
-    }).catch(function () {});
 
     carregar();
   })();

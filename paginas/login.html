@@ -140,10 +140,10 @@
 
     <form id="formulario">
       <label for="email">E-mail<span class="obrig">*</span></label>
-      <input type="email" id="email" required autocomplete="username">
+      <input type="email" id="email" name="username" required autocomplete="username">
 
       <label for="senha">Senha<span class="obrig">*</span></label>
-      <input type="password" id="senha" required autocomplete="current-password" minlength="8">
+      <input type="password" id="senha" name="password" required autocomplete="current-password" minlength="8">
 
       <button class="principal" type="submit" id="botaoPrincipal">Entrar</button>
     </form>
@@ -182,6 +182,24 @@
       aviso.style.display = 'none';
     }
 
+    /* Pede ao navegador para guardar o login. Como a entrada é feita sem
+     * recarregar a página (fetch), o Chrome/Edge nem sempre percebem que deu
+     * certo e não oferecem salvar a senha. PasswordCredential é o pedido
+     * explícito; onde não existe (Firefox, Safari) fica a detecção normal do
+     * navegador. Nunca segura a entrada: no máximo 3 s, e erro é ignorado. A
+     * senha vai só para o cofre do próprio navegador, nada é gravado aqui. */
+    function guardarNoNavegador(email, senha) {
+      if (!window.PasswordCredential || !navigator.credentials || !navigator.credentials.store) return Promise.resolve();
+      var pedido;
+      try {
+        pedido = navigator.credentials.store(new window.PasswordCredential({ id: email, password: senha, name: email }));
+      } catch (e) { return Promise.resolve(); }
+      return Promise.race([
+        Promise.resolve(pedido).catch(function () {}),
+        new Promise(function (r) { setTimeout(r, 3000); })
+      ]);
+    }
+
     document.getElementById('formulario').addEventListener('submit', function (ev) {
       ev.preventDefault();
       esconderAviso();
@@ -206,7 +224,7 @@
             return;
           }
           if (modo === 'entrar') {
-            window.location.href = '/';
+            guardarNoNavegador(email, senha).then(function () { window.location.href = '/'; });
           } else {
             setModo('entrar');
             mostrarAviso('Cadastro criado! Enviamos um e-mail para você. Verifique sua caixa de entrada e clique no link de confirmação antes de entrar.', 'ok');

@@ -309,11 +309,7 @@
     <div class="titles">
       <h1>Demandas</h1>
     </div>
-    <div class="acoes-topo" id="acoesTopo">
-      <a class="link-topo" href="/">Voltar ao board</a>
-      <a class="link-topo" href="/dashboard">Dashboard</a>
-      <span class="quem" id="quem"></span>
-    </div>
+    <nav data-menu="demandas"></nav>
   </div>
 </header>
 
@@ -334,6 +330,7 @@
   </div>
 </main>
 
+<script src="/menu.js"></script>
 <script src="/dialogo.js"></script>
 <script>
   (function () {
@@ -1189,18 +1186,7 @@
       }).catch(function () { falhaAoCarregar(); });
     }
 
-    fetch('/api/eu').then(function (r) { return r.ok ? r.json() : null; }).then(function (eu) {
-      if (eu && eu.email) document.getElementById('quem').textContent = eu.email;
-      if (eu && eu.editor) {
-        var exp = document.createElement('a');
-        exp.className = 'link-topo';
-        exp.id = 'linkExpedicoes';
-        exp.href = '/expedicoes';
-        exp.textContent = 'Expedições';
-        var topo = document.getElementById('acoesTopo');
-        topo.insertBefore(exp, document.getElementById('quem'));
-      }
-    }).catch(function () {});
+    // Menu, Expedições (só a equipe), quem está logado e Sair: /menu.js.
 
     if (EDITANDO) iniciarEdicao(); else iniciarVisualizacao();
   })();

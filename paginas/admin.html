@@ -43,7 +43,7 @@
   header.top { background: var(--bg); border-bottom: 1px solid var(--line); padding: 22px 28px; }
   .top-row {
     display: flex; align-items: flex-end; justify-content: space-between;
-    gap: 24px; flex-wrap: wrap; max-width: 1100px; margin: 0 auto;
+    gap: 24px; flex-wrap: wrap; max-width: 1400px; margin: 0 auto;
   }
   .titles h1 { margin: 0 0 4px; font-size: 1.5rem; font-weight: 700; letter-spacing: -0.01em; }
   .titles p { margin: 0; color: var(--ink-dim); font-size: 0.875rem; }
@@ -79,6 +79,7 @@
     border-radius: 100px; text-transform: uppercase; letter-spacing: 0.03em;
   }
   .tag.login { background: var(--line-soft); color: var(--ink-dim); }
+  .tag.visita { background: none; border: 1px solid var(--line); color: var(--ink-faint); }
   .tag.cadastro { background: rgba(255,108,12,0.15); color: var(--accent); }
   .tag.nao-confirmado { background: rgba(168,69,46,0.12); color: var(--warn); }
   .tag.confirmado-manualmente { background: rgba(255,108,12,0.15); color: var(--accent); }
@@ -101,13 +102,7 @@
       <h1>Admin</h1>
       <p>Usuários cadastrados e histórico de acessos</p>
     </div>
-    <div class="acoes-topo">
-      <a class="link-board" href="/">
-        <svg viewBox="0 0 24 24"><path d="M15 18l-6-6 6-6"/></svg>
-        Voltar ao board
-      </a>
-      <span class="quem" id="quem"></span>
-    </div>
+    <nav data-menu=""></nav>
   </div>
 </header>
 
@@ -120,12 +115,14 @@
 
   <div class="cartao">
     <h2>Histórico de acessos</h2>
-    <p class="ajuda">Login e cadastro, do mais recente para o mais antigo. Só existe a partir de quando
-      esta página foi criada — acesso anterior a isso não aparece.</p>
+    <p class="ajuda">Login, cadastro e a primeira visita de cada pessoa no dia (quem já estava logado e
+      abriu o sistema), do mais recente para o mais antigo. Visitas contam a partir de 15/10/2026; logins,
+      desde quando esta página foi criada.</p>
     <div class="tabela-scroll" id="listaAcessos"><div class="vazio">Carregando…</div></div>
   </div>
 </main>
 
+<script src="/menu.js"></script>
 <script src="/dialogo.js"></script>
 <script>
     // Caixas de diálogo do sistema (/dialogo.js). Sem ele, cai no pop-up do navegador.
@@ -147,9 +144,6 @@
     });
   }
 
-  fetch('/api/eu').then(function (r) { return r.ok ? r.json() : null; }).then(function (eu) {
-    if (eu && eu.email) document.getElementById('quem').textContent = eu.email;
-  }).catch(function () {});
 
   function carregarUsuarios() {
     var alvo = document.getElementById('listaUsuarios');

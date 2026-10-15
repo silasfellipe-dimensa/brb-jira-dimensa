@@ -294,14 +294,7 @@
       <h1>Dashboard</h1>
       <p id="subtitulo">Carregando…</p>
     </div>
-    <div class="acoes-topo">
-      <a class="link-board" href="/demandas">Demandas</a>
-      <a class="link-board" href="/">
-        <svg viewBox="0 0 24 24"><path d="M15 18l-6-6 6-6"/></svg>
-        Voltar ao board
-      </a>
-      <span class="quem" id="quem"></span>
-    </div>
+    <nav data-menu="dashboard"></nav>
   </div>
 
   <div class="abas" role="tablist">
@@ -319,6 +312,7 @@
 
 <footer id="rodape"></footer>
 
+<script src="/menu.js"></script>
 <script>
   function esc(s) {
     return String(s).replace(/[&<>"']/g, function (c) {
@@ -1266,10 +1260,6 @@
   document.getElementById('abaCliente').addEventListener('click', function () { trocarAba('cliente'); });
   document.getElementById('abaTime').addEventListener('click', function () { trocarAba('time'); });
   document.getElementById('abaHistorico').addEventListener('click', function () { trocarAba('historico'); });
-
-  fetch('/api/eu').then(function (r) { return r.ok ? r.json() : null; }).then(function (eu) {
-    if (eu && eu.email) document.getElementById('quem').textContent = eu.email;
-  }).catch(function () {});
 
   Promise.all([
     fetch('/api/dados', { cache: 'no-store' }).then(function (r) { return r.json(); }),

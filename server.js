@@ -9,7 +9,7 @@ const {
   cadastrar, entrar, lerSnapshot, gravarSnapshot, gravarHistorico, lerHistorico,
   gravarEntregas, lerEntregas, listarSprintsEntregas, listarMesesEntregas, gravarPlanejamento,
   lerPlanejamentoSprint, lerCarryOverEntregue, listarPlanejamentoPorSprint, listarItensPlanejamento,
-  listarItensCarryOver, registrarAcesso, listarAcessos, listarUsuarios, confirmarUsuarioManualmente,
+  listarItensCarryOver, registrarAcesso, registrarVisitaDoDia, listarAcessos, listarUsuarios, confirmarUsuarioManualmente,
   listarDemandas, criarDemanda, atualizarDemanda, removerDemanda, listarHistoricoDemandas,
   lerExpedicao, listarChavesExpedicoes, listarExpedicoes, criarExpedicao, atualizarExpedicao, removerExpedicao,
   criarItemExpedicao, atualizarItemExpedicao, atualizarObservacaoItem, removerItemExpedicao
@@ -156,6 +156,13 @@ app.get('/dialogo.js', (req, res) => {
   res.type('application/javascript').sendFile(path.join(__dirname, 'static', 'dialogo.js'));
 });
 
+// Menu do topo, igual em todas as telas (público, sem dado nenhum: quem vê o
+// quê ele pergunta a /api/eu). Mesmo esquema do /dialogo.js acima.
+app.get('/menu.js', (req, res) => {
+  res.setHeader('Cache-Control', 'no-cache');
+  res.type('application/javascript').sendFile(path.join(__dirname, 'static', 'menu.js'));
+});
+
 app.get('/login.html', (req, res) => {
   res.sendFile(path.join(PUBLIC_DIR, 'login.html'));
 });
@@ -183,7 +190,7 @@ app.post('/auth/cadastro', limitarTentativas, async (req, res) => {
   try {
     await cadastrar(email, senha);
     console.log(`Cadastro iniciado: ${email} (aguardando confirmação por e-mail)`);
-    registrarAcesso(email, 'cadastro'); // best-effort, nao trava o cadastro
+    await registrarAcesso(email, 'cadastro'); // best-effort: falha só loga, nao trava o cadastro
     res.json({ ok: true });
   } catch (erro) {
     console.error(`Falha no cadastro de ${email}:`, erro.message);
@@ -216,7 +223,7 @@ app.post('/auth/entrar', limitarTentativas, async (req, res) => {
     });
 
     console.log(`Login: ${usuarioSupabase.email}`);
-    registrarAcesso(usuarioSupabase.email, 'login'); // best-effort, nao trava o login
+    await registrarAcesso(usuarioSupabase.email, 'login'); // best-effort: falha só loga, nao trava o login
     res.json({ ok: true });
   } catch (erro) {
     console.error(`Falha no login de ${email}:`, erro.message);
@@ -255,10 +262,32 @@ app.get('/', exigirSessaoPagina, (req, res) => {
   res.sendFile(path.join(PUBLIC_DIR, 'index.html'));
 });
 
-app.get('/api/eu', exigirSessaoApi, (req, res) => {
+// O BRB não usa o Portal (lá ele é mandado direto de volta para o Kanban):
+// sem o endereço, o menu nem mostra o atalho.
+function usaPortal(email) {
+  const partes = String(email || '').trim().toLowerCase().split('@');
+  return partes.length === 2 && partes[1] !== 'brb.com.br';
+}
+
+// Quem vê o Qualidade no menu: os mesmos domínios que o Portal usa para o
+// cartão dele (DOMINIOS_QUALIDADE do hub), que coincidem com o que o próprio
+// Qualidade aceita. Se o Qualidade mudar quem libera, as duas listas acompanham.
+// Sem QUALIDADE_URL configurada, o item simplesmente não aparece.
+const DOMINIOS_QUALIDADE = ['dimensa.com.br', 'brb.com.br', 'evertecinc.com.br'];
+
+function veQualidade(email) {
+  const partes = String(email || '').trim().toLowerCase().split('@');
+  return partes.length === 2 && DOMINIOS_QUALIDADE.includes(partes[1]);
+}
+
+// Toda tela pede /api/eu ao abrir (o menu do topo): é o ponto que marca a
+// "visita do dia" no histórico de acessos - uma linha por pessoa por dia.
+app.get('/api/eu', exigirSessaoApi, async (req, res) => {
+  await registrarVisitaDoDia(req.usuario.email, hojeBrasilia());
   res.json({
     ...req.usuario,
-    hubUrl: process.env.HUB_URL || null,
+    hubUrl: (process.env.HUB_URL && usaPortal(req.usuario.email)) ? process.env.HUB_URL : null,
+    qualidadeUrl: (process.env.QUALIDADE_URL && veQualidade(req.usuario.email)) ? process.env.QUALIDADE_URL : null,
     admin: souAdmin(req.usuario.email),
     editor: souEditor(req.usuario.email)
   });
@@ -568,7 +597,7 @@ app.post('/api/admin/usuarios/:id/confirmar', exigirSessaoApi, exigirAdminApi, a
   const resultado = await confirmarUsuarioManualmente(req.params.id);
   if (!resultado.ok) return res.status(400).json({ erro: 'Não foi possível confirmar esse usuário.' });
   console.log(`[admin] ${req.usuario.email} confirmou manualmente: ${resultado.email}`);
-  registrarAcesso(resultado.email, 'confirmado-manualmente');
+  await registrarAcesso(resultado.email, 'confirmado-manualmente');
   res.json({ ok: true });
 });
 
