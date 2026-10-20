@@ -124,6 +124,13 @@
   h3.grupo.sem-data { color: var(--accent); }
   .pilula.atencao { background: var(--accent-soft); color: var(--accent); }
   .exp-topo { display: flex; gap: 12px; align-items: flex-start; padding: 12px 14px; }
+  .exp-excluir {
+    flex-shrink: 0; align-self: center; width: 32px; height: 32px; padding: 0; cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
+    border: 1px solid var(--line); border-radius: 7px; background: var(--bg-panel); color: var(--ink-faint);
+  }
+  .exp-excluir svg { width: 15px; height: 15px; }
+  .exp-excluir:hover, .exp-excluir:focus-visible { border-color: var(--warn); color: var(--warn); outline: none; }
   .exp-toggle { flex-shrink: 0; width: 28px; height: 28px; margin-top: 18px; border: 1px solid var(--line); border-radius: 6px; background: var(--bg-panel); color: var(--ink-dim); transition: transform 0.12s ease; }
   .exp-toggle[aria-expanded="true"] { transform: rotate(90deg); }
   .exp-main { flex: 1; min-width: 0; }
@@ -219,6 +226,7 @@
 <script>
   (function () {
     // Caixas de diálogo do sistema (/dialogo.js). Sem ele, cai no pop-up do navegador.
+    var ICONE_LIXEIRA = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 6h18M8 6V4a2 2 0 012-2h4a2 2 0 012 2v2M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6M10 11v6M14 11v6"/></svg>';
     var ICONE_ATUALIZAR = '<svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 3v6h-6"/></svg>';
     var ICONE_NOTA = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 3H6a2 2 0 00-2 2v14a2 2 0 002 2h12a2 2 0 002-2V9z"/><path d="M14 3v6h6M8 13h8M8 17h5"/></svg>';
     var Dlg = window.Dialogo || {
@@ -462,7 +470,12 @@
           '<span class="barra-prog" role="progressbar" aria-valuenow="' + pct + '" aria-valuemin="0" aria-valuemax="100"><i style="width:' + pct + '%"></i></span>' +
           '<span class="prog-txt">' + resolvidos + ' de ' + p.total + (p.naoAplicaveis ? ' · ' + p.naoAplicaveis + ' N/A' : '') + '</span> ' + estadoTxt +
           (e.observacoes ? ' <span class="chip-obs">' + ICONE_NOTA + e.observacoes + (e.observacoes === 1 ? ' observação' : ' observações') + '</span>' : '') +
-        '</div></div></div>';
+        '</div></div>' +
+        // Excluir à vista, sem precisar abrir o cartão (o do rodapé do cartão
+        // aberto continua). Mesma confirmação, com o Jira e o nome em destaque.
+        '<button type="button" class="exp-excluir" data-acao="excluir" title="Excluir expedição" aria-label="Excluir expedição ' +
+          esc(rotuloExpedicao(e) || 'em branco') + '">' + ICONE_LIXEIRA + '</button>' +
+        '</div>';
       if (aberto) {
         h += '<div class="exp-corpo">' + notaJira(e) + blocoHtml(e, 'comitar') + blocoHtml(e, 'expedir') +
           '<div class="exp-rodape"><span>' + (e.atualizadoPor ? 'Última alteração: ' + esc(e.atualizadoPor) : '') + '</span>' +
