@@ -70,7 +70,9 @@
     { id: 'demandas', rotulo: 'Demandas', href: '/demandas', dica: 'Demandas, pontos de função e o que cada etapa já entregou' },
     { id: 'expedicoes', rotulo: 'Expedições', href: '/expedicoes', dica: 'Checklist do time antes de comitar e de expedir', soEquipe: true },
     { id: 'dashboard', rotulo: 'Dashboard', href: '/dashboard', dica: 'Métricas e andamento do sprint' },
-    { id: 'qualidade', rotulo: 'Qualidade', dica: 'Linha de base de escapes na homologação do cliente (outro sistema: pede login)', externo: 'qualidadeUrl' }
+    // /ir/qualidade leva o passe do login único (sso.js); sem ele, o servidor
+    // manda para o endereço puro e o Qualidade pede login, como antes.
+    { id: 'qualidade', rotulo: 'Qualidade', href: '/ir/qualidade', dica: 'Linha de base de escapes na homologação do cliente', externo: 'qualidadeUrl' }
   ];
 
   function hrefSeguro(url) {
@@ -95,12 +97,10 @@
     ITENS.forEach(function (i) {
       if (i.id === atual) return;
       if (i.soEquipe && !(eu && eu.editor)) return;
-      var href = i.href;
-      if (i.externo) {
-        href = eu && eu[i.externo] ? hrefSeguro(eu[i.externo]) : null;
-        if (!href) return;
-      }
-      h += '<a class="menux-item" href="' + href.replace(/"/g, '&quot;') + '" data-item="' + i.id + '" title="' + i.dica + '">' +
+      // Item de outro sistema: só aparece se o servidor mandou o endereço
+      // (= a pessoa tem acesso); o link em si é sempre o nosso, fixo.
+      if (i.externo && !(eu && eu[i.externo])) return;
+      h += '<a class="menux-item" href="' + i.href + '" data-item="' + i.id + '" title="' + i.dica + '">' +
         ICONES[i.id] + i.rotulo + '</a>';
     });
     return h;

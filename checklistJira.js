@@ -5,8 +5,11 @@
 // para ela mesma. Só campos fixos do Jira: não olha o TIPO das subtarefas.
 //
 // Fica de fora, de propósito: apontamentos de horas, subtarefa GCAD/"Modelagem
-// de Dados", Branch (vazio em 100% das issues), Documentos de Configuração e
-// Release Note (não achei campo no Jira), versão x data, componente x módulo.
+// de Dados", Branch (vazio em 100% das issues) e Release Note (não achei campo
+// no Jira).
+//
+// Exceção combinada com o time (2026-10-19): "Documentos de Configuração" olha
+// a subtarefa chamada "Documentação" - pelo TÍTULO, não pelo tipo.
 //
 // Os identificadores customfield_* são DESTA instância do Jira: se o
 // administrador mudar um campo, a regra correspondente para de achar valor.
@@ -18,7 +21,8 @@ const CAMPOS = {
   // existem dois campos chamados "Demais Documentações"; vale qualquer um preenchido
   demaisDocumentacoes: ['customfield_13096', 'customfield_12493'],
   dataInternaAcordada: 'customfield_12181',
-  conclusaoTesteAceitacao: 'customfield_12456'
+  conclusaoTesteAceitacao: 'customfield_12456',
+  dataPrevistaEntrega: 'customfield_12379' // "Data prevista para entrega"
 };
 
 // tasks em qualquer um destes status não entram na conta do épico
@@ -32,7 +36,8 @@ const STATUS_TESTE_OK = ['teste de aceitacao concluido', 'implantacao', 'conclui
 const CAMPOS_PEDIDOS = [
   'summary', 'issuetype', 'status', 'description', 'subtasks',
   CAMPOS.solucao, CAMPOS.situacaoRequisito, ...CAMPOS.demaisDocumentacoes,
-  CAMPOS.dataInternaAcordada, CAMPOS.conclusaoTesteAceitacao
+  CAMPOS.dataInternaAcordada, CAMPOS.conclusaoTesteAceitacao,
+  'components', 'fixVersions', CAMPOS.dataPrevistaEntrega
 ].join(',');
 
 const norm = (t) => String(t || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').trim();
@@ -59,8 +64,33 @@ function temConteudo(v) {
 const preenchido = (valor, falta) => (temConteudo(valor) ? { ok: true, motivo: '' } : { ok: false, motivo: falta });
 const categoria = (s) => s && s.fields && s.fields.status && s.fields.status.statusCategory && s.fields.status.statusCategory.key;
 
+/** Subtarefa de documentação: a que tem o título começando por "Documentação"
+ * (é assim que o time cria: "Documentação - <nome da task>"). Finalizada =
+ * categoria "done" do Jira, que cobre Fechado, Concluído e Cancelado - o time
+ * pediu concluído OU cancelado. Havendo mais de uma, todas precisam estar. */
+function documentacao(f) {
+  const docs = (f.subtasks || []).filter((s) => norm(s.fields && s.fields.summary).startsWith('documentacao'));
+  if (!docs.length) return { ok: false, motivo: 'sem subtarefa "Documentação"' };
+  const abertas = docs.filter((s) => categoria(s) !== 'done');
+  return abertas.length
+    ? { ok: false, motivo: `subtarefa Documentação em aberto (${abertas.map((s) => s.key).join(', ')})` }
+    : { ok: true, motivo: '' };
+}
+
+/** Versão para a data de entrega: o time pediu os DOIS campos - "Versões
+ * corrigidas" e "Data prevista para entrega". O motivo diz qual falta. */
+function versaoEData(f) {
+  const faltam = [];
+  if (!temConteudo(f.fixVersions)) faltam.push('Versões corrigidas vazias');
+  if (!temConteudo(f[CAMPOS.dataPrevistaEntrega])) faltam.push('Data prevista para entrega vazia');
+  return faltam.length ? { ok: false, motivo: faltam.join(' e ') } : { ok: true, motivo: '' };
+}
+
 /** `texto` é exatamente o texto do item em ITENS_PADRAO (é por ele que o item é achado). */
 const REGRAS = [
+  { texto: 'A issue tem a versão correta para a data de entrega?', rotulo: 'Versão/Data prevista', avaliar: versaoEData },
+  { texto: 'O componente corresponde ao módulo da versão?', rotulo: 'Componentes', avaliar: (f) => preenchido(f.components, 'Componentes vazio') },
+  { texto: 'Documentos de Configuração preenchidos?', rotulo: 'Documentação', avaliar: documentacao },
   { texto: 'Descrição preenchida?', rotulo: 'Descrição', avaliar: (f) => preenchido(f.description, 'Descrição vazia') },
   { texto: 'Solução preenchida?', rotulo: 'Solução', avaliar: (f) => preenchido(f[CAMPOS.solucao], 'Solução vazia') },
   { texto: 'Situação / Requisito preenchido', rotulo: 'Situação/Requisito', avaliar: (f) => preenchido(f[CAMPOS.situacaoRequisito], 'Situação/Requisito vazio') },
@@ -143,7 +173,7 @@ async function lerDoJira(chave, chamar) {
 }
 
 /** Cache curto: a tela abre várias vezes por minuto e o Jira não precisa ser
- * consultado a cada vez. O botão "Atualizar do Jira" ignora o cache. */
+ * consultado a cada vez. O botão "Atualizar" da tela ignora o cache. */
 function criarCache(ttlMs = 120000, agora = () => Date.now()) {
   const m = new Map();
   return {

@@ -9,7 +9,7 @@ const {
   cadastrar, entrar, lerSnapshot, gravarSnapshot, gravarHistorico, lerHistorico,
   gravarEntregas, lerEntregas, listarSprintsEntregas, listarMesesEntregas, gravarPlanejamento,
   lerPlanejamentoSprint, lerCarryOverEntregue, listarPlanejamentoPorSprint, listarItensPlanejamento,
-  listarItensCarryOver, registrarAcesso, registrarVisitaDoDia, listarAcessos, listarUsuarios, confirmarUsuarioManualmente,
+  listarItensCarryOver, registrarAcesso, registrarVisitaDoDia, queimarPasse, listarAcessos, listarUsuarios, confirmarUsuarioManualmente,
   listarDemandas, criarDemanda, atualizarDemanda, removerDemanda, listarHistoricoDemandas,
   lerExpedicao, listarChavesExpedicoes, listarExpedicoes, criarExpedicao, atualizarExpedicao, removerExpedicao,
   criarItemExpedicao, atualizarItemExpedicao, atualizarObservacaoItem, removerItemExpedicao
@@ -23,6 +23,7 @@ const {
   decorar, hojeBrasilia, idExpedicao, planoParaDemandas, planoParaExpedicao, recadoSincronia, somenteLeituraPeloJira
 } = require('./expedicoes');
 const { criarCache, verificar, verificarVarias } = require('./checklistJira');
+const { ssoAtivo, emitirPasse, lerPasse, caminhoSeguro, urlDeEntrada } = require('./sso');
 const {
   COOKIE_NAME,
   SESSAO_DIAS,
@@ -198,6 +199,50 @@ app.post('/auth/cadastro', limitarTentativas, async (req, res) => {
   }
 });
 
+/** Cookie de sessão - o mesmo no login com senha e no login único (/sso). */
+function abrirSessao(res, email) {
+  res.cookie(COOKIE_NAME, criarSessao({ email }), {
+    httpOnly: true,
+    sameSite: 'lax',
+    secure: process.env.NODE_ENV === 'production',
+    maxAge: SESSAO_DIAS * 24 * 60 * 60 * 1000
+  });
+}
+
+/* ---- login único (sso.js) ----
+ * Chegada: quem vem do Portal (ou do Qualidade) já logado traz um passe de
+ * uso único. Confere passe, confere a NOSSA lista de acesso, queima o passe
+ * e abre a sessão como no login. Qualquer falha cai no login normal - nunca
+ * entra "meio logado". Pública por natureza: é ela que cria a sessão.
+ * Sem limitarTentativas de propósito: o passe é assinado (não há o que
+ * adivinhar), e o time todo sai pelo mesmo IP do escritório - 10 cliques em
+ * 15 min travariam gente legítima. */
+app.get('/sso', async (req, res) => {
+  res.setHeader('Cache-Control', 'no-store');
+  const dados = lerPasse(req.query.passe, 'kanban');
+  if (!dados) return res.redirect(303, '/login.html?sso=expirado');
+  if (!emailPermitido(dados.email)) {
+    console.warn(`[sso] passe recusado: domínio ${dados.email.split('@')[1]} sem acesso ao Kanban`);
+    return res.redirect(303, '/login.html?sso=sem-acesso');
+  }
+  if (!(await queimarPasse(dados.jti, 'kanban'))) return res.redirect(303, '/login.html?sso=expirado');
+  abrirSessao(res, dados.email);
+  await registrarAcesso(dados.email, 'login-unico');
+  console.log(`Login único: ${dados.email}`);
+  res.redirect(303, caminhoSeguro(req.query.destino));
+});
+
+/* Saída para o Qualidade levando o passe: o item "Qualidade" do menu aponta
+ * para cá. Mesma regra de quem vê o item (veQualidade). Login único
+ * desligado (sem SSO_SECRET): segue para o endereço puro, como antes. */
+app.get('/ir/qualidade', exigirSessaoPagina, (req, res) => {
+  res.setHeader('Cache-Control', 'no-store');
+  const base = process.env.QUALIDADE_URL;
+  if (!base || !veQualidade(req.usuario.email)) return res.redirect('/');
+  const passe = ssoAtivo() ? emitirPasse(req.usuario.email, 'qualidade', 'kanban') : null;
+  res.redirect(passe ? urlDeEntrada(base, passe, '/') : base);
+});
+
 app.post('/auth/entrar', limitarTentativas, async (req, res) => {
   const { email, senha } = req.body;
 
@@ -214,13 +259,7 @@ app.post('/auth/entrar', limitarTentativas, async (req, res) => {
       return res.status(403).json({ erro: 'Esse e-mail não tem acesso liberado a este board.' });
     }
 
-    const token = criarSessao({ email: usuarioSupabase.email });
-    res.cookie(COOKIE_NAME, token, {
-      httpOnly: true,
-      sameSite: 'lax',
-      secure: process.env.NODE_ENV === 'production',
-      maxAge: SESSAO_DIAS * 24 * 60 * 60 * 1000
-    });
+    abrirSessao(res, usuarioSupabase.email);
 
     console.log(`Login: ${usuarioSupabase.email}`);
     await registrarAcesso(usuarioSupabase.email, 'login'); // best-effort: falha só loga, nao trava o login
@@ -432,7 +471,7 @@ async function sincronizarParaExpedicao(demanda, email) {
 }
 
 // O Jira responde parte do checklist (checklistJira.js). Cache curto em memória; o botão
-// "Atualizar do Jira" passa por cima dele.
+// "Atualizar" (na tela) passa por cima dele.
 const cacheJira = criarCache();
 async function verificacaoJira(expedicao, forcar) {
   const chave = chaveJira(expedicao.artefatoJira);
@@ -456,7 +495,7 @@ app.get('/api/expedicoes', exigirSessaoApi, exigirEditorApi, async (req, res) =>
   }
   if (!r.ok) return res.status(503).json({ erro: 'Não foi possível carregar as expedições agora.' });
   const snapshot = await lerSnapshot();
-  // ?atualizarJira=1 (botão "Atualizar do Jira") passa por cima do cache
+  // ?atualizarJira=1 (botão "Atualizar") passa por cima do cache
   const forcar = req.query.atualizarJira === '1';
   const chaves = r.expedicoes.map((e) => chaveJira(e.artefatoJira)).filter(Boolean);
   const lidas = await verificarVarias(chaves, chamarJira, { cache: cacheJira, forcar });

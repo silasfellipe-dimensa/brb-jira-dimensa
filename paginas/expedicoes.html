@@ -56,6 +56,7 @@
     border: 1px solid var(--line); border-radius: 7px; padding: 7px 12px; background: var(--bg-panel);
   }
   .link-topo:hover, .btn:hover { border-color: var(--accent); color: var(--accent); }
+  .btn .ico { width: 14px; height: 14px; flex-shrink: 0; }
   .btn.destaque { border-color: var(--accent); color: var(--accent); font-weight: 700; }
   .btn.primario { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 700; }
   .btn.primario:hover { color: #fff; filter: brightness(1.05); }
@@ -218,6 +219,7 @@
 <script>
   (function () {
     // Caixas de diálogo do sistema (/dialogo.js). Sem ele, cai no pop-up do navegador.
+    var ICONE_ATUALIZAR = '<svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 3v6h-6"/></svg>';
     var ICONE_NOTA = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 3H6a2 2 0 00-2 2v14a2 2 0 002 2h12a2 2 0 002-2V9z"/><path d="M14 3v6h6M8 13h8M8 17h5"/></svg>';
     var Dlg = window.Dialogo || {
       texto: function (o) { return Promise.resolve(window.prompt(o.titulo, (o.campo && o.campo.valor) || '')); },
@@ -325,7 +327,7 @@
         '<label for="selResp">Responsável</label><select id="selResp">' + ops + '</select>' +
         '<label><input type="checkbox" id="ocultarConc"' + (estado.ocultarConcluidas ? ' checked' : '') + '> Ocultar concluídas</label>' +
         '<span class="empurra">' +
-          '<button type="button" class="btn" data-acao="atualizar-jira" title="Lê de novo no Jira os itens que ele responde">Atualizar do Jira</button>' +
+          '<button type="button" class="btn" data-acao="atualizar" title="Relê tudo: as expedições, os responsáveis e os itens que o Jira responde">' + ICONE_ATUALIZAR + 'Atualizar</button>' +
           '<button type="button" class="btn" data-acao="expandir-tudo">Expandir tudo</button>' +
           '<button type="button" class="btn" data-acao="recolher-tudo">Recolher tudo</button>' +
           '<button type="button" class="btn primario" data-acao="nova">+ Nova expedição</button></span>';
@@ -416,7 +418,7 @@
       }
       if (j.status === 'nao-encontrada') return { status: 'aviso', texto: 'O Jira não encontrou a chave ' + e.artefatoJira + ': os itens ficam manuais.' };
       if (j.status === 'sem-filhos') return { status: 'aviso', texto: 'Este épico ainda não tem tasks no Jira.' };
-      return { status: 'aviso', texto: 'Não consegui consultar o Jira agora: marque os itens à mão ou use "Atualizar do Jira" daqui a pouco.' };
+      return { status: 'aviso', texto: 'Não consegui consultar o Jira agora: marque os itens à mão ou use "Atualizar" daqui a pouco.' };
     }
     function juntarRecados(lista) {
       var partes = lista.filter(Boolean);
@@ -701,9 +703,16 @@
       if (acao === 'expandir-tudo' || acao === 'recolher-tudo') {
         visiveis().forEach(function (e) { estado.abertas[e.id] = acao === 'expandir-tudo'; });
         renderLista();
-      } else if (acao === 'atualizar-jira') {
+      } else if (acao === 'atualizar') {
+        // Tudo de novo, ignorando o cache do Jira: as expedições (o que outra
+        // pessoa mudou), os responsáveis, os itens do Jira e as sugestões da
+        // "Nova expedição". Se falhar, o botão volta - nunca fica preso.
         b.disabled = true; b.textContent = 'Atualizando…';
-        carregar(true);
+        estado.opcoes = null;
+        carregar(true).then(function (ok) {
+          if (estado.novoAberto) carregarOpcoes();
+          if (!ok) { b.disabled = false; b.innerHTML = ICONE_ATUALIZAR + 'Atualizar'; }
+        });
       } else if (acao === 'nova') abrirNova();
     });
 
@@ -816,15 +825,20 @@
     });
 
     /* ---------- carga ---------- */
+    /* true = carregou. forcarJira = botão "Atualizar" (passa por cima do cache do Jira). */
     function carregar(forcarJira) {
       return chamar('GET', '/api/expedicoes' + (forcarJira ? '?atualizarJira=1' : '')).then(function (r) {
-        if (!r.ok) { area.innerHTML = '<div class="vazio">' + esc(r.j.erro || 'Não foi possível carregar as expedições agora.') + '</div>'; return; }
+        if (!r.ok) { area.innerHTML = '<div class="vazio">' + esc(r.j.erro || 'Não foi possível carregar as expedições agora.') + '</div>'; return false; }
         estado.expedicoes = r.j.expedicoes;
         estado.hoje = r.j.hoje;
         if (!estado.filtro) { try { estado.filtro = localStorage.getItem('expedicoes.responsavel') || ''; } catch (e) { estado.filtro = ''; } }
         renderTudo();
-        if (forcarJira) mostrarSincronia({ status: 'atualizada', texto: 'Itens do Jira atualizados agora.' });
-      }).catch(function () { area.innerHTML = '<div class="vazio">Não foi possível carregar as expedições agora.</div>'; });
+        if (forcarJira) {
+          var hora = new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+          mostrarSincronia({ status: 'atualizada', texto: 'Tudo atualizado às ' + hora + ': expedições, responsáveis e itens do Jira.' });
+        }
+        return true;
+      }).catch(function () { area.innerHTML = '<div class="vazio">Não foi possível carregar as expedições agora.</div>'; return false; });
     }
 
     renderBarra();

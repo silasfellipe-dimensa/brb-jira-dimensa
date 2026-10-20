@@ -239,6 +239,12 @@
     if (params.get('confirmado')) {
       mostrarAviso('E-mail confirmado. Agora é só entrar com seu e-mail e senha.', 'ok');
     }
+    // Volta do login único (/sso) que não deu certo: passe vencido ou já usado.
+    if (params.get('sso') === 'expirado') {
+      mostrarAviso('O acesso direto expirou. Entre com seu e-mail e senha (ou volte ao Portal e clique de novo).', 'erro');
+    } else if (params.get('sso') === 'sem-acesso') {
+      mostrarAviso('Esse e-mail não tem acesso liberado a este board.', 'erro');
+    }
 
     // O Supabase devolve erros no fragmento da URL (#error=...), nao na
     // query string - o caso mais comum e o link de confirmacao expirado.

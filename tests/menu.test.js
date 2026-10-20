@@ -60,9 +60,9 @@ describe('static/menu.js', () => {
     assert.match(codigo, /if \(i\.id === atual\) return;/);
   });
 
-  test('Qualidade só com o endereço que o servidor manda (e só http/https)', () => {
-    assert.match(codigo, /id: 'qualidade'[^}]*externo: 'qualidadeUrl'/);
-    assert.match(codigo, /href = eu && eu\[i\.externo\] \? hrefSeguro\(eu\[i\.externo\]\) : null;\s*if \(!href\) return;/);
+  test('Qualidade só aparece quando o servidor manda o endereço; o link é o /ir/qualidade (leva o passe)', () => {
+    assert.match(codigo, /id: 'qualidade'[^}]*href: '\/ir\/qualidade'[^}]*externo: 'qualidadeUrl'/);
+    assert.match(codigo, /if \(i\.externo && !\(eu && eu\[i\.externo\]\)\) return;/);
   });
 
   test('Expedições só para a equipe (editor)', () => {

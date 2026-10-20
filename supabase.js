@@ -505,6 +505,27 @@ async function registrarVisitaDoDia(email, hoje) {
   }
 }
 
+/** Login único (sso.js): queima o passe. true = primeiro uso, pode entrar.
+ * false = já usado, tabela inexistente (supabase-sso.sql não rodou) ou banco
+ * fora - em todos esses casos NÃO entra (falha fechada) e a pessoa cai no
+ * login normal. De carona, apaga passes com mais de 1 dia (best-effort). */
+async function queimarPasse(jti, sistema) {
+  try {
+    const { error } = await db().from('sso_passes_usados').insert({ jti, sistema });
+    if (error) {
+      if (error.code === '23505') console.warn('[sso] passe reaproveitado recusado');
+      else console.error('[sso] falha ao registrar passe:', error.message);
+      return false;
+    }
+    const ontem = new Date(Date.now() - 86400000).toISOString();
+    await db().from('sso_passes_usados').delete().lt('usado_em', ontem);
+    return true;
+  } catch (erro) {
+    console.error('[sso] falha ao registrar passe:', erro.message);
+    return false;
+  }
+}
+
 /** Histórico de acessos, mais recente primeiro - o que a página /admin
  * lista. */
 async function listarAcessos(limite) {
@@ -864,5 +885,5 @@ module.exports = {
   gravarPlanejamento, limparPlanejamento, lerPlanejamentoSprint, lerCarryOverEntregue,
   listarPlanejamentoPorSprint, resumirPlanejamento, porSemanaPlanejamento, listarItensPlanejamento,
   classificarItensPlanejamento, listarItensCarryOver, montarItensCarryOver, contarCarryOverPorSprint,
-  registrarAcesso, registrarVisitaDoDia, listarAcessos, listarUsuarios, montarListaUsuarios, confirmarUsuarioManualmente
+  registrarAcesso, registrarVisitaDoDia, queimarPasse, listarAcessos, listarUsuarios, montarListaUsuarios, confirmarUsuarioManualmente
 };

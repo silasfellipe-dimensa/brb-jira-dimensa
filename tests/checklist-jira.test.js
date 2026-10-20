@@ -9,11 +9,12 @@ const J = require('../checklistJira');
 const { ITENS_PADRAO, aplicarVerificacao, somenteLeituraPeloJira, decorar, deLinhaItem } = require('../expedicoes');
 
 const adf = (texto) => ({ type: 'doc', version: 1, content: [{ type: 'paragraph', content: texto ? [{ type: 'text', text: texto }] : [] }] });
-const sub = (key, categoriaStatus) => ({ key, fields: { status: { name: 'x', statusCategory: { key: categoriaStatus } } } });
+const sub = (key, categoriaStatus, summary = 'Codificação - x', nome = 'x') => ({ key, fields: { summary, status: { name: nome, statusCategory: { key: categoriaStatus } } } });
 const tudoPreenchido = () => ({
   description: adf('Descrição'), customfield_12864: adf('Solução'), customfield_12369: adf('Situação'),
   customfield_13096: adf('Docs'), customfield_12181: '2026-10-08', customfield_12456: '2026-10-07',
-  status: { name: 'Concluído' }, subtasks: [sub('A-1', 'done'), sub('A-2', 'done')]
+  components: [{ name: 'SATÉLITE BRBCFI WEB VI' }], fixVersions: [{ name: 'DJSBRB_6.4.2.0' }], customfield_12379: '2026-09-28',
+  status: { name: 'Concluído' }, subtasks: [sub('A-1', 'done'), sub('A-2', 'done', 'Documentação - x', 'Fechado')]
 });
 
 describe('o que conta como "preenchido"', () => {
@@ -32,10 +33,10 @@ describe('regras: cada item aponta para o campo certo', () => {
   test('todo texto de regra existe nos itens padrão (se alguém renomear um item, o teste avisa)', () => {
     const itens = ITENS_PADRAO.map((i) => i.texto);
     assert.deepStrictEqual(J.TEXTOS_JIRA.filter((t) => !itens.includes(t)), []);
-    assert.strictEqual(J.TEXTOS_JIRA.length, 7);
+    assert.strictEqual(J.TEXTOS_JIRA.length, 10);
   });
 
-  test('task com tudo preenchido: os 7 itens ok, sem motivo', () => {
+  test('task com tudo preenchido: os 10 itens ok, sem motivo', () => {
     const r = J.avaliarTask(tudoPreenchido());
     assert.deepStrictEqual(Object.keys(r).sort(), [...J.TEXTOS_JIRA].sort());
     for (const [t, v] of Object.entries(r)) assert.deepStrictEqual([t, v.ok, v.motivo], [t, true, '']);
@@ -51,6 +52,35 @@ describe('regras: cada item aponta para o campo certo', () => {
     assert.strictEqual(r['Data interna acordada registrada? (boa prática)'].motivo, 'Data Interna Acordada vazia no Jira');
     assert.strictEqual(r['Todas as subtarefas concluídas'].motivo, 'sem subtarefas no Jira');
     assert.strictEqual(r['Status: Teste de aceitação concluído'].motivo, 'status "Em Desenvolvimento" no Jira');
+    assert.strictEqual(r['O componente corresponde ao módulo da versão?'].motivo, 'Componentes vazio no Jira');
+    assert.strictEqual(r['A issue tem a versão correta para a data de entrega?'].motivo, 'Versões corrigidas vazias e Data prevista para entrega vazia no Jira');
+    assert.strictEqual(r['Documentos de Configuração preenchidos?'].motivo, 'sem subtarefa "Documentação" no Jira');
+  });
+
+  test('componente: campo Componentes do Jira preenchido', () => {
+    const f = (c) => J.avaliarTask({ components: c })['O componente corresponde ao módulo da versão?'];
+    assert.ok(f([{ name: 'SATÉLITE BRBCFI WEB VI' }]).ok);
+    assert.strictEqual(f([]).ok, false);
+    assert.strictEqual(f(undefined).ok, false);
+  });
+
+  test('versão para a data de entrega: precisa de "Versões corrigidas" E "Data prevista para entrega"; diz qual falta', () => {
+    const f = (c) => J.avaliarTask(c)['A issue tem a versão correta para a data de entrega?'];
+    assert.ok(f({ fixVersions: [{ name: 'DJSBRB_6.4.2.0' }], customfield_12379: '2026-09-28' }).ok);
+    assert.strictEqual(f({ fixVersions: [{ name: 'DJSBRB_6.4.2.0' }] }).motivo, 'Data prevista para entrega vazia no Jira');
+    assert.strictEqual(f({ customfield_12379: '2026-09-28', fixVersions: [] }).motivo, 'Versões corrigidas vazias no Jira');
+  });
+
+  test('documentação: subtarefa com título "Documentação..." concluída OU cancelada (categoria done); aberta derruba', () => {
+    const f = (...s) => J.avaliarTask({ subtasks: s })['Documentos de Configuração preenchidos?'];
+    assert.ok(f(sub('A-1', 'new'), sub('A-2', 'done', 'Documentação - DEV - x', 'Fechado')).ok, 'fechada; a outra subtarefa não importa');
+    assert.ok(f(sub('A-2', 'done', 'Documentação - x', 'Cancelado')).ok, 'cancelada também vale');
+    assert.ok(f(sub('A-2', 'done', 'DOCUMENTACAO - sem acento', 'Concluído')).ok, 'sem acento e maiúsculo');
+    const aberta = f(sub('A-2', 'new', 'Documentação - x', 'Aberto'));
+    assert.strictEqual(aberta.ok, false);
+    assert.strictEqual(aberta.motivo, 'subtarefa Documentação em aberto (A-2) no Jira');
+    assert.strictEqual(f(sub('A-3', 'done', 'Documentação - a'), sub('A-4', 'indeterminate', 'Documentação - b')).ok, false, 'havendo duas, as duas precisam estar finalizadas');
+    assert.strictEqual(f(sub('A-1', 'done', 'Documento Técnico qualquer')).ok, false, 'é pelo título "Documentação", não pelo tipo');
   });
 
   test('Demais Documentações: vale qualquer um dos dois campos com esse nome', () => {
@@ -113,6 +143,7 @@ describe('lerDoJira: o que pede e como interpreta', () => {
     assert.ok(Object.values(r.itens).every((v) => v.ok));
     assert.strictEqual(chamar.chamadas.length, 1);
     assert.match(chamar.chamadas[0], /fields=summary,issuetype,status,description,subtasks,customfield_12864/);
+    assert.match(chamar.chamadas[0], /,components,fixVersions,customfield_12379$/);
   });
 
   test('épico: busca as tasks filhas (sem subtarefas) e ignora canceladas e recusadas', async () => {
