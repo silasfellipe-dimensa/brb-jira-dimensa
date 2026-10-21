@@ -78,7 +78,19 @@
   .barra .empurra { margin-left: auto; display: flex; gap: 8px; flex-wrap: wrap; }
   select:focus, input:focus, textarea:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-soft); }
 
-  .resumo { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 14px; }
+  .resumo { display: flex; gap: 8px; flex-wrap: wrap; }
+  .linha-resumo { display: flex; align-items: center; justify-content: space-between; gap: 8px 16px; flex-wrap: wrap; margin-bottom: 14px; }
+  /* Salvamento automático e hora dos dados: a tela não tem botão "Salvar",
+   * então ela diz o que aconteceu com o que a pessoa acabou de mudar. */
+  .situacao { display: flex; align-items: center; gap: 6px 14px; flex-wrap: wrap; font-size: 0.74rem; color: var(--ink-faint); margin-left: auto; }
+  .situacao .salvo { display: inline-flex; align-items: center; gap: 5px; }
+  .situacao .salvo::before { content: ''; width: 7px; height: 7px; border-radius: 50%; background: var(--ok); }
+  .situacao .salvo.salvando::before { background: var(--accent); animation: piscar 0.9s ease-in-out infinite; }
+  .situacao .salvo.editando::before { background: var(--accent); }
+  .situacao .salvo.erro { color: var(--warn); font-weight: 700; }
+  .situacao .salvo.erro::before { background: var(--warn); }
+  @keyframes piscar { 50% { opacity: 0.25; } }
+  @media (prefers-reduced-motion: reduce) { .situacao .salvo.salvando::before { animation: none; } }
   .pilula { font-size: 0.74rem; font-weight: 600; padding: 4px 12px; border-radius: 100px; background: var(--line-soft); color: var(--ink-dim); }
   .pilula.alerta { background: var(--warn-soft); color: var(--warn); }
   .pilula.ok { background: var(--ok-soft); color: var(--ok); }
@@ -215,7 +227,10 @@
     <p class="ajuda">Uma linha por expedição, agrupada pela data. Vermelho quando a expedição é hoje, amanhã ou já passou e ainda há item pendente. O responsável vem do card no Jira. "Não aplicável" exige o motivo, e ele fica visível para o time.</p>
     <div class="barra" id="barra"></div>
     <div class="aviso" id="aviso" role="alert" hidden></div>
-    <div class="resumo" id="resumo"></div>
+    <div class="linha-resumo">
+      <div class="resumo" id="resumo"></div>
+      <div class="situacao" id="situacao" aria-live="polite"></div>
+    </div>
     <div id="novo"></div>
     <div id="area"><div class="vazio">Carregando…</div></div>
   </div>
@@ -263,6 +278,27 @@
         return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
       });
     }
+    /* Situação da tela: quando os dados foram lidos e o que aconteceu com a
+     * última alteração. Tudo grava sozinho: campo de texto ao sair dele,
+     * marcação na hora. */
+    var situacao = { carregadoEm: null, salvando: 0, salvoEm: null, erro: false, editando: false, erroCarga: false };
+    function hhmm(d) { return d.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }); }
+    function renderSituacao() {
+      var alvo = document.getElementById('situacao');
+      if (!alvo) return;
+      var classe = '', texto;
+      if (situacao.salvando) { classe = 'salvando'; texto = 'Salvando…'; }
+      else if (situacao.erro) { classe = 'erro'; texto = 'Última alteração não foi salva'; }
+      else if (situacao.editando) { classe = 'editando'; texto = 'Salva ao sair do campo'; }
+      else if (situacao.salvoEm) texto = 'Salvo automaticamente às ' + hhmm(situacao.salvoEm);
+      else texto = 'Salvamento automático';
+      var carga = situacao.erroCarga ? 'Não foi possível atualizar agora'
+        : situacao.carregadoEm ? 'Atualizado em ' + situacao.carregadoEm.toLocaleString('pt-BR', {
+            day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '';
+      alvo.innerHTML = '<span class="salvo ' + classe + '" title="Não há botão Salvar: cada alteração é gravada sozinha">' + texto + '</span>' +
+        (carga ? '<span>' + carga + '</span>' : '');
+    }
+
     var timerInfo = null;
     function mostrarAviso(t) { clearTimeout(timerInfo); aviso.classList.remove('info'); aviso.textContent = t || ''; aviso.hidden = !t; }
     // Recado da sincronia da data com a tela de Demandas: verde e some sozinho quando
@@ -335,7 +371,7 @@
         '<label for="selResp">Responsável</label><select id="selResp">' + ops + '</select>' +
         '<label><input type="checkbox" id="ocultarConc"' + (estado.ocultarConcluidas ? ' checked' : '') + '> Ocultar concluídas</label>' +
         '<span class="empurra">' +
-          '<button type="button" class="btn" data-acao="atualizar" title="Relê tudo: as expedições, os responsáveis e os itens que o Jira responde">' + ICONE_ATUALIZAR + 'Atualizar</button>' +
+          '<button type="button" class="btn destaque" data-acao="atualizar" title="Relê tudo: as expedições, os responsáveis e os itens que o Jira responde">' + ICONE_ATUALIZAR + 'Atualizar</button>' +
           '<button type="button" class="btn" data-acao="expandir-tudo">Expandir tudo</button>' +
           '<button type="button" class="btn" data-acao="recolher-tudo">Recolher tudo</button>' +
           '<button type="button" class="btn primario" data-acao="nova">+ Nova expedição</button></span>';
@@ -452,7 +488,7 @@
         : '<span class="resp sem">Sem responsável no Jira</span>';
       var estadoTxt = concluida(e) ? '<span class="chip-ok">Pronta para expedir</span>'
         : e.alerta ? '<span class="chip-alerta">' + (e.grupo === 'atrasadas' ? 'Atrasada' : e.grupo === 'hoje' ? 'Expede hoje' : 'Expede amanhã') +
-          ' · faltam ' + p.pendentes + '</span>' : '';
+          ' · ' + (p.pendentes === 1 ? 'falta 1 item' : 'faltam ' + p.pendentes + ' itens') + '</span>' : '';
       var link = e.artefatoUrl ? '<a class="jira-link" href="' + esc(e.artefatoUrl) + '" target="_blank" rel="noopener noreferrer">abrir ↗</a>' : '';
       var semData = !e.dataExpedicao;
       var semAcs = !String(e.demandaAcs || '').trim();
@@ -498,7 +534,7 @@
       }).join('');
     }
 
-    function renderTudo() { renderBarra(); renderResumo(); renderLista(); }
+    function renderTudo() { renderBarra(); renderResumo(); renderLista(); renderSituacao(); }
 
     // Troca só o cartão que mudou: o que o usuário digitou nos outros fica como está.
     function atualizarExpedicao(nova) {
@@ -560,6 +596,12 @@
     // aoFalhar (opcional): desfaz o que a tela já mostrou antes de o servidor responder
     // (ex.: um checkbox marcado), para ela nunca ficar diferente do que está gravado.
     function executar(promessa, aoConcluir, aoFalhar) {
+      situacao.salvando++; situacao.editando = false; renderSituacao();
+      promessa.then(function (r) {
+        situacao.salvando--;
+        if (r.ok) { situacao.erro = false; situacao.salvoEm = new Date(); } else situacao.erro = true;
+        renderSituacao();
+      }, function () { situacao.salvando--; situacao.erro = true; renderSituacao(); });
       if (ocupado) return;
       ocupado = true; mostrarAviso('');
       promessa.then(function (r) {
@@ -683,6 +725,10 @@
       trocarCartao(area.querySelector('.exp[data-id="' + e.id + '"]'), e);
     }
 
+    area.addEventListener('input', function (ev) {
+      var t = ev.target;
+      if (t.getAttribute && t.getAttribute('data-campo') && !situacao.editando) { situacao.editando = true; renderSituacao(); }
+    });
     area.addEventListener('change', function (ev) {
       var t = ev.target;
       var e = expedicaoDe(t);
@@ -724,7 +770,7 @@
         estado.opcoes = null;
         carregar(true).then(function (ok) {
           if (estado.novoAberto) carregarOpcoes();
-          if (!ok) { b.disabled = false; b.innerHTML = ICONE_ATUALIZAR + 'Atualizar'; }
+          if (!ok) { b.disabled = false; b.innerHTML = ICONE_ATUALIZAR + 'Atualizar'; situacao.erroCarga = true; renderSituacao(); }
         });
       } else if (acao === 'nova') abrirNova();
     });
@@ -844,6 +890,7 @@
         if (!r.ok) { area.innerHTML = '<div class="vazio">' + esc(r.j.erro || 'Não foi possível carregar as expedições agora.') + '</div>'; return false; }
         estado.expedicoes = r.j.expedicoes;
         estado.hoje = r.j.hoje;
+        situacao.carregadoEm = new Date(); situacao.erroCarga = false;
         if (!estado.filtro) { try { estado.filtro = localStorage.getItem('expedicoes.responsavel') || ''; } catch (e) { estado.filtro = ''; } }
         renderTudo();
         if (forcarJira) {
