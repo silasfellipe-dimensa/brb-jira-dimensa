@@ -5,11 +5,15 @@
 // para ela mesma. Só campos fixos do Jira: não olha o TIPO das subtarefas.
 //
 // Fica de fora, de propósito: apontamentos de horas, subtarefa GCAD/"Modelagem
-// de Dados", Branch (vazio em 100% das issues) e Release Note (não achei campo
-// no Jira).
+// de Dados" e Branch (vazio em 100% das issues).
 //
 // Exceção combinada com o time (2026-10-19): "Documentos de Configuração" olha
 // a subtarefa chamada "Documentação" - pelo TÍTULO, não pelo tipo.
+//
+// Combinado em 2026-10-21: os dois itens de Release Note viraram Requisito
+// (campo Situação/Requisito, já conferido) e "Solução com mais de 60
+// caracteres". Este último é ASSISTIDO: o Jira só confere o tamanho; "objetivo
+// e sem detalhes técnicos" quem julga é o time, lendo o texto na tela.
 //
 // Os identificadores customfield_* são DESTA instância do Jira: se o
 // administrador mudar um campo, a regra correspondente para de achar valor.
@@ -31,7 +35,9 @@ const STATUS_IGNORADOS = ['cancelado', 'recusado'];
 // o time validar quais tipos carregam Solução, Situação etc.; nomes sem acento e minúsculos.
 const TIPOS_IGNORADOS = [];
 // "Teste de aceitação concluído" e o que vem depois dele no fluxo
-const STATUS_TESTE_OK = ['teste de aceitacao concluido', 'implantacao', 'concluido'];
+const STATUS_TESTE_OK = ['teste de aceitacao concluido', 'resolvido', 'implantacao', 'concluido'];
+// "mais de 60 caracteres" do item da Solução
+const MIN_SOLUCAO = 60;
 
 const CAMPOS_PEDIDOS = [
   'summary', 'issuetype', 'status', 'description', 'subtasks',
@@ -60,6 +66,33 @@ function temConteudo(v) {
   if (typeof v === 'object') return v.type === 'doc' ? adfTemConteudo(v) : Object.keys(v).length > 0;
   return false;
 }
+
+/** Texto puro de um campo (string ou ADF), com os espaços colapsados. */
+function textoPlano(v) {
+  const partes = [];
+  const andar = (no) => {
+    if (!no || typeof no !== 'object') return;
+    if (no.type === 'text') partes.push(String(no.text || ''));
+    else if (no.type === 'hardBreak') partes.push(' ');
+    (no.content || []).forEach((c) => { andar(c); });
+    if (no.type === 'paragraph' || no.type === 'listItem' || no.type === 'heading') partes.push(' ');
+  };
+  if (typeof v === 'string') partes.push(v); else andar(v);
+  return partes.join('').replace(/\s+/g, ' ').trim();
+}
+
+/** Solução: o Jira confere só o tamanho. Com tamanho suficiente, o texto vai
+ * junto (detalhe) para o time ler e decidir se está objetivo. */
+function solucaoTamanho(f) {
+  const t = textoPlano(f[CAMPOS.solucao]);
+  if (!t) return { ok: false, motivo: 'Solução vazia' };
+  if (t.length <= MIN_SOLUCAO) return { ok: false, motivo: `Solução com ${t.length} caracteres` };
+  return { ok: true, motivo: '', detalhe: t.length > 400 ? t.slice(0, 400) + '…' : t };
+}
+
+/** Subtarefas ainda abertas (fora da categoria "done": Fechado, Cancelado,
+ * Concluído e Resolvido contam como fechadas). */
+const subtarefasAbertas = (f) => ((f && f.subtasks) || []).filter((s) => categoria(s) !== 'done').length;
 
 const preenchido = (valor, falta) => (temConteudo(valor) ? { ok: true, motivo: '' } : { ok: false, motivo: falta });
 const categoria = (s) => s && s.fields && s.fields.status && s.fields.status.statusCategory && s.fields.status.statusCategory.key;
@@ -93,7 +126,11 @@ const REGRAS = [
   { texto: 'Documentos de Configuração preenchidos?', rotulo: 'Documentação', avaliar: documentacao },
   { texto: 'Descrição preenchida?', rotulo: 'Descrição', avaliar: (f) => preenchido(f.description, 'Descrição vazia') },
   { texto: 'Solução preenchida?', rotulo: 'Solução', avaliar: (f) => preenchido(f[CAMPOS.solucao], 'Solução vazia') },
-  { texto: 'Situação / Requisito preenchido', rotulo: 'Situação/Requisito', avaliar: (f) => preenchido(f[CAMPOS.situacaoRequisito], 'Situação/Requisito vazio') },
+  { texto: 'Requisito preenchido, em linguagem de usuário', rotulo: 'Situação/Requisito', avaliar: (f) => preenchido(f[CAMPOS.situacaoRequisito], 'Situação/Requisito vazio') },
+  {
+    texto: 'Solução com mais de 60 caracteres, objetivo e sem detalhes técnicos', rotulo: 'Solução (tamanho)',
+    assistido: true, avaliar: solucaoTamanho
+  },
   {
     texto: 'Demais Documentações preenchidas', rotulo: 'Demais Documentações',
     avaliar: (f) => (CAMPOS.demaisDocumentacoes.some((k) => temConteudo(f[k])) ? { ok: true, motivo: '' } : { ok: false, motivo: 'Demais Documentações vazia' })
@@ -122,13 +159,15 @@ const REGRAS = [
 ];
 
 const TEXTOS_JIRA = REGRAS.map((r) => r.texto);
+// Assistidos: o Jira barra quando não cumpre, mas quem marca é o time.
+const TEXTOS_ASSISTIDOS = REGRAS.filter((r) => r.assistido).map((r) => r.texto);
 
 /** Uma task sozinha: { texto: { ok, motivo, detalhe } } */
 function avaliarTask(fields) {
   const itens = {};
   for (const r of REGRAS) {
     const a = r.avaliar(fields || {});
-    itens[r.texto] = { ok: a.ok, motivo: a.ok ? '' : `${a.motivo} no Jira`, detalhe: '' };
+    itens[r.texto] = { ok: a.ok, motivo: a.ok ? '' : `${a.motivo} no Jira`, detalhe: a.detalhe || '' };
   }
   return itens;
 }
@@ -167,9 +206,12 @@ async function lerDoJira(chave, chamar) {
     const filhos = (r.issues || []).filter((i) => !STATUS_IGNORADOS.includes(norm(i.fields && i.fields.status && i.fields.status.name))
       && !TIPOS_IGNORADOS.includes(norm(i.fields && i.fields.issuetype && i.fields.issuetype.name)));
     if (!filhos.length) return { status: 'sem-filhos', tipo: 'epico', filhos: 0 };
-    return { status: 'ok', tipo: 'epico', filhos: filhos.length, itens: avaliarEpico(filhos) };
+    return {
+      status: 'ok', tipo: 'epico', filhos: filhos.length, itens: avaliarEpico(filhos),
+      subtarefasAbertas: filhos.reduce((n, f) => n + subtarefasAbertas(f.fields), 0)
+    };
   }
-  return { status: 'ok', tipo: 'task', filhos: 0, itens: avaliarTask(issue.fields) };
+  return { status: 'ok', tipo: 'task', filhos: 0, itens: avaliarTask(issue.fields), subtarefasAbertas: subtarefasAbertas(issue.fields) };
 }
 
 /** Cache curto: a tela abre várias vezes por minuto e o Jira não precisa ser
@@ -216,6 +258,6 @@ async function verificarVarias(chaves, chamar, { cache, forcar, limite = 5, teto
 }
 
 module.exports = {
-  CAMPOS, CAMPOS_PEDIDOS, REGRAS, TEXTOS_JIRA, STATUS_IGNORADOS, TIPOS_IGNORADOS, STATUS_TESTE_OK,
-  temConteudo, avaliarTask, avaliarEpico, lerDoJira, criarCache, verificar, verificarVarias
+  CAMPOS, CAMPOS_PEDIDOS, REGRAS, TEXTOS_JIRA, TEXTOS_ASSISTIDOS, STATUS_IGNORADOS, TIPOS_IGNORADOS, STATUS_TESTE_OK, MIN_SOLUCAO,
+  temConteudo, textoPlano, avaliarTask, avaliarEpico, lerDoJira, criarCache, verificar, verificarVarias
 };

@@ -175,6 +175,18 @@
   .tag-jira { font-size: 0.64rem; font-weight: 700; padding: 1px 6px; border-radius: 4px; border: 1px solid var(--line); color: var(--ink-dim); background: var(--line-soft); white-space: nowrap; margin-top: 1px; }
   .tag-jira.ok { color: var(--ok); border-color: var(--ok); background: var(--ok-soft); }
   .tag-jira.indisp { opacity: 0.7; }
+  .tag-jira.falta { color: var(--ink-faint); border-style: dashed; }
+  .tag-jira.leia { color: var(--accent); border-color: var(--accent); background: var(--accent-soft); }
+  .texto-jira { margin: 4px 0 0 26px; font-size: 0.72rem; color: var(--ink-faint); }
+  .texto-jira blockquote {
+    margin: 3px 0 0; padding: 6px 10px; border-left: 3px solid var(--accent); background: var(--line-soft);
+    border-radius: 0 6px 6px 0; color: var(--ink); font-size: 0.78rem; line-height: 1.45; white-space: pre-wrap; overflow-wrap: anywhere;
+  }
+  /* Alerta de subtarefas abertas no Jira: fora do checklist (ele pode estar todo
+   * marcado e o Jira ainda ter subtarefa aberta). Cinza; vermelho perto da data. */
+  .chip-sub { display: inline-flex; align-items: center; gap: 5px; font-weight: 700; color: var(--ink-dim);
+    padding: 2px 9px; border-radius: 100px; border: 1px solid var(--line); background: var(--line-soft); }
+  .chip-sub.perto { color: var(--warn); border-color: var(--warn); background: var(--warn-soft); }
   label.somente-leitura { cursor: default; }
   .item-linha input[type="checkbox"]:disabled { cursor: not-allowed; opacity: 0.85; }
   .falta-jira { margin: 3px 0 0 26px; font-size: 0.72rem; line-height: 1.4; color: var(--ink-faint); }
@@ -396,16 +408,22 @@
     function itemHtml(e, i) {
       var na = i.estado === 'nao_aplicavel';
       var linha = '<div class="item-linha">';
-      // Campo preenchido no Jira: marcado e TRAVADO. Campo vazio: item livre, com a informação do que falta.
+      // Cumpre no Jira: marcado e TRAVADO. Não cumpre: pendente e só o Jira marca (sobra o N/A).
+      // Assistido (Solução): cumprindo o tamanho, o time lê o texto e marca.
       var travado = !!i.bloqueado;
+      var soJira = !!i.soJira && !na;
       var temInfo = !!i.automatico && !!i.jira && !travado;
-      var dicaJira = travado ? 'Preenchido no Jira: já conferido' : '';
+      var dicaJira = travado ? 'Preenchido no Jira: já conferido'
+        : soJira ? 'Conferido pelo Jira: marca sozinho quando cumprir lá (depois, clique em Atualizar)' : '';
+      var semClique = travado || soJira;
       if (na) linha += '<span class="tag-na">N/A</span><span class="txt">' + esc(i.texto) + '</span>';
       else {
-        linha += '<label' + (travado ? ' class="somente-leitura" title="' + esc(dicaJira) + '"' : '') + '><input type="checkbox" data-acao="marcar" data-item="' + i.id + '"' +
-          (i.estado === 'concluido' ? ' checked' : '') + (travado ? ' disabled' : '') +
-          ' aria-label="' + esc(i.texto + (travado ? ' (confirmado no Jira)' : '')) + '"> <span class="txt">' + esc(i.texto) + '</span></label>';
+        linha += '<label' + (semClique ? ' class="somente-leitura" title="' + esc(dicaJira) + '"' : '') + '><input type="checkbox" data-acao="marcar" data-item="' + i.id + '"' +
+          (i.estado === 'concluido' ? ' checked' : '') + (semClique ? ' disabled' : '') +
+          ' aria-label="' + esc(i.texto + (travado ? ' (confirmado no Jira)' : soJira ? ' (aguardando o Jira)' : '')) + '"> <span class="txt">' + esc(i.texto) + '</span></label>';
         if (travado) linha += '<span class="tag-jira ok" title="' + esc(dicaJira) + '">Jira ✓</span>';
+        else if (soJira) linha += '<span class="tag-jira falta" title="' + esc(dicaJira) + '">Jira</span>';
+        else if (i.assistido && i.jira && i.jira.ok) linha += '<span class="tag-jira leia" title="O Jira conferiu o tamanho; o conteúdo quem confere é o time">Jira: leia</span>';
       }
       if (!i.padrao) linha += '<span class="tag-avulso">avulso</span>';
       var temObs = !!i.observacao;
@@ -421,7 +439,10 @@
         extra += '<div class="motivo"><strong>Não aplicável:</strong> ' + esc(i.justificativa) +
           (i.atualizadoPor ? ' <small>· ' + esc(i.atualizadoPor) + '</small>' : '') + '</div>';
       }
-      if (temInfo && !na && i.estado !== 'concluido') {
+      if (i.assistido && i.jira && i.jira.ok && !na) {
+        extra += '<div class="texto-jira"><span>Solução no Jira — confira se está objetiva e sem detalhes técnicos:</span>' +
+          '<blockquote>' + esc(i.jira.detalhe) + '</blockquote></div>';
+      } else if (temInfo && !na && i.estado !== 'concluido') {
         extra += '<div class="falta-jira">' + esc(i.jira.motivo) + (i.jira.detalhe ? ' <small>' + esc(i.jira.detalhe) + '</small>' : '') + '</div>';
       }
       if (estado.motivo[i.id]) {
@@ -447,7 +468,7 @@
       if (j.status === 'nao-encontrada') return '<div class="nota-jira aviso-j">O Jira não encontrou a chave ' + esc(e.artefatoJira) + ': os itens ficam manuais até a chave estar certa.</div>';
       if (j.status === 'indisponivel') return '<div class="nota-jira aviso-j">Não consegui consultar o Jira agora: por enquanto os itens ficam manuais.</div>';
       if (j.status === 'sem-filhos') return '<div class="nota-jira aviso-j">Este épico ainda não tem tasks no Jira: nada foi conferido, marque os itens à mão.</div>';
-      return '<div class="nota-jira">Itens com <strong>Jira ✓</strong> já estão preenchidos no Jira: ficam marcados e travados. Os que ainda faltam lá você marca à mão' +
+      return '<div class="nota-jira">Itens com <strong>Jira ✓</strong> já estão preenchidos no Jira: ficam marcados e travados. Os que ainda faltam lá só marcam sozinhos, quando o Jira cumprir (ou use N/A com o motivo)' +
         (j.tipo === 'epico' ? ' (épico com ' + j.filhos + (j.filhos === 1 ? ' task' : ' tasks') + ': só fica ✓ quando todas cumprem)' : '') +
         (j.lidoEm ? ' · lido às ' + horaLocal(j.lidoEm) : '') + (j.desatualizado ? ' (desatualizado: o Jira não respondeu agora)' : '') + '.</div>';
     }
@@ -489,6 +510,10 @@
       var estadoTxt = concluida(e) ? '<span class="chip-ok">Pronta para expedir</span>'
         : e.alerta ? '<span class="chip-alerta">' + (e.grupo === 'atrasadas' ? 'Atrasada' : e.grupo === 'hoje' ? 'Expede hoje' : 'Expede amanhã') +
           ' · ' + (p.pendentes === 1 ? 'falta 1 item' : 'faltam ' + p.pendentes + ' itens') + '</span>' : '';
+      var j = e.jira || {};
+      var perto = e.dias !== null && e.dias !== undefined && e.dias <= 1;
+      var alertaSub = j.status === 'ok' && j.subtarefasAbertas > 0
+        ? '<span class="chip-sub' + (perto ? ' perto' : '') + '" title="Confira no Jira e clique em Atualizar depois de fechar">⚠ Há subtarefas em aberto no Jira</span>' : '';
       var link = e.artefatoUrl ? '<a class="jira-link" href="' + esc(e.artefatoUrl) + '" target="_blank" rel="noopener noreferrer">abrir ↗</a>' : '';
       var semData = !e.dataExpedicao;
       var semAcs = !String(e.demandaAcs || '').trim();
@@ -504,7 +529,7 @@
           '<div class="campo"><span class="rot">PF</span><input data-campo="pontosFuncao" inputmode="decimal" maxlength="9" aria-label="PF (pontos de função)" placeholder="0,0" value="' + esc(fmtPf(e.pontosFuncao)) + '"></div>' +
         '</div><div class="exp-resumo">' + resp +
           '<span class="barra-prog" role="progressbar" aria-valuenow="' + pct + '" aria-valuemin="0" aria-valuemax="100"><i style="width:' + pct + '%"></i></span>' +
-          '<span class="prog-txt">' + resolvidos + ' de ' + p.total + (p.naoAplicaveis ? ' · ' + p.naoAplicaveis + ' N/A' : '') + '</span> ' + estadoTxt +
+          '<span class="prog-txt">' + resolvidos + ' de ' + p.total + (p.naoAplicaveis ? ' · ' + p.naoAplicaveis + ' N/A' : '') + '</span> ' + estadoTxt + alertaSub +
           (e.observacoes ? ' <span class="chip-obs">' + ICONE_NOTA + e.observacoes + (e.observacoes === 1 ? ' observação' : ' observações') + '</span>' : '') +
         '</div></div>' +
         // Excluir à vista, sem precisar abrir o cartão (o do rodapé do cartão

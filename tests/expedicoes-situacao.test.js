@@ -30,3 +30,19 @@ test('Atualizar em destaque e "Atualizado em" renovado a cada carga', () => {
   assert.match(html, /class="btn destaque" data-acao="atualizar"/);
   assert.match(html, /situacao\.carregadoEm = new Date\(\)/);
 });
+
+test('alerta de subtarefas abertas: fora do checklist, só o aviso (sem listar quais); vermelho perto da data', () => {
+  assert.match(html, /j\.status === 'ok' && j\.subtarefasAbertas > 0/);
+  assert.match(html, /⚠ Há subtarefas em aberto no Jira</);
+  assert.match(html, /var perto = e\.dias !== null && e\.dias !== undefined && e\.dias <= 1;/);
+});
+
+test('item que o Jira ainda não confirma: checkbox desabilitado, N/A continua disponível', () => {
+  assert.match(html, /var semClique = travado \|\| soJira;/);
+  assert.match(html, /\(semClique \? ' disabled' : ''\)/);
+  assert.match(html, /else if \(!travado\) linha \+= '<button type="button" class="mini" data-acao="abrir-na"/);
+});
+
+test('Solução assistida: o texto do Jira aparece para o time ler', () => {
+  assert.match(html, /<blockquote>' \+ esc\(i\.jira\.detalhe\) \+ '<\/blockquote>/);
+});

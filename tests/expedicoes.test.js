@@ -28,9 +28,9 @@ const QUADRO = {
 };
 
 describe('itens padrão', () => {
-  test('união das listas do time: 9 antes de comitar, 8 antes de expedir, sem repetir', () => {
+  test('união das listas do time: 9 antes de comitar, 7 antes de expedir, sem repetir (Release Note saiu em 2026-10-21)', () => {
     assert.strictEqual(ITENS_PADRAO.filter((i) => i.bloco === 'comitar').length, 9);
-    assert.strictEqual(ITENS_PADRAO.filter((i) => i.bloco === 'expedir').length, 8);
+    assert.strictEqual(ITENS_PADRAO.filter((i) => i.bloco === 'expedir').length, 7);
     const textos = ITENS_PADRAO.map((i) => i.texto);
     assert.strictEqual(new Set(textos).size, textos.length);
   });

@@ -20,7 +20,7 @@ const {
 } = require('./demandas');
 const {
   chaveJira, normalizarExpedicao, normalizarItemNovo, normalizarEstadoItem, normalizarObservacao, itensDoQuadro, montarOpcoes,
-  decorar, hojeBrasilia, idExpedicao, planoParaDemandas, planoParaExpedicao, recadoSincronia, somenteLeituraPeloJira
+  decorar, hojeBrasilia, idExpedicao, planoParaDemandas, planoParaExpedicao, recadoSincronia, recusaPeloJira
 } = require('./expedicoes');
 const { criarCache, verificar, verificarVarias } = require('./checklistJira');
 const { ssoAtivo, emitirPasse, lerPasse, caminhoSeguro, urlDeEntrada } = require('./sso');
@@ -573,14 +573,13 @@ app.patch('/api/expedicoes/:id/itens/:itemId', exigirSessaoApi, exigirEditorApi,
   if (!id || !itemId) return res.status(400).json({ erro: 'Identificador inválido.' });
   const n = normalizarEstadoItem(req.body);
   if (!n.ok) return res.status(400).json({ erro: n.erro });
-  // Item cujo campo já está preenchido no Jira fica marcado e travado: não se desmarca nem se
-  // dispensa aqui. Item que ainda falta no Jira segue livre.
+  // Item que o Jira confirma fica marcado e travado: não se desmarca nem se dispensa
+  // aqui. Item que ainda não cumpre no Jira não se marca à mão (só "Não aplicável").
   try {
     const atual = await lerExpedicao(id);
     const item = atual && atual.itens.find((i) => i.id === itemId);
-    if (item && somenteLeituraPeloJira(item, await verificacaoJira(atual))) {
-      return res.status(400).json({ erro: 'Este item já está confirmado no Jira e não pode ser alterado aqui.' });
-    }
+    const recusa = item ? recusaPeloJira(item, await verificacaoJira(atual), n.estado) : '';
+    if (recusa) return res.status(400).json({ erro: recusa });
   } catch (erro) {
     // sem como conferir agora: segue, e a gravação abaixo trata a falha do banco
     console.error('[expedicoes] não consegui conferir o item no Jira:', erro.message);

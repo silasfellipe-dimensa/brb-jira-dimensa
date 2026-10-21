@@ -6,12 +6,12 @@ const { test, describe } = require('node:test');
 const assert = require('node:assert');
 
 const J = require('../checklistJira');
-const { ITENS_PADRAO, aplicarVerificacao, somenteLeituraPeloJira, decorar, deLinhaItem } = require('../expedicoes');
+const { ITENS_PADRAO, aplicarVerificacao, recusaPeloJira, decorar, deLinhaItem, deLinhaExpedicao } = require('../expedicoes');
 
 const adf = (texto) => ({ type: 'doc', version: 1, content: [{ type: 'paragraph', content: texto ? [{ type: 'text', text: texto }] : [] }] });
 const sub = (key, categoriaStatus, summary = 'Codificação - x', nome = 'x') => ({ key, fields: { summary, status: { name: nome, statusCategory: { key: categoriaStatus } } } });
 const tudoPreenchido = () => ({
-  description: adf('Descrição'), customfield_12864: adf('Solução'), customfield_12369: adf('Situação'),
+  description: adf('Descrição'), customfield_12864: adf('Ao reenviar a liberação, o histórico do meio de pagamento passa a aparecer na tela.'), customfield_12369: adf('Situação'),
   customfield_13096: adf('Docs'), customfield_12181: '2026-10-08', customfield_12456: '2026-10-07',
   components: [{ name: 'SATÉLITE BRBCFI WEB VI' }], fixVersions: [{ name: 'DJSBRB_6.4.2.0' }], customfield_12379: '2026-09-28',
   status: { name: 'Concluído' }, subtasks: [sub('A-1', 'done'), sub('A-2', 'done', 'Documentação - x', 'Fechado')]
@@ -33,10 +33,10 @@ describe('regras: cada item aponta para o campo certo', () => {
   test('todo texto de regra existe nos itens padrão (se alguém renomear um item, o teste avisa)', () => {
     const itens = ITENS_PADRAO.map((i) => i.texto);
     assert.deepStrictEqual(J.TEXTOS_JIRA.filter((t) => !itens.includes(t)), []);
-    assert.strictEqual(J.TEXTOS_JIRA.length, 10);
+    assert.strictEqual(J.TEXTOS_JIRA.length, 11);
   });
 
-  test('task com tudo preenchido: os 10 itens ok, sem motivo', () => {
+  test('task com tudo preenchido: os 11 itens ok, sem motivo', () => {
     const r = J.avaliarTask(tudoPreenchido());
     assert.deepStrictEqual(Object.keys(r).sort(), [...J.TEXTOS_JIRA].sort());
     for (const [t, v] of Object.entries(r)) assert.deepStrictEqual([t, v.ok, v.motivo], [t, true, '']);
@@ -47,7 +47,7 @@ describe('regras: cada item aponta para o campo certo', () => {
     assert.ok(Object.values(r).every((v) => !v.ok));
     assert.strictEqual(r['Descrição preenchida?'].motivo, 'Descrição vazia no Jira');
     assert.strictEqual(r['Solução preenchida?'].motivo, 'Solução vazia no Jira');
-    assert.strictEqual(r['Situação / Requisito preenchido'].motivo, 'Situação/Requisito vazio no Jira');
+    assert.strictEqual(r['Requisito preenchido, em linguagem de usuário'].motivo, 'Situação/Requisito vazio no Jira');
     assert.strictEqual(r['Demais Documentações preenchidas'].motivo, 'Demais Documentações vazia no Jira');
     assert.strictEqual(r['Data interna acordada registrada? (boa prática)'].motivo, 'Data Interna Acordada vazia no Jira');
     assert.strictEqual(r['Todas as subtarefas concluídas'].motivo, 'sem subtarefas no Jira');
@@ -101,7 +101,7 @@ describe('regras: cada item aponta para o campo certo', () => {
   test('teste de aceitação: vale a data de conclusão OU o status "Teste de Aceitação Concluído" ou posterior', () => {
     const f = (campos) => J.avaliarTask(campos)['Status: Teste de aceitação concluído'];
     assert.ok(f({ customfield_12456: '2026-10-07', status: { name: 'Em Desenvolvimento' } }).ok, 'pela data');
-    for (const nome of ['Teste de Aceitação Concluído', 'TESTE DE ACEITACAO CONCLUIDO', 'Implantação', 'Concluído']) {
+    for (const nome of ['Teste de Aceitação Concluído', 'TESTE DE ACEITACAO CONCLUIDO', 'Resolvido', 'Implantação', 'Concluído']) {
       assert.ok(f({ status: { name: nome } }).ok, nome);
     }
     for (const nome of ['Em Desenvolvimento', 'Aberto', 'Desenvolvimento Concluído', 'Reaberto', undefined]) {
@@ -118,6 +118,58 @@ describe('regras: cada item aponta para o campo certo', () => {
     assert.strictEqual(r['Solução preenchida?'].ok, false);
     assert.strictEqual(r['Solução preenchida?'].motivo, 'Solução: falta em E-2');
     assert.strictEqual(r['Solução preenchida?'].detalhe, 'E-1 ✓ · E-2 ✗ · E-3 ✓');
+  });
+});
+
+describe('combinado em 2026-10-21', () => {
+  const T = 'Solução com mais de 60 caracteres, objetivo e sem detalhes técnicos';
+
+  test('Solução: mais de 60 caracteres de texto (ADF ou texto simples); diz quantos tem quando falta', () => {
+    const f = (v) => J.avaliarTask({ customfield_12864: v })[T];
+    const longa = 'Ao reenviar a liberação, o histórico do meio de pagamento passa a aparecer.';
+    assert.ok(longa.length > 60);
+    const r = f(adf(longa));
+    assert.deepStrictEqual([r.ok, r.detalhe], [true, longa], 'o texto vai junto para o time ler');
+    assert.strictEqual(f('x'.repeat(60)).motivo, 'Solução com 60 caracteres no Jira', '60 não é "mais de 60"');
+    assert.ok(f('x'.repeat(61)).ok);
+    assert.strictEqual(f(adf('')).motivo, 'Solução vazia no Jira');
+    assert.strictEqual(f('   curta   ').motivo, 'Solução com 5 caracteres no Jira', 'espaços não contam');
+    assert.strictEqual(J.TEXTOS_ASSISTIDOS.join(), T);
+  });
+
+  test('texto puro do ADF: parágrafos e quebras viram um espaço', () => {
+    const doc = { type: 'doc', content: [
+      { type: 'paragraph', content: [{ type: 'text', text: 'Alterar a tela.' }, { type: 'hardBreak' }, { type: 'text', text: 'Incluir campo.' }] },
+      { type: 'paragraph', content: [{ type: 'text', text: 'Fim' }] }] };
+    assert.strictEqual(J.textoPlano(doc), 'Alterar a tela. Incluir campo. Fim');
+  });
+
+  test('subtarefas abertas: conta as fora de "done" (Fechado/Cancelado/Concluído/Resolvido fecham)', async () => {
+    const task = (subs) => async () => ({ fields: { issuetype: { hierarchyLevel: 0 }, status: { name: 'x' }, subtasks: subs } });
+    assert.strictEqual((await J.lerDoJira('A-1', task([sub('S-1', 'done'), sub('S-2', 'indeterminate'), sub('S-3', 'new')]))).subtarefasAbertas, 2);
+    assert.strictEqual((await J.lerDoJira('A-1', task([sub('S-1', 'done')]))).subtarefasAbertas, 0);
+    assert.strictEqual((await J.lerDoJira('A-1', task(undefined))).subtarefasAbertas, 0, 'sem subtarefas: nada aberto');
+  });
+
+  test('lista padrão: sai "Release Note em linguagem de usuário"; Requisito e Solução com o nome novo', () => {
+    const textos = ITENS_PADRAO.map((i) => i.texto);
+    assert.strictEqual(textos.length, 16);
+    assert.ok(!textos.some((t) => /Release Note/.test(t)));
+    assert.ok(textos.includes('Requisito preenchido, em linguagem de usuário') && textos.includes(T));
+  });
+
+  test('expedições antigas: o item retirado some e os renomeados aparecem com o nome novo (sem mexer no banco)', () => {
+    const linha = (id, texto, padrao = true) => ({ id, bloco: 'expedir', texto, padrao, estado: 'concluido', atualizado_por: 'a@x' });
+    const e = deLinhaExpedicao({ id: 1 }, [
+      linha(1, 'Situação / Requisito preenchido'),
+      linha(2, 'Release Note em linguagem de usuário'),
+      linha(3, 'Release Note com mais de 60 caracteres, objetivo e sem detalhes técnicos'),
+      linha(4, 'Release Note em linguagem de usuário', false)
+    ]);
+    assert.deepStrictEqual(e.itens.map((i) => [i.id, i.texto]), [
+      [1, 'Requisito preenchido, em linguagem de usuário'], [3, T], [4, 'Release Note em linguagem de usuário']
+    ], 'item avulso com o mesmo texto fica (foi o time que criou)');
+    assert.strictEqual(e.itens[0].atualizadoPor, 'a@x', 'histórico preservado');
   });
 });
 
@@ -248,20 +300,32 @@ describe('aplicação sobre os itens da expedição', () => {
     assert.strictEqual(itens[0].estado, 'pendente', 'não altera o original');
   });
 
-  test('campo vazio no Jira: o item continua LIVRE e com o estado que a pessoa gravou; o motivo vem só como informação', () => {
+  test('não cumpre no Jira: PENDENTE e só o Jira marca (marcação à mão antiga não vale); o motivo aparece', () => {
     const itens = [item('Solução preenchida?', 'pendente'), item('Descrição preenchida?', 'concluido')];
     const r = aplicarVerificacao(itens, verif({ 'Solução preenchida?': FALTA('Solução vazia no Jira'), 'Descrição preenchida?': FALTA('Descrição vazia no Jira') }));
-    assert.deepStrictEqual(r.map((i) => [i.estado, i.bloqueado]), [['pendente', false], ['concluido', false]], 'marcado à mão continua marcado');
+    assert.deepStrictEqual(r.map((i) => [i.estado, i.bloqueado, i.soJira]), [['pendente', false, true], ['pendente', false, true]],
+      'checklist não fica "completo" com o Jira dizendo o contrário');
     assert.strictEqual(r[0].jira.motivo, 'Solução vazia no Jira');
     assert.strictEqual(r[0].automatico, true);
   });
 
-  test('quando o Jira passa a ter o campo, o item que estava marcado à mão passa a travado; N/A só some se o Jira confirma', () => {
+  test('quando o Jira passa a cumprir, o item fica marcado e travado; N/A continua valendo enquanto não cumpre', () => {
     const itens = [item('Solução preenchida?', 'concluido'), item('Descrição preenchida?', 'nao_aplicavel', { justificativa: 'não se aplica' })];
     const confirma = aplicarVerificacao(itens, verif({ 'Solução preenchida?': OK, 'Descrição preenchida?': OK }));
     assert.deepStrictEqual(confirma.map((i) => [i.estado, i.bloqueado]), [['concluido', true], ['concluido', true]]);
     const falta = aplicarVerificacao(itens, verif({ 'Solução preenchida?': FALTA('x'), 'Descrição preenchida?': FALTA('y') }));
-    assert.deepStrictEqual(falta.map((i) => [i.estado, i.bloqueado]), [['concluido', false], ['nao_aplicavel', false]], 'N/A continua valendo enquanto o Jira não tem o campo');
+    assert.deepStrictEqual(falta.map((i) => [i.estado, i.bloqueado]), [['pendente', false], ['nao_aplicavel', false]]);
+  });
+
+  test('Solução com mais de 60 caracteres (assistido): cumprindo, quem marca é o time e o texto vem junto', () => {
+    const T = 'Solução com mais de 60 caracteres, objetivo e sem detalhes técnicos';
+    const ok = { ok: true, motivo: '', detalhe: 'texto da solução' };
+    const [livre] = aplicarVerificacao([item(T, 'pendente')], verif({ [T]: ok }));
+    assert.deepStrictEqual([livre.estado, livre.bloqueado, livre.soJira, livre.assistido, livre.jira.detalhe], ['pendente', false, false, true, 'texto da solução']);
+    const [marcado] = aplicarVerificacao([item(T, 'concluido')], verif({ [T]: ok }));
+    assert.strictEqual(marcado.estado, 'concluido', 'o que o time marcou continua marcado');
+    const [curta] = aplicarVerificacao([item(T, 'concluido')], verif({ [T]: FALTA('Solução com 42 caracteres no Jira') }));
+    assert.deepStrictEqual([curta.estado, curta.soJira], ['pendente', true], 'curta: não dá para marcar');
   });
 
   test('item sem regra no Jira, item avulso e item removido ficam como estão', () => {
@@ -288,26 +352,31 @@ describe('aplicação sobre os itens da expedição', () => {
     assert.match(r[0].jira.motivo, /não tem tasks/);
   });
 
-  test('só leitura: apenas item com regra cujo campo JÁ está preenchido no Jira; os demais ficam livres', () => {
+  test('o servidor recusa: mexer no que o Jira confirmou, e marcar à mão o que o Jira ainda não confirma', () => {
     const solucao = item('Solução preenchida?');
-    const v = verif({ 'Solução preenchida?': OK, 'Descrição preenchida?': FALTA('x') });
-    assert.strictEqual(somenteLeituraPeloJira(solucao, v), true);
-    assert.strictEqual(somenteLeituraPeloJira(item('Descrição preenchida?'), v), false, 'falta no Jira: livre');
-    assert.strictEqual(somenteLeituraPeloJira(item('Solução preenchida?', 'nao_aplicavel'), v), true, 'confirmado no Jira: nem N/A nem desmarcar');
-    assert.strictEqual(somenteLeituraPeloJira(solucao, { status: 'indisponivel' }), false);
-    assert.strictEqual(somenteLeituraPeloJira(solucao, { status: 'nao-encontrada' }), false);
-    assert.strictEqual(somenteLeituraPeloJira(solucao, { status: 'sem-filhos' }), false);
-    assert.strictEqual(somenteLeituraPeloJira(solucao, null), false);
-    assert.strictEqual(somenteLeituraPeloJira(item('Release Note em linguagem de usuário'), v), false);
-    assert.strictEqual(somenteLeituraPeloJira({ ...solucao, padrao: false }, v), false);
+    const T = 'Solução com mais de 60 caracteres, objetivo e sem detalhes técnicos';
+    const v = verif({ 'Solução preenchida?': OK, 'Descrição preenchida?': FALTA('Descrição vazia no Jira'), [T]: OK });
+    assert.match(recusaPeloJira(solucao, v, 'pendente'), /já está confirmado no Jira/);
+    assert.match(recusaPeloJira(solucao, v, 'nao_aplicavel'), /já está confirmado no Jira/, 'confirmado: nem N/A');
+    const desc = item('Descrição preenchida?');
+    assert.match(recusaPeloJira(desc, v, 'concluido'), /ainda não cumpre lá \(Descrição vazia no Jira\).*Não aplicável/);
+    assert.strictEqual(recusaPeloJira(desc, v, 'nao_aplicavel'), '', 'N/A com motivo continua possível');
+    assert.strictEqual(recusaPeloJira(desc, v, 'pendente'), '');
+    assert.strictEqual(recusaPeloJira(item(T), v, 'concluido'), '', 'assistido que cumpre: o time marca');
+    assert.strictEqual(recusaPeloJira(item(T), v, 'pendente'), '', 'e desmarca');
+    for (const fora of [{ status: 'indisponivel' }, { status: 'nao-encontrada' }, { status: 'sem-filhos' }, null]) {
+      assert.strictEqual(recusaPeloJira(desc, fora, 'concluido'), '', 'Jira sem resposta: tudo manual ' + JSON.stringify(fora));
+    }
+    assert.strictEqual(recusaPeloJira(item('A versão ficou verde no painel até 14h?'), v, 'concluido'), '', 'item sem regra');
+    assert.strictEqual(recusaPeloJira({ ...desc, padrao: false }, v, 'concluido'), '', 'item avulso');
   });
 
   test('o progresso conta o que o Jira confirmou mais o que a pessoa marcou à mão', () => {
     const itens = ITENS_PADRAO.map((i, n) => deLinhaItem({ id: n + 1, bloco: i.bloco, texto: i.texto, padrao: true, estado: i.texto === 'Branch: VERSÃO FIX → master | VERSÃO RELEASE → Developer?' ? 'concluido' : 'pendente' }));
-    const v = verif(Object.fromEntries(J.TEXTOS_JIRA.map((t, n) => [t, n < 5 ? OK : FALTA('falta')])));
+    const v = verif(Object.fromEntries(J.TEXTOS_JIRA.map((t, n) => [t, n < 5 ? OK : FALTA('falta')])), { subtarefasAbertas: 2 });
     const e = decorar({ artefatoJira: 'A-1', dataExpedicao: null, itens }, null, '2026-10-13', v);
-    assert.deepStrictEqual(e.progresso, { total: 17, concluidos: 6, naoAplicaveis: 0, pendentes: 11 }, '5 do Jira + 1 marcado à mão');
-    assert.deepStrictEqual(e.jira, { status: 'ok', tipo: 'task', filhos: 0, lidoEm: '2026-10-13T12:00:00Z', desatualizado: false });
+    assert.deepStrictEqual(e.progresso, { total: 16, concluidos: 6, naoAplicaveis: 0, pendentes: 10 }, '5 do Jira + 1 marcado à mão');
+    assert.deepStrictEqual(e.jira, { status: 'ok', tipo: 'task', filhos: 0, lidoEm: '2026-10-13T12:00:00Z', desatualizado: false, subtarefasAbertas: 2 });
     const sem = decorar({ artefatoJira: '', dataExpedicao: null, itens }, null, '2026-10-13', null);
     assert.strictEqual(sem.jira.status, 'sem-chave');
     assert.strictEqual(sem.progresso.concluidos, 1);

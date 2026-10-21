@@ -2,7 +2,7 @@
 // Ficam aqui, e não no supabase.js, para serem testadas isoladamente.
 
 const { interpretarData, interpretarNumero, idDemanda, urlJira } = require('./demandas');
-const { TEXTOS_JIRA } = require('./checklistJira');
+const { TEXTOS_JIRA, TEXTOS_ASSISTIDOS } = require('./checklistJira');
 
 const LIMITE = { jira: 40, nome: 300, acs: 40, item: 200, justificativa: 500, observacao: 1000 };
 const MIN_JUSTIFICATIVA = 10;
@@ -29,12 +29,21 @@ const ITENS_PADRAO = [
   { bloco: 'expedir', texto: 'Status: Teste de aceitação concluído' },
   { bloco: 'expedir', texto: 'Todas as subtarefas concluídas' },
   { bloco: 'expedir', texto: 'Apontamentos de horas realizados' },
-  { bloco: 'expedir', texto: 'Situação / Requisito preenchido' },
+  { bloco: 'expedir', texto: 'Requisito preenchido, em linguagem de usuário' },
   { bloco: 'expedir', texto: 'Demais Documentações preenchidas' },
-  { bloco: 'expedir', texto: 'Release Note em linguagem de usuário' },
-  { bloco: 'expedir', texto: 'Release Note com mais de 60 caracteres, objetivo e sem detalhes técnicos' },
+  { bloco: 'expedir', texto: 'Solução com mais de 60 caracteres, objetivo e sem detalhes técnicos' },
   { bloco: 'expedir', texto: 'A versão ficou verde no painel até 14h?' }
 ];
+
+/* Mudanças combinadas com o time em 2026-10-21. Os itens já estão gravados em
+ * cada expedição com o texto antigo; em vez de reescrever o banco, a leitura
+ * troca o nome (o histórico de quem marcou continua o mesmo) e esconde o item
+ * que saiu ("Release Note em linguagem de usuário" virou o Requisito). */
+const ITENS_RENOMEADOS = {
+  'Situação / Requisito preenchido': 'Requisito preenchido, em linguagem de usuário',
+  'Release Note com mais de 60 caracteres, objetivo e sem detalhes técnicos': 'Solução com mais de 60 caracteres, objetivo e sem detalhes técnicos'
+};
+const ITENS_RETIRADOS = ['Release Note em linguagem de usuário'];
 
 const tem = (o, k) => Object.prototype.hasOwnProperty.call(o, k);
 const texto = (v) => (v === null || v === undefined ? '' : String(v).trim());
@@ -320,8 +329,9 @@ function recadoSincronia(destino, plano, gravou) {
 /* ---- Banco -> API ---- */
 
 function deLinhaItem(i) {
+  const texto = i.padrao && ITENS_RENOMEADOS[i.texto] ? ITENS_RENOMEADOS[i.texto] : i.texto;
   return {
-    id: i.id, bloco: i.bloco, texto: i.texto, padrao: !!i.padrao, estado: i.estado,
+    id: i.id, bloco: i.bloco, texto, padrao: !!i.padrao, estado: i.estado,
     justificativa: i.justificativa || '', atualizadoPor: i.atualizado_por || '', atualizadoEm: i.atualizado_em || null,
     observacao: i.observacao || '', observacaoPor: i.observacao_por || '', observacaoEm: i.observacao_em || null
   };
@@ -333,34 +343,46 @@ function deLinhaExpedicao(l, itens) {
     dataExpedicao: l.data_expedicao || null, responsavelGuardado: l.responsavel || '',
     pontosFuncao: l.pontos_funcao === null || l.pontos_funcao === undefined ? null : Number(l.pontos_funcao),
     atualizadoPor: l.atualizado_por || '', atualizadoEm: l.atualizado_em || null,
-    itens: (itens || []).map(deLinhaItem)
+    itens: (itens || []).filter((i) => !(i.padrao && ITENS_RETIRADOS.includes(i.texto))).map(deLinhaItem)
   };
 }
 
-/** Itens que o Jira confirma sozinho (ver checklistJira.js). `verificacao` é o que o
+/** Itens que o Jira responde (ver checklistJira.js). `verificacao` é o que o
  * Jira disse sobre a chave da expedição (ou null se ela não tem chave).
- * - campo PREENCHIDO no Jira: o item fica marcado e TRAVADO (ninguém desmarca);
- * - campo vazio: o item continua livre, como qualquer outro (marca-se à mão); o
- *   motivo aparece só como informação;
- * - chave que o Jira não achou, ou Jira fora do ar: tudo manual, sem trava. */
+ * - cumpre no Jira: o item fica marcado e TRAVADO (ninguém desmarca);
+ * - não cumpre: o item fica PENDENTE e não aceita marcação à mão (combinado em
+ *   2026-10-21: senão o checklist ficava "completo" com o Jira dizendo o
+ *   contrário). Sobra o "Não aplicável" com motivo, para o caso que não se aplica;
+ * - assistido (Solução com mais de 60 caracteres): cumprindo, quem marca é o
+ *   time, depois de ler o texto; não cumprindo, igual ao anterior;
+ * - chave que o Jira não achou, épico sem tasks ou Jira fora do ar: tudo manual. */
 function aplicarVerificacao(itens, verificacao) {
   if (!verificacao || verificacao.status === 'nao-encontrada' || verificacao.status === 'indisponivel') return itens;
+  const conferido = verificacao.status === 'ok';
   return itens.map((i) => {
     if (i.removido || !i.padrao || !TEXTOS_JIRA.includes(i.texto)) return i;
     const r = verificacao.itens && verificacao.itens[i.texto];
     const ok = !!(r && r.ok);
     const jira = { ok, motivo: r ? r.motivo : 'o épico não tem tasks no Jira', detalhe: (r && r.detalhe) || '' };
-    if (ok) return { ...i, estado: 'concluido', automatico: true, bloqueado: true, jira };
-    return { ...i, automatico: true, bloqueado: false, jira };
+    const assistido = TEXTOS_ASSISTIDOS.includes(i.texto);
+    if (!conferido) return { ...i, automatico: true, bloqueado: false, soJira: false, jira };
+    if (ok && assistido) return { ...i, automatico: true, assistido: true, bloqueado: false, soJira: false, jira };
+    if (ok) return { ...i, estado: 'concluido', automatico: true, bloqueado: true, soJira: false, jira };
+    return { ...i, estado: i.estado === 'nao_aplicavel' ? 'nao_aplicavel' : 'pendente', automatico: true, assistido, bloqueado: false, soJira: true, jira };
   });
 }
 
-/** O item está confirmado no Jira e por isso não pode mais ser alterado aqui? */
-function somenteLeituraPeloJira(item, verificacao) {
-  if (!item || !item.padrao || !TEXTOS_JIRA.includes(item.texto)) return false;
-  if (!verificacao || verificacao.status !== 'ok') return false;
+/** Por que o Jira não deixa gravar esta mudança no item ('' = pode). */
+function recusaPeloJira(item, verificacao, novoEstado) {
+  if (!item || !item.padrao || !TEXTOS_JIRA.includes(item.texto)) return '';
+  if (!verificacao || verificacao.status !== 'ok') return '';
   const r = verificacao.itens && verificacao.itens[item.texto];
-  return !!(r && r.ok);
+  const ok = !!(r && r.ok);
+  if (ok && !TEXTOS_ASSISTIDOS.includes(item.texto)) return 'Este item já está confirmado no Jira e não pode ser alterado aqui.';
+  if (!ok && novoEstado === 'concluido') {
+    return `Este item é conferido pelo Jira e ainda não cumpre lá (${(r && r.motivo) || 'sem informação'}). Ajuste no Jira e clique em Atualizar, ou marque "Não aplicável" com o motivo.`;
+  }
+  return '';
 }
 
 /** Expedição pronta para a tela: responsável de hoje, progresso e urgência. */
@@ -371,7 +393,7 @@ function decorar(expedicao, snapshot, hoje, verificacao) {
     ...expedicao,
     itens,
     jira: verificacao
-      ? { status: verificacao.status, tipo: verificacao.tipo || '', filhos: verificacao.filhos || 0, lidoEm: verificacao.lidoEm || null, desatualizado: !!verificacao.desatualizado }
+      ? { status: verificacao.status, tipo: verificacao.tipo || '', filhos: verificacao.filhos || 0, lidoEm: verificacao.lidoEm || null, desatualizado: !!verificacao.desatualizado, subtarefasAbertas: verificacao.subtarefasAbertas || 0 }
       : { status: 'sem-chave' },
     responsavel: responsavelAtual(expedicao, snapshot),
     progresso: prog,
@@ -381,8 +403,8 @@ function decorar(expedicao, snapshot, hoje, verificacao) {
 }
 
 module.exports = {
-  decorar, aplicarVerificacao, somenteLeituraPeloJira, mesmaDemanda, linhaMaisRecente, planoParaDemandas, planoParaExpedicao, recadoSincronia, rotuloMes,
-  ITENS_PADRAO, BLOCOS, ESTADOS, MIN_JUSTIFICATIVA, normalizarObservacao, chaveJira, normalizarExpedicao, normalizarItemNovo,
+  decorar, aplicarVerificacao, recusaPeloJira, mesmaDemanda, linhaMaisRecente, planoParaDemandas, planoParaExpedicao, recadoSincronia, rotuloMes,
+  ITENS_PADRAO, ITENS_RENOMEADOS, ITENS_RETIRADOS, BLOCOS, ESTADOS, MIN_JUSTIFICATIVA, normalizarObservacao, chaveJira, normalizarExpedicao, normalizarItemNovo,
   normalizarEstadoItem, progresso, hojeBrasilia, classificar, itensDoQuadro, montarOpcoes,
   responsavelAtual, deLinhaItem, deLinhaExpedicao, idExpedicao: idDemanda
 };
