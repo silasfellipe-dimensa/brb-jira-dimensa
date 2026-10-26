@@ -94,8 +94,6 @@
   .pilula { font-size: 0.74rem; font-weight: 600; padding: 4px 12px; border-radius: 100px; background: var(--line-soft); color: var(--ink-dim); }
   .pilula.alerta { background: var(--warn-soft); color: var(--warn); }
   .pilula.ok { background: var(--ok-soft); color: var(--ok); }
-  .pilula-botao { border: 0; font-family: inherit; cursor: pointer; }
-  .pilula-botao:hover, .pilula-botao:focus-visible { outline: 2px solid var(--ok); outline-offset: 1px; }
 
   .aviso { margin-bottom: 12px; padding: 9px 12px; border-left: 3px solid var(--warn); background: var(--line-soft); border-radius: 0 6px 6px 0; font-size: 0.78rem; }
   .aviso[hidden] { display: none; }
@@ -360,13 +358,14 @@
     }
 
     /* ---------- derivados ---------- */
+    function doResponsavel(e) {
+      var nome = e.responsavel.nome;
+      if (estado.filtro === '__sem__' && nome) return false;
+      if (estado.filtro && estado.filtro !== '__sem__' && nome !== estado.filtro) return false;
+      return true;
+    }
     function visiveis() {
-      return estado.expedicoes.filter(function (e) {
-        var nome = e.responsavel.nome;
-        if (estado.filtro === '__sem__' && nome) return false;
-        if (estado.filtro && estado.filtro !== '__sem__' && nome !== estado.filtro) return false;
-        return passaStatus(e);
-      });
+      return estado.expedicoes.filter(function (e) { return doResponsavel(e) && passaStatus(e, estado.status); });
     }
     /* Status da expedição, na ordem em que decide: concluída vence a data
      * (pronta para expedir não está atrasada); senão, data passada = atrasada. */
@@ -381,21 +380,31 @@
       if (concluida(e)) return 'concluida';
       return e.grupo === 'atrasadas' ? 'atrasada' : 'andamento';
     }
-    function passaStatus(e) {
+    function passaStatus(e, alvo) {
       var s = statusDe(e);
-      if (estado.status === 'todas') return true;
-      if (estado.status === 'abertas') return s !== 'concluida';
-      return s === estado.status;
+      if (alvo === 'todas') return true;
+      if (alvo === 'abertas') return s !== 'concluida';
+      return s === alvo;
     }
-    /* Quantas o filtro de status está escondendo (respeitando o de responsável). */
-    function concluidasOcultas() {
-      if (estado.status !== 'abertas') return 0;
-      return estado.expedicoes.filter(function (e) {
-        var nome = e.responsavel.nome;
-        if (estado.filtro === '__sem__' && nome) return false;
-        if (estado.filtro && estado.filtro !== '__sem__' && nome !== estado.filtro) return false;
-        return concluida(e);
-      }).length;
+    /* Quantas cada opção do filtro mostraria, respeitando o filtro de
+     * responsável. A contagem fica no próprio select ("Concluídas (3)"):
+     * quem procura uma expedição escondida olha para o filtro. */
+    function contagemStatus() {
+      var doResp = estado.expedicoes.filter(doResponsavel);
+      var c = {};
+      STATUS.forEach(function (s) {
+        c[s.valor] = doResp.filter(function (e) { return passaStatus(e, s.valor); }).length;
+      });
+      return c;
+    }
+    function atualizarContagens() {
+      var sel = document.getElementById('selStatus');
+      if (!sel) return;
+      var c = contagemStatus();
+      STATUS.forEach(function (s) {
+        var op = sel.querySelector('option[value="' + s.valor + '"]');
+        if (op) op.textContent = s.rotulo + ' (' + c[s.valor] + ')';
+      });
     }
     function estaAberta(e) {
       if (Object.prototype.hasOwnProperty.call(estado.abertas, e.id)) return estado.abertas[e.id];
@@ -421,6 +430,7 @@
           '<button type="button" class="btn" data-acao="expandir-tudo">Expandir tudo</button>' +
           '<button type="button" class="btn" data-acao="recolher-tudo">Recolher tudo</button>' +
           '<button type="button" class="btn primario" data-acao="nova">+ Nova expedição</button></span>';
+      atualizarContagens();
     }
     function renderResumo() {
       var v = visiveis();
@@ -435,10 +445,7 @@
       if (semData) h += '<span class="pilula atencao">' + semData + ' sem data de expedição</span>';
       if (semAcs) h += '<span class="pilula atencao">' + semAcs + ' sem ACS</span>';
       if (feitas) h += '<span class="pilula ok">' + feitas + (feitas === 1 ? ' concluída' : ' concluídas') + '</span>';
-      // As concluídas saem da tela, mas não somem sem aviso: a pílula leva até elas.
-      var ocultas = concluidasOcultas();
-      if (ocultas) h += '<button type="button" class="pilula ok pilula-botao" data-acao="ver-concluidas" title="Mostrar as concluídas">' +
-        ocultas + (ocultas === 1 ? ' concluída oculta' : ' concluídas ocultas') + ' · ver</button>';
+      atualizarContagens();
       document.getElementById('resumo').innerHTML = h;
     }
 
@@ -590,10 +597,11 @@
         return;
       }
       if (!v.length) {
-        var ocultas = concluidasOcultas();
+        // Lista vazia só por causa do padrão: diz uma vez que há concluídas e onde vê-las.
+        var ocultas = estado.status === 'abertas' ? contagemStatus().concluida : 0;
         area.innerHTML = '<div class="vazio">' + (ocultas
-          ? 'Nenhuma expedição em andamento ou atrasada: ' + (ocultas === 1 ? 'a única está concluída' : 'as ' + ocultas + ' estão concluídas') +
-            '. Escolha "Concluídas" no filtro Status para vê-las.'
+          ? 'Nenhuma expedição em andamento ou atrasada. Há ' + ocultas + (ocultas === 1 ? ' concluída' : ' concluídas') +
+            ': escolha "Concluídas" no filtro Status.'
           : 'Nenhuma expedição para este filtro.') + '</div>';
         return;
       }
@@ -769,12 +777,6 @@
         });
       });
     }
-
-    document.getElementById('resumo').addEventListener('click', function (ev) {
-      if (!ev.target.closest('[data-acao="ver-concluidas"]')) return;
-      estado.status = 'concluida';
-      renderBarra(); renderResumo(); renderLista();
-    });
 
     area.addEventListener('click', function (ev) {
       var b = ev.target.closest('[data-acao]');
