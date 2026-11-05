@@ -6,11 +6,12 @@
  *
  * data-menu é a tela atual, que fica de fora do menu. Vazio (Admin,
  * Histórico de demandas) = mostra todos. Ordem igual à do Portal: Kanban BRB,
- * Demandas, Expedições, Dashboard, Qualidade. Depois: Portal, quem está
- * logado e Sair.
+ * Demandas, Expedições, Dashboard, Qualidade. Depois: Portal, quem está logado e
+ * Sair. A pesquisa de chamado não é item do menu: é o botão flutuante "Achar
+ * chamado" (static/busca.js), que este arquivo carrega só para a equipe.
  *
  * Quem vê o quê vem de /api/eu - as mesmas regras de sempre:
- *   - Expedições só para quem edita (Dimensa/Evertec);
+ *   - Expedições e o "Buscar no Jira" só para quem edita (Dimensa/Evertec);
  *   - Qualidade só quando o servidor manda o endereço (Dimensa/Evertec/BRB);
  *   - Portal só quando o servidor manda o endereço (o BRB não usa o Portal).
  * Esconder aqui é só o atalho: a barreira de verdade é a do servidor em cada
@@ -158,6 +159,7 @@
     });
     eu.then(function (dados) {
       if (!dados) return;
+      carregarBusca(dados);
       navs.forEach(function (nav) {
         nav.querySelector('.menux-itens').innerHTML = itensHtml(nav.getAttribute('data-menu'), dados);
         var velha = nav.querySelector('.menux-conta');
@@ -165,6 +167,15 @@
         nav.appendChild(contaEl(dados));
       });
     });
+  }
+
+  /* Botão flutuante Buscar no Jira: só para a equipe; o BRB e a TOTVS nem baixam. */
+  function carregarBusca(dados) {
+    if (!dados.editor || document.getElementById('bz-js')) return;
+    var s = document.createElement('script');
+    s.id = 'bz-js';
+    s.src = '/busca.js';
+    document.body.appendChild(s);
   }
 
   window.Menu = { eu: eu };

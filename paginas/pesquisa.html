@@ -1,0 +1,542 @@
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Buscar no Jira · Kanban BRB</title>
+
+<style>
+  :root {
+    color-scheme: light dark;
+    --bg: #F5F5F5;
+    --bg-panel: #FFFFFF;
+    --ink: #1E212C;
+    --ink-dim: #4B5A68;
+    --ink-faint: #7C8894;
+    --line: #E5E6E7;
+    --line-soft: #EFEFEF;
+    --accent: #FF6C0C;
+    --accent-soft: #FFE8D9;
+    --warn: #B83A22;
+    --warn-soft: #FBE3DD;
+    --ok: #0B9C7F;
+    --ok-soft: #D8F1EB;
+    --info: #3C6FD8;
+    --info-soft: #E2EAFB;
+    --shadow: 0 1px 2px rgba(30,33,44,0.06), 0 1px 1px rgba(30,33,44,0.04);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #1E212C;
+      --bg-panel: #262B38;
+      --ink: #F5F5F5;
+      --ink-dim: #A7B0BC;
+      --ink-faint: #78838F;
+      --line: #333846;
+      --line-soft: #2A2E3A;
+      --accent: #FF8A3D;
+      --accent-soft: #3A2A1C;
+      --warn: #F08A72;
+      --warn-soft: #3F2320;
+      --ok: #3EE8C4;
+      --ok-soft: #173A33;
+      --info: #8FB0F5;
+      --info-soft: #222D45;
+      --shadow: 0 1px 3px rgba(0,0,0,0.35);
+    }
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--ink);
+    font-family: Lato, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  button { font: inherit; color: inherit; cursor: pointer; }
+  a { color: inherit; }
+
+  header.top { background: var(--bg); border-bottom: 1px solid var(--line); padding: 22px 28px; }
+  .top-row { display: flex; align-items: center; justify-content: space-between; gap: 24px; flex-wrap: wrap; max-width: 1400px; margin: 0 auto; }
+  .titles h1 { margin: 0; font-size: 1.5rem; font-weight: 700; letter-spacing: -0.01em; }
+
+  main { max-width: 1100px; margin: 0 auto; padding: 22px 28px 60px; }
+  .painel { background: var(--bg-panel); border: 1px solid var(--line-soft); border-radius: 10px; padding: 16px 18px 18px; box-shadow: var(--shadow); }
+  .painel h2 { margin: 0 0 3px; font-size: 0.95rem; font-weight: 700; }
+  .ajuda { margin: 0 0 14px; font-size: 0.76rem; color: var(--ink-faint); line-height: 1.45; max-width: 820px; }
+  .ajuda code { font-size: 0.74rem; padding: 0 4px; border-radius: 4px; background: var(--line-soft); color: var(--ink-dim); }
+
+  /* Cabeça e botão iguais ao painel flutuante: cor invertida, lupa laranja. */
+  .cabeca { display: flex; gap: 12px; align-items: flex-start; }
+  .marca { width: 38px; height: 38px; flex: none; border-radius: 50%; display: flex; align-items: center; justify-content: center; background: var(--ink); }
+  .marca svg { width: 19px; height: 19px; fill: none; stroke: var(--accent); stroke-width: 2.3; stroke-linecap: round; stroke-linejoin: round; }
+  form.busca { display: flex; flex-direction: column; gap: 8px; }
+  form.busca textarea {
+    width: 100%; min-height: 46px; max-height: 260px; resize: none; font: inherit; font-size: 0.95rem; line-height: 1.45; color: var(--ink); background: var(--bg);
+    border: 1px solid var(--line); border-radius: 10px; padding: 11px 13px;
+  }
+  form.busca textarea:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-soft); }
+  form.busca .linha { display: flex; align-items: center; justify-content: space-between; gap: 10px; font-size: 0.76rem; color: var(--ink-faint); }
+  .modo button { border: 0; background: none; padding: 0; font: inherit; color: var(--accent); text-decoration: underline; }
+  .btn {
+    display: inline-flex; align-items: center; gap: 7px; font-size: 0.85rem; font-weight: 700; text-decoration: none;
+    border: 1px solid var(--ink); border-radius: 100px; padding: 9px 20px 9px 15px; background: var(--ink); color: var(--bg);
+    transition: transform .15s ease;
+  }
+  .btn:hover { transform: translateY(-1px); }
+  .btn:disabled { opacity: 0.6; cursor: default; transform: none; }
+  .btn svg { width: 15px; height: 15px; fill: none; stroke: var(--accent); stroke-width: 2.3; stroke-linecap: round; stroke-linejoin: round; }
+
+  #resultado { margin-top: 18px; }
+  .linha-termo { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 14px; font-size: 0.8rem; color: var(--ink-dim); }
+  .pilula { font-size: 0.72rem; font-weight: 700; padding: 3px 11px; border-radius: 100px; background: var(--line-soft); color: var(--ink-dim); }
+  .pilula.ttb { background: var(--accent-soft); color: var(--accent); }
+  .pilula.acs { background: var(--info-soft); color: var(--info); }
+  .aviso { margin-bottom: 12px; padding: 9px 12px; border-left: 3px solid var(--warn); background: var(--line-soft); border-radius: 0 6px 6px 0; font-size: 0.78rem; line-height: 1.45; }
+  .vazio { padding: 22px; border: 1px dashed var(--line); border-radius: 10px; text-align: center; color: var(--ink-dim); font-size: 0.85rem; line-height: 1.55; }
+  .vazio strong { color: var(--ink); }
+  .btn-tentar { margin-left: 6px; padding: 3px 10px; border: 1px solid var(--line); border-radius: 6px; background: transparent; color: var(--ink); font: inherit; font-size: 0.76rem; cursor: pointer; }
+  .btn-tentar:hover { border-color: var(--accent); color: var(--accent); }
+  .vazio .btn-tentar { margin: 4px 0 0; }
+  .vazio .dica { display: block; margin-top: 6px; font-size: 0.78rem; color: var(--ink-faint); }
+  .vazio code { padding: 1px 6px; border-radius: 4px; background: var(--line-soft); color: var(--accent); }
+
+  section.grupo { margin-top: 20px; }
+  section.grupo > h3 { display: flex; align-items: baseline; gap: 8px; margin: 0 0 8px; font-size: 0.72rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; color: var(--ink-faint); }
+  section.grupo > h3 .n { font-weight: 600; color: var(--ink-faint); }
+  details.grupo > summary { cursor: pointer; list-style: none; display: flex; align-items: baseline; gap: 8px; margin: 20px 0 8px; font-size: 0.72rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; color: var(--ink-faint); }
+  details.grupo > summary::-webkit-details-marker { display: none; }
+  details.grupo > summary::before { content: '▸'; font-size: 0.8rem; transition: transform .15s; }
+  details.grupo[open] > summary::before { transform: rotate(90deg); }
+  details.grupo > summary small { text-transform: none; letter-spacing: 0; font-weight: 400; }
+
+  .issue { border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; background: var(--bg); margin-bottom: 10px; }
+  .issue.base { border-left: 3px solid var(--info); }
+  .issue-topo { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .issue-topo .chave { font-weight: 700; color: var(--accent); text-decoration: none; font-size: 0.86rem; }
+  .issue-topo .chave:hover { text-decoration: underline; }
+  .tipo { font-size: 0.7rem; color: var(--ink-faint); }
+  .status { font-size: 0.68rem; font-weight: 700; padding: 2px 8px; border-radius: 4px; background: var(--line-soft); color: var(--ink-dim); text-transform: uppercase; letter-spacing: 0.02em; }
+  .status.indeterminate { background: var(--info-soft); color: var(--info); }
+  .status.done { background: var(--ok-soft); color: var(--ok); }
+  /* Cancelado/Recusado: para o Jira é "concluído", mas não foi entregue */
+  .status.cancelado { background: var(--line-soft); color: var(--ink-faint); text-decoration: line-through; }
+  .tag-base { font-size: 0.66rem; font-weight: 700; padding: 1px 7px; border-radius: 4px; border: 1px solid var(--info); color: var(--info); }
+  .issue .resumo { margin: 6px 0 0; font-size: 0.9rem; line-height: 1.4; }
+  .meta { display: flex; gap: 4px 16px; flex-wrap: wrap; margin-top: 7px; font-size: 0.74rem; color: var(--ink-faint); }
+  .meta b { color: var(--ink-dim); font-weight: 600; }
+  .meta a { color: var(--ink-dim); }
+  .pessoas { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; margin-top: 9px; font-size: 0.72rem; color: var(--ink-faint); }
+  .pessoa { display: inline-flex; align-items: center; gap: 5px; padding: 2px 9px 2px 3px; border-radius: 100px; background: var(--line-soft); color: var(--ink); font-size: 0.74rem; }
+  .pessoa i { width: 18px; height: 18px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; font-style: normal; font-size: 0.62rem; font-weight: 700; text-transform: uppercase; background: var(--line); color: var(--ink-dim); }
+  details.filhos { margin-top: 8px; }
+  details.filhos summary { cursor: pointer; font-size: 0.74rem; color: var(--ink-dim); }
+  ul.filhos { list-style: none; margin: 6px 0 0; padding: 0; border-top: 1px solid var(--line-soft); }
+  ul.filhos li { display: grid; grid-template-columns: 120px 1fr auto 170px; gap: 10px; align-items: baseline; padding: 6px 0; border-bottom: 1px solid var(--line-soft); font-size: 0.76rem; }
+  ul.filhos li a { color: var(--accent); font-weight: 700; text-decoration: none; }
+  ul.filhos .quem { color: var(--ink-dim); text-align: right; }
+  ul.filhos .quem.sem { color: var(--ink-faint); font-style: italic; }
+
+  table.base { width: 100%; border-collapse: collapse; font-size: 0.8rem; }
+  table.base th { text-align: left; font-size: 0.66rem; text-transform: uppercase; letter-spacing: 0.03em; color: var(--ink-faint); font-weight: 700; padding: 6px 8px; border-bottom: 1px solid var(--line); }
+  table.base td { padding: 8px; border-bottom: 1px solid var(--line-soft); vertical-align: top; }
+  table.base a { color: var(--accent); font-weight: 600; text-decoration: none; }
+  table.base a:hover { text-decoration: underline; }
+  .rodape-nota { margin-top: 10px; font-size: 0.72rem; color: var(--ink-faint); }
+
+  .aviso.amplo { border-left-color: var(--info); }
+  .termos { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; margin-bottom: 12px; font-size: 0.76rem; color: var(--ink-dim); }
+  .termo { display: inline-flex; align-items: center; gap: 6px; padding: 3px 4px 3px 10px; border-radius: 100px; border: 1px solid var(--line); background: var(--bg); font-size: 0.76rem; font-weight: 700; color: var(--ink); }
+  .termo .q { font-weight: 400; color: var(--ink-faint); }
+  .termo.falhou { border-color: var(--warn); }
+  .termo button { border: 0; background: transparent; padding: 0 5px; font-size: 0.9rem; line-height: 1; color: var(--ink-faint); }
+  .termo button:hover { color: var(--warn); }
+  .cita { margin-top: 7px; font-size: 0.72rem; color: var(--ink-faint); }
+  .cita b { color: var(--info); font-weight: 700; }
+  .pessoas.frequentes .pessoa em { font-style: normal; color: var(--ink-faint); }
+
+  /* Relevância da pesquisa ampla: três pontos e o porquê. */
+  section.grupo.destaque > h3 { color: var(--accent); }
+  section.grupo > h3 small { text-transform: none; letter-spacing: 0; font-weight: 400; color: var(--ink-faint); }
+  section.grupo.destaque .issue { border-color: color-mix(in srgb, var(--accent) 35%, var(--line)); }
+  .rel { margin-left: auto; display: inline-flex; align-items: center; gap: 3px; font-size: 0.68rem; font-weight: 700; color: var(--ink-dim); white-space: nowrap; }
+  .rel i { width: 7px; height: 7px; border-radius: 50%; background: var(--line); }
+  .rel i:last-of-type { margin-right: 4px; }
+  .rel i.on { background: var(--accent); }
+  .rel-baixa { color: var(--ink-faint); }
+  .tag-proj { font-size: 0.66rem; font-weight: 700; padding: 1px 7px; border-radius: 4px; border: 1px solid var(--line); color: var(--ink-dim); }
+  .motivos { display: flex; flex-wrap: wrap; gap: 5px; align-items: center; margin-top: 7px; font-size: 0.72rem; color: var(--ink-faint); }
+  .mot { display: inline-flex; align-items: baseline; gap: 4px; padding: 1px 8px; border-radius: 100px; border: 1px solid var(--line); color: var(--ink); font-weight: 700; }
+  .mot i { font-style: normal; font-weight: 400; color: var(--ink-faint); }
+  .mot.titulo { border-color: var(--accent); }
+  .mot.titulo i { color: var(--accent); }
+  .mot.raro { border-color: var(--info); }
+  .mot.raro:not(.titulo) i { color: var(--info); }
+
+  @media (max-width: 760px) {
+    main { padding: 16px; }
+    header.top { padding: 16px; }
+    ul.filhos li { grid-template-columns: 1fr auto; }
+    ul.filhos li .r { grid-column: 1 / -1; }
+    ul.filhos .quem { text-align: left; }
+    table.base thead { display: none; }
+    table.base tr { display: block; padding: 8px 0; border-bottom: 1px solid var(--line-soft); }
+    table.base td { display: block; padding: 2px 0; border: 0; }
+  }
+</style>
+
+<header class="top">
+  <div class="top-row">
+    <div class="titles"><h1>Buscar no Jira</h1></div>
+    <nav data-menu="pesquisa"></nav>
+  </div>
+</header>
+
+<main>
+  <div class="painel">
+    <!-- Mesma cara do painel "Buscar no Jira" (static/busca.js): um campo só,
+         que escolhe a busca sozinho - número/task/termo curto = exata; mensagem
+         colada = ampla. -->
+    <div class="cabeca">
+      <span class="marca"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg></span>
+      <div>
+        <h2>Número do chamado, task, termo ou a mensagem do cliente</h2>
+        <p class="ajuda"><b>Exata:</b> o número do chamado (TTB, 10 dígitos; ACS, 11), a task (<code>JDCBBRB-420</code>) ou um termo (<code>T402COGC_HST</code>).
+          <b>Ampla:</b> cole a mensagem do cliente; a busca separa os nomes técnicos e acha tasks do mesmo assunto e quem mexeu nelas. <b>Pode ter ruído.</b>
+          Só leitura. A mensagem não é guardada nem passa por IA.</p>
+      </div>
+    </div>
+    <form class="busca" id="form" role="search">
+      <textarea id="q" rows="1" maxlength="4000" placeholder="Nº do chamado, task, termo — ou cole a mensagem do cliente" aria-label="Número do chamado, task, termo ou mensagem do cliente" autofocus></textarea>
+      <div class="linha"><span class="modo" id="modo"></span>
+        <button class="btn" type="submit" id="btn"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>Pesquisar</button></div>
+    </form>
+    <div id="resultado" aria-live="polite"></div>
+  </div>
+</main>
+
+<script src="/menu.js"></script>
+<script>
+  (function () {
+    var PROJETO = 'JDCBBRB';
+    var form = document.getElementById('form');
+    var campo = document.getElementById('q');
+    var btn = document.getElementById('btn');
+    var saida = document.getElementById('resultado');
+    var pedido = 0;
+    var refazer = null; // "Tentar de novo" repete a última pesquisa, exata ou ampla
+
+    function esc(s) {
+      return String(s === null || s === undefined ? '' : s).replace(/[&<>"']/g, function (c) {
+        return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+      });
+    }
+    // Só links do Jira (https) viram href; qualquer outra coisa fica sem link.
+    function href(url) { return /^https:\/\//.test(String(url || '')) ? esc(url) : '#'; }
+    function data(iso) {
+      if (!iso) return '';
+      var d = new Date(iso);
+      if (isNaN(d)) return '';
+      return d.toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' });
+    }
+    function dataDia(iso) { // AAAA-MM-DD sem fuso
+      var m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(iso || ''));
+      return m ? m[3] + '/' + m[2] + '/' + m[1] : '';
+    }
+    function mes(m) {
+      var p = /^(\d{4})-(\d{2})$/.exec(String(m || ''));
+      return p ? p[2] + '/' + p[1] : esc(m);
+    }
+
+    var ROTULO_TIPO = {
+      ttb: { classe: 'ttb', texto: 'Chamado de sustentação (TTB)' },
+      acs: { classe: 'acs', texto: 'Demanda (ACS)' },
+      jira: { classe: '', texto: 'Task do Jira' },
+      numero: { classe: '', texto: 'Número' },
+      texto: { classe: '', texto: 'Termo' }
+    };
+
+    var CANCELADOS = /^(cancelad[oa]|recusad[oa])$/i;
+    function statusHtml(s, cat) {
+      var classe = CANCELADOS.test(String(s || '').trim()) ? 'cancelado' : cat;
+      return '<span class="status ' + esc(classe) + '">' + esc(s || '—') + '</span>';
+    }
+
+    function pessoaHtml(nome) {
+      return '<span class="pessoa"><i>' + esc(String(nome).charAt(0)) + '</i>' + esc(nome) + '</span>';
+    }
+
+    // Pesquisa ampla: o quanto a task parece ser do assunto (em relação à melhor
+    // da pesquisa) e por quê - a pessoa precisa entender a ordem para confiar nela.
+    var NIVEIS = { alta: { n: 3, t: 'Relevância alta' }, media: { n: 2, t: 'Relevância média' }, baixa: { n: 1, t: 'Relevância baixa' } };
+    function relevanciaHtml(nivel) {
+      var v = NIVEIS[nivel] || NIVEIS.baixa;
+      return '<span class="rel rel-' + esc(nivel) + '" title="' + v.t + ': termo raro e termo no título contam mais; cancelada conta menos">' +
+        '<i class="' + (v.n >= 1 ? 'on' : '') + '"></i><i class="' + (v.n >= 2 ? 'on' : '') + '"></i><i class="' + (v.n >= 3 ? 'on' : '') + '"></i>' + v.t + '</span>';
+    }
+    function motivosHtml(i) {
+      return '<div class="motivos">Por que apareceu:' + i.motivos.map(function (m) {
+        var nota = m.titulo ? 'no título' : (m.raro ? 'termo raro' : '');
+        return '<span class="mot' + (m.titulo ? ' titulo' : '') + (m.raro ? ' raro' : '') + '">' + esc(m.termo) + (nota ? ' <i>' + nota + '</i>' : '') + '</span>';
+      }).join('') + (i.cancelada ? '<span class="mot"><i>cancelada: conta menos</i></span>' : '') + '</div>';
+    }
+
+    function issueHtml(i) {
+      var h = '<article class="issue' + (i.origem === 'base' ? ' base' : '') + '">';
+      h += '<div class="issue-topo"><a class="chave" href="' + href(i.url) + '" target="_blank" rel="noopener noreferrer">' + esc(i.chave) + ' ↗</a>' +
+        statusHtml(i.status, i.categoria) + '<span class="tipo">' + esc(i.tipo) + '</span>' +
+        (i.origem === 'base' ? '<span class="tag-base" title="A task está ligada a esse número em Demandas ou Expedições">da nossa base</span>' : '') +
+        (i.nivel && i.projeto !== PROJETO ? '<span class="tag-proj">outro time · ' + esc(i.projeto) + '</span>' : '') +
+        (i.nivel ? relevanciaHtml(i.nivel) : '') + '</div>';
+      h += '<p class="resumo">' + esc(i.resumo) + '</p>';
+      if (i.motivos && i.motivos.length) h += motivosHtml(i);
+      else if (i.termos && i.termos.length) h += '<div class="cita">Cita <b>' + i.termos.map(esc).join(', ') + '</b></div>';
+      // Subtarefa não vira cartão: aparece aqui, na task-pai, de onde o termo veio.
+      if (i.via && i.via.length) {
+        h += '<div class="cita">Encontrado ' + (i.via.length === 1 ? 'na subtarefa ' : 'nas subtarefas ') + i.via.map(function (v) {
+          return '<a href="' + href(v.url) + '" target="_blank" rel="noopener noreferrer">' + esc(v.chave) + '</a> (' + esc(v.resumo) + ')';
+        }).join(', ') + '</div>';
+      }
+      var meta = [];
+      meta.push('<span>Responsável: <b>' + (i.responsavel ? esc(i.responsavel) : 'sem responsável') + '</b></span>');
+      if (i.pai) meta.push('<span>Dentro de <a href="' + href(i.pai.url) + '" target="_blank" rel="noopener noreferrer">' + esc(i.pai.chave) + '</a>' + (i.pai.resumo ? ' · ' + esc(i.pai.resumo) : '') + '</span>');
+      if (i.criado) meta.push('<span>Criada em ' + data(i.criado) + '</span>');
+      if (i.resolvido) meta.push('<span>Concluída em ' + data(i.resolvido) + '</span>');
+      else if (i.atualizado) meta.push('<span>Atualizada em ' + data(i.atualizado) + '</span>');
+      h += '<div class="meta">' + meta.join('') + '</div>';
+      if (i.envolvidos && i.envolvidos.length) {
+        h += '<div class="pessoas">Quem trabalhou: ' + i.envolvidos.map(pessoaHtml).join('') + '</div>';
+      }
+      if (i.filhos && i.filhos.length) {
+        h += '<details class="filhos"><summary>' + i.filhos.length + (i.filhos.length === 1 ? ' item dentro' : ' itens dentro') + ' (subtarefas / tasks)</summary><ul class="filhos">' +
+          i.filhos.map(function (f) {
+            return '<li><a href="' + href(f.url) + '" target="_blank" rel="noopener noreferrer">' + esc(f.chave) + '</a>' +
+              '<span class="r">' + esc(f.resumo) + '</span>' + statusHtml(f.status, f.categoria) +
+              '<span class="quem' + (f.responsavel ? '' : ' sem') + '">' + esc(f.responsavel || 'sem responsável') + '</span></li>';
+          }).join('') + '</ul></details>';
+      }
+      return h + '</article>';
+    }
+
+    function baseHtml(b) {
+      var h = '';
+      if (b.demandas.length) {
+        h += '<table class="base"><thead><tr><th>Demandas · mês</th><th>ACS</th><th>Task</th><th>Nome</th><th>Previsão de expedição</th></tr></thead><tbody>' +
+          b.demandas.map(function (d) {
+            return '<tr><td><a href="/demandas">' + mes(d.mes) + '</a></td><td>' + esc(d.acs) + '</td><td>' + esc(d.jira || '—') + '</td><td>' + esc(d.nome) + '</td><td>' + (dataDia(d.previsaoExpedicao) || '—') + '</td></tr>';
+          }).join('') + '</tbody></table>';
+      }
+      if (b.expedicoes.length) {
+        h += '<table class="base" style="margin-top:10px"><thead><tr><th>Expedições</th><th>ACS</th><th>Task</th><th>Nome</th><th>Data de expedição</th></tr></thead><tbody>' +
+          b.expedicoes.map(function (e) {
+            return '<tr><td><a href="/expedicoes">Abrir</a></td><td>' + esc(e.acs || '—') + '</td><td>' + esc(e.jira || '—') + '</td><td>' + esc(e.nome) + '</td><td>' + (dataDia(e.dataExpedicao) || '—') + '</td></tr>';
+          }).join('') + '</tbody></table>';
+      }
+      return h;
+    }
+
+    function vazioHtml(r) {
+      var t = '<strong>' + esc(r.termo) + '</strong>';
+      // Sem o Jira não dá para dizer que a task não existe: só que a base não tem.
+      if (r.jira.status !== 'ok') {
+        return '<div class="vazio">Não consegui consultar o Jira agora, então ainda não sei se existe task com ' + t + '.' +
+          (r.baseIndisponivel ? '' : ' Em Demandas e Expedições ele não aparece.') +
+          '<span class="dica"><button type="button" class="btn-tentar" id="tentar">Tentar de novo</button></span></div>';
+      }
+      if (r.tipo === 'ttb' || r.tipo === 'numero') {
+        return '<div class="vazio">Nenhuma task no Jira tem o número ' + t + ', e ele não aparece em Demandas nem em Expedições.' +
+          '<span class="dica">Se é um chamado novo, a task ainda não foi criada. Padrão do título: <code>TTB - ' + esc(r.termo) + ' - descrição</code>. Também dá para pesquisar pelo assunto (tabela, procedure, versão).</span></div>';
+      }
+      if (r.tipo === 'acs') {
+        return '<div class="vazio">Nenhuma task no Jira cita o ACS ' + t + ', e ele não está em Demandas nem em Expedições.' +
+          '<span class="dica">O ACS de demanda não fica no Jira: ligue-o à task na tela de Demandas. Também dá para pesquisar pelo assunto da demanda.</span></div>';
+      }
+      if (r.tipo === 'jira') return '<div class="vazio">A task ' + t + ' não existe no Jira ou a conta do sistema não tem acesso a ela.</div>';
+      return '<div class="vazio">Nada encontrado para ' + t + '.<span class="dica">Tente outra palavra: o Jira busca palavras inteiras (ex.: <code>PCRA2_CARGA</code>, não <code>PCRA</code>).</span></div>';
+    }
+
+    function render(r) {
+      var tipo = ROTULO_TIPO[r.tipo] || ROTULO_TIPO.texto;
+      var h = '<div class="linha-termo">Resultado para <strong>' + esc(r.termo) + '</strong><span class="pilula ' + tipo.classe + '">' + tipo.texto + '</span></div>';
+      var temBase = r.base.demandas.length || r.base.expedicoes.length;
+      var nada = !r.projeto.length && !r.outros.length && !temBase;
+      // Sem nenhum resultado, o próprio quadro vazio já explica a falha do Jira.
+      if (r.jira.status !== 'ok' && !nada) h += '<div class="aviso">O Jira não respondeu agora: abaixo, só o que está na nossa base. <button type="button" class="btn-tentar" id="tentar">Tentar de novo</button></div>';
+      if (r.baseIndisponivel) h += '<div class="aviso">Não consegui ler Demandas/Expedições agora: abaixo, só o que veio do Jira.</div>';
+      if (nada) { saida.innerHTML = h + vazioHtml(r); ligarTentar(); return; }
+
+      if (r.projeto.length) {
+        h += '<section class="grupo"><h3>No ' + PROJETO + ' <span class="n">' + r.projeto.length + '</span></h3>' + r.projeto.map(issueHtml).join('') + '</section>';
+      } else if (r.jira.status === 'ok') {
+        h += '<section class="grupo"><h3>No ' + PROJETO + '</h3><div class="vazio">Nenhuma task do ' + PROJETO + ' cita <strong>' + esc(r.termo) + '</strong>.</div></section>';
+      }
+      if (temBase) h += '<section class="grupo"><h3>Na nossa base</h3>' + baseHtml(r.base) + '</section>';
+      if (r.outros.length) {
+        // Com resultado no nosso projeto, os outros times ficam recolhidos.
+        h += '<details class="grupo"' + (r.projeto.length ? '' : ' open') + '><summary>Outros times e projetos <span class="n">' + r.outros.length + '</span>' +
+          '<small>— tasks de outros projetos que citam o mesmo termo</small></summary>' + r.outros.map(issueHtml).join('') + '</details>';
+      }
+      if (r.jira.maisResultados) h += '<p class="rodape-nota">O Jira achou mais resultados: aparecem os 40 atualizados mais recentemente. Use um termo mais específico para refinar.</p>';
+      saida.innerHTML = h;
+      ligarTentar();
+    }
+
+    function ligarTentar() {
+      var b = document.getElementById('tentar');
+      if (b) b.addEventListener('click', function () { if (refazer) refazer(); });
+    }
+
+    function buscar(q, empurrar) {
+      var meu = ++pedido;
+      refazer = function () { buscar(q, false); };
+      btn.disabled = true;
+      saida.innerHTML = '<div class="vazio">Pesquisando no Jira…</div>';
+      if (empurrar) {
+        try { history.replaceState(null, '', '/pesquisa?q=' + encodeURIComponent(q)); } catch (e) {}
+      }
+      fetch('/api/pesquisa?q=' + encodeURIComponent(q), { cache: 'no-store' })
+        .then(function (r) {
+          if (r.status === 401) { window.location.href = '/login.html'; return null; }
+          return r.json().then(function (j) { return { ok: r.ok, j: j }; });
+        })
+        .then(function (x) {
+          if (!x || meu !== pedido) return;
+          if (!x.ok) { saida.innerHTML = '<div class="aviso">' + esc((x.j && x.j.erro) || 'Não foi possível pesquisar agora.') + '</div>'; return; }
+          render(x.j);
+        })
+        .catch(function () { if (meu === pedido) saida.innerHTML = '<div class="aviso">Sem conexão com o servidor. Tente de novo.</div>'; })
+        .then(function () { if (meu === pedido) btn.disabled = false; });
+    }
+
+    // ---- Pesquisa ampla ------------------------------------------------------
+    // Um campo só, como no painel: o modo sai do que foi digitado (mesma regra do
+    // static/busca.js) e dá para trocar à mão.
+    var linhaModo = document.getElementById('modo');
+    var modo = null; // null = automático
+
+    function modoPara(t) {
+      t = String(t || '').trim();
+      if (/\n/.test(t) || t.length > 80) return 'ampla';
+      return t.split(/\s+/).length <= 3 ? 'exata' : 'ampla';
+    }
+    function modoAtual() { return modo || modoPara(campo.value); }
+    function crescer() {
+      campo.style.height = 'auto';
+      campo.style.height = Math.min(campo.scrollHeight + 2, 260) + 'px';
+    }
+    function atualizarModo() {
+      var m = modoAtual();
+      if (!campo.value.trim()) { linhaModo.innerHTML = 'Enter pesquisa · Shift+Enter quebra linha'; return; }
+      linhaModo.innerHTML = (m === 'exata' ? 'Busca <b>exata</b> pelo número' : 'Busca <b>ampla</b> pelo assunto') +
+        ' · <button type="button" id="trocar">usar ' + (m === 'exata' ? 'ampla' : 'exata') + '</button>';
+      document.getElementById('trocar').addEventListener('click', function () {
+        modo = m === 'exata' ? 'ampla' : 'exata';
+        atualizarModo();
+        campo.focus();
+      });
+    }
+    campo.addEventListener('input', function () { crescer(); if (!campo.value.trim()) modo = null; atualizarModo(); });
+    campo.addEventListener('keydown', function (ev) {
+      if (ev.key === 'Enter' && !ev.shiftKey) { ev.preventDefault(); form.requestSubmit ? form.requestSubmit() : form.dispatchEvent(new Event('submit', { cancelable: true })); }
+    });
+
+    function blocoExato(r) {
+      var todas = r.projeto.concat(r.outros);
+      var h = '<section class="grupo"><h3>Este chamado · ' + esc(r.termo) + '</h3>';
+      if (r.jira.status !== 'ok' && !todas.length) return h + '<div class="vazio">Não consegui consultar o Jira para o número <strong>' + esc(r.termo) + '</strong>.</div></section>';
+      if (!todas.length) return h + '<div class="vazio">Nenhuma task tem o número <strong>' + esc(r.termo) + '</strong>: a task do chamado ainda não foi criada. Padrão do título: <code>TTB - ' + esc(r.termo) + ' - descrição</code></div></section>';
+      return h + todas.map(issueHtml).join('') + '</section>';
+    }
+
+    function renderAmplo(r, termosAtuais) {
+      var h = '<div class="aviso amplo"><b>Pesquisa ampla:</b> tasks que citam os mesmos nomes técnicos. São sugestões e podem ter ruído — confira antes de usar.</div>';
+      if (r.jira.status === 'indisponivel') h += '<div class="aviso">O Jira não respondeu agora. <button type="button" class="btn-tentar" id="tentar">Tentar de novo</button></div>';
+      else if (r.jira.status === 'parcial') h += '<div class="aviso">Alguns termos não foram consultados (o Jira demorou): estão marcados em vermelho. <button type="button" class="btn-tentar" id="tentar">Tentar de novo</button></div>';
+      if (r.baseIndisponivel) h += '<div class="aviso">Não consegui ler Demandas/Expedições agora: abaixo, só o que veio do Jira.</div>';
+
+      if (r.termos.length) {
+        h += '<div class="termos">Termos pesquisados:' + r.termos.map(function (t) {
+          return '<span class="termo' + (t.falhou ? ' falhou' : '') + '">' + esc(t.termo) +
+            '<span class="q">' + (t.falhou ? 'não consultado' : (t.maisDe ? t.tasks + '+' : t.tasks)) + '</span>' +
+            (r.termos.length > 1 ? '<button type="button" data-tirar="' + esc(t.termo) + '" title="Tirar este termo e pesquisar de novo" aria-label="Tirar ' + esc(t.termo) + '">×</button>' : '') + '</span>';
+        }).join('') + '</div>';
+      }
+
+      (r.exatas || []).forEach(function (e) { h += blocoExato(e); });
+
+      var provaveis = r.provaveis || [];
+      if (provaveis.length) {
+        h += '<section class="grupo destaque"><h3>Mais prováveis <span class="n">' + provaveis.length + '</span>' +
+          '<small>de qualquer time · termo raro e termo no título contam mais</small></h3>' + provaveis.map(issueHtml).join('') + '</section>';
+      }
+
+      if (r.pessoas.length) {
+        h += '<section class="grupo"><h3>Quem mais aparece no assunto</h3><div class="pessoas frequentes">' + r.pessoas.map(function (p) {
+          return '<span class="pessoa"><i>' + esc(String(p.nome).charAt(0)) + '</i>' + esc(p.nome) + ' <em>· ' + p.tasks + (p.tasks === 1 ? ' task' : ' tasks') + '</em></span>';
+        }).join('') + '</div></section>';
+      }
+
+      var titNosso = provaveis.length ? 'Outras do ' + PROJETO : 'Mesmo assunto no ' + PROJETO;
+      if (r.nosso.length) {
+        h += '<section class="grupo"><h3>' + titNosso + ' <span class="n">' + (r.totalNosso > r.nosso.length ? r.nosso.length + ' de ' + r.totalNosso : r.nosso.length) + '</span></h3>' + r.nosso.map(issueHtml).join('') + '</section>';
+      } else if (r.jira.status !== 'indisponivel' && r.termos.length && !provaveis.length) {
+        h += '<section class="grupo"><h3>' + titNosso + '</h3><div class="vazio">Nenhuma task do ' + PROJETO + ' cita esses termos.</div></section>';
+      }
+      var b = r.base;
+      if (b.demandas.length || b.expedicoes.length) h += '<section class="grupo"><h3>Na nossa base</h3>' + baseHtml(b) + '</section>';
+      if (r.outros.length) {
+        h += '<details class="grupo"' + (r.nosso.length || provaveis.length ? '' : ' open') + '><summary>' + (provaveis.length ? 'Outras de outros times e projetos' : 'Outros times e projetos') + ' <span class="n">' + (r.totalOutros > r.outros.length ? r.outros.length + ' de ' + r.totalOutros : r.outros.length) + '</span>' +
+          '<small>— mais ruído aqui: siglas e versões aparecem em muitos projetos</small></summary>' + r.outros.map(issueHtml).join('') + '</details>';
+      }
+      saida.innerHTML = h;
+      ligarTentar();
+      Array.prototype.forEach.call(saida.querySelectorAll('[data-tirar]'), function (bt) {
+        bt.addEventListener('click', function () {
+          var tirar = bt.getAttribute('data-tirar');
+          buscarAmplo(termosAtuais.filter(function (t) { return t !== tirar; }));
+        });
+      });
+    }
+
+    function buscarAmplo(termos) {
+      var meu = ++pedido;
+      var corpo = { texto: campo.value };
+      if (termos) corpo.termos = termos;
+      refazer = function () { buscarAmplo(termos); };
+      btn.disabled = true;
+      // A mensagem não vai para a URL: o endereço volta a ser só /pesquisa.
+      try { history.replaceState(null, '', '/pesquisa'); } catch (e) {}
+      saida.innerHTML = '<div class="vazio">Pesquisando cada termo no Jira…</div>';
+      fetch('/api/pesquisa/ampla', { method: 'POST', cache: 'no-store', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(corpo) })
+        .then(function (r) {
+          if (r.status === 401) { window.location.href = '/login.html'; return null; }
+          return r.json().then(function (j) { return { ok: r.ok, j: j }; });
+        })
+        .then(function (x) {
+          if (!x || meu !== pedido) return;
+          if (!x.ok) { saida.innerHTML = '<div class="aviso">' + esc((x.j && x.j.erro) || 'Não foi possível pesquisar agora.') + '</div>'; return; }
+          renderAmplo(x.j, x.j.termos.map(function (t) { return t.termo; }));
+        })
+        .catch(function () { if (meu === pedido) saida.innerHTML = '<div class="aviso">Sem conexão com o servidor. Tente de novo.</div>'; })
+        .then(function () { if (meu === pedido) btn.disabled = false; });
+    }
+
+    form.addEventListener('submit', function (ev) {
+      ev.preventDefault();
+      var q = campo.value.trim();
+      if (!q) return;
+      if (modoAtual() === 'exata') buscar(q, true);
+      else buscarAmplo(null);
+    });
+
+    // Link com ?q= (para mandar a pesquisa a alguém do time) já abre pesquisado.
+    var params = new URLSearchParams(window.location.search);
+    var inicial = params.get('q');
+    if (inicial) { campo.value = inicial; buscar(inicial, false); }
+    // Vindo do painel "Buscar no Jira" com a mensagem colada: ela chega pela aba
+    // (sessionStorage, lida uma vez e apagada), nunca pela URL.
+    if (params.get('modo') === 'ampla') {
+      var veio = '';
+      try { veio = sessionStorage.getItem('pesquisa-ampla-texto') || ''; sessionStorage.removeItem('pesquisa-ampla-texto'); } catch (e) {}
+      if (veio) { campo.value = veio; modo = 'ampla'; buscarAmplo(null); }
+    }
+    crescer();
+    atualizarModo();
+  })();
+</script>

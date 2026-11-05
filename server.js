@@ -23,6 +23,7 @@ const {
   decorar, hojeBrasilia, idExpedicao, planoParaDemandas, planoParaExpedicao, recadoSincronia, recusaPeloJira
 } = require('./expedicoes');
 const { criarCache, verificar, verificarVarias } = require('./checklistJira');
+const { normalizarTermo, pesquisar, MAX_TEXTO, MAX_TERMOS, limparTermo, extrairTermos, pesquisarAmplo } = require('./pesquisa');
 const { ssoAtivo, emitirPasse, lerPasse, caminhoSeguro, urlDeEntrada } = require('./sso');
 const {
   COOKIE_NAME,
@@ -80,7 +81,7 @@ app.use((req, res, next) => {
   // Sem isto ele reaproveita a versão antiga e o deploy "não aparece" - o que
   // já custou vários hard refresh. no-cache não proíbe guardar, obriga a
   // revalidar: com o ETag do Express, resposta igual continua saindo 304.
-  if (req.path === '/' || req.path.endsWith('.html') || ['/dashboard', '/admin', '/demandas', '/demandas/editar', '/demandas/historico', '/expedicoes'].includes(req.path)) {
+  if (req.path === '/' || req.path.endsWith('.html') || ['/dashboard', '/admin', '/demandas', '/demandas/editar', '/demandas/historico', '/expedicoes', '/pesquisa'].includes(req.path)) {
     res.setHeader('Cache-Control', 'no-cache');
   }
 
@@ -162,6 +163,13 @@ app.get('/dialogo.js', (req, res) => {
 app.get('/menu.js', (req, res) => {
   res.setHeader('Cache-Control', 'no-cache');
   res.type('application/javascript').sendFile(path.join(__dirname, 'static', 'menu.js'));
+});
+
+// Painel "Buscar no Jira" (botão flutuante). Público como o menu: sem dado
+// nenhum; o menu.js só o carrega para a equipe e a API barra o resto.
+app.get('/busca.js', (req, res) => {
+  res.setHeader('Cache-Control', 'no-cache');
+  res.type('application/javascript').sendFile(path.join(__dirname, 'static', 'busca.js'));
 });
 
 app.get('/login.html', (req, res) => {
@@ -612,6 +620,58 @@ app.delete('/api/expedicoes/:id/itens/:itemId', exigirSessaoApi, exigirEditorApi
   if (r.naoEncontrada) return res.status(404).json({ erro: 'Item não encontrado (pode já ter sido removido).' });
   if (!r.ok) return res.status(500).json({ erro: 'Não foi possível remover o item.' });
   res.json({ expedicao: await decorarExpedicao(r.expedicao, await lerSnapshot()) });
+});
+
+/** Pesquisa por número do chamado (ACS ou TTB), pela task ou por um termo: o
+ * Jira (título, descrição, comentários) e a nossa base (Demandas, Expedições)
+ * numa lista só. Só leitura. Controle interno, como Expedições: só
+ * Dimensa/Evertec (o resultado inclui tasks de outros times e projetos). */
+app.get('/pesquisa', exigirSessaoPagina, exigirEquipePagina, (req, res) => {
+  res.sendFile(path.join(PUBLIC_DIR, 'pesquisa.html'));
+});
+
+app.get('/api/pesquisa', exigirSessaoApi, exigirEditorApi, async (req, res) => {
+  const n = normalizarTermo(req.query.q);
+  if (!n.ok) return res.status(400).json({ erro: n.erro });
+  const [dem, exp] = await Promise.all([listarDemandas(), listarExpedicoes()]);
+  const r = await pesquisar(n, {
+    chamar: chamarJira,
+    demandas: dem.ok ? dem.demandas : [],
+    expedicoes: exp.ok ? exp.expedicoes : []
+  });
+  r.baseIndisponivel = !dem.ok || !exp.ok;
+  if (r.jira.status !== 'ok') console.error('[pesquisa] Jira não respondeu:', r.jira.erro);
+  delete r.jira.erro; // detalhe interno fica no log
+  res.json(r);
+});
+
+/** Pesquisa ampla: a mensagem do cliente vira termos (tabela, procedure,
+ * versão) e cada um é buscado no Jira. POST porque o texto é longo e não deve
+ * ir para a URL (nem para o log de acesso). `termos`, quando vem, é a lista que a
+ * pessoa ajustou na tela (removeu algum). */
+app.post('/api/pesquisa/ampla', exigirSessaoApi, exigirEditorApi, async (req, res) => {
+  const corpo = req.body || {};
+  const texto = typeof corpo.texto === 'string' ? corpo.texto : '';
+  if (texto.length > MAX_TEXTO) return res.status(400).json({ erro: `Use no máximo ${MAX_TEXTO} caracteres.` });
+  const extraido = extrairTermos(texto);
+  const termos = Array.isArray(corpo.termos)
+    ? [...new Set(corpo.termos.map(limparTermo).filter(Boolean))].slice(0, MAX_TERMOS)
+    : extraido.termos;
+  if (!termos.length && !extraido.numeros.length) {
+    return res.status(400).json({ erro: 'Não achei nomes técnicos na mensagem (tabela, procedure, versão, número do chamado). Cole a mensagem do cliente inteira ou use a pesquisa exata.' });
+  }
+  const [dem, exp] = await Promise.all([listarDemandas(), listarExpedicoes()]);
+  const r = await pesquisarAmplo({ termos, numeros: extraido.numeros }, {
+    chamar: chamarJira,
+    demandas: dem.ok ? dem.demandas : [],
+    expedicoes: exp.ok ? exp.expedicoes : []
+  });
+  r.numeros = extraido.numeros;
+  r.baseIndisponivel = !dem.ok || !exp.ok;
+  if (r.jira.status !== 'ok') console.error('[pesquisa ampla] Jira:', r.jira.status, r.jira.erro);
+  delete r.jira.erro;
+  for (const e of r.exatas) delete e.jira.erro;
+  res.json(r);
 });
 
 app.get('/admin', exigirSessaoPagina, exigirAdminPagina, (req, res) => {

@@ -22,6 +22,7 @@ const TELAS = {
   'demandas.html': 'demandas',
   'demandas-historico.html': '',
   'expedicoes.html': 'expedicoes',
+  'pesquisa.html': 'pesquisa',
   'dashboard.html': 'dashboard',
   'admin.html': ''
 };
@@ -68,6 +69,14 @@ describe('static/menu.js', () => {
   test('Expedições só para a equipe (editor)', () => {
     assert.match(codigo, /id: 'expedicoes'[^}]*soEquipe: true/);
     assert.match(codigo, /if \(i\.soEquipe && !\(eu && eu\.editor\)\) return;/);
+  });
+
+  // A pesquisa saiu do menu do topo (ficava solta: "pesquisar o quê?") e virou
+  // o botão flutuante; o BRB e a TOTVS nem baixam o arquivo.
+  test('"Buscar no Jira": não é item do menu; busca.js só é carregado para a equipe', () => {
+    assert.ok(!codigo.includes("id: 'pesquisa'"));
+    assert.match(codigo, /if \(!dados\.editor \|\| document\.getElementById\('bz-js'\)\) return;/);
+    assert.match(codigo, /s\.src = '\/busca\.js'/);
   });
 
   test('e-mail entra por textContent; endereço do Portal só com http(s)', () => {
