@@ -18,6 +18,7 @@
     --warn-soft: #FBE3DD;
     --ok: #0B9C7F;
     --ok-soft: #D8F1EB;
+    --check-img: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M3.5 8.5l3 3 6-7' fill='none' stroke='%23FFFFFF' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
     --shadow: 0 1px 2px rgba(30,33,44,0.06), 0 1px 1px rgba(30,33,44,0.04);
   }
   @media (prefers-color-scheme: dark) {
@@ -35,6 +36,7 @@
       --warn-soft: #3F2320;
       --ok: #3EE8C4;
       --ok-soft: #173A33;
+      --check-img: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M3.5 8.5l3 3 6-7' fill='none' stroke='%231E212C' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
       --shadow: 0 1px 3px rgba(0,0,0,0.35);
     }
   }
@@ -189,6 +191,12 @@
   .chip-sub.perto { color: var(--warn); border-color: var(--warn); background: var(--warn-soft); }
   label.somente-leitura { cursor: default; }
   .item-linha input[type="checkbox"]:disabled { cursor: not-allowed; opacity: 0.85; }
+  /* O navegador pinta de cinza o checkbox travado e ignora o accent-color: o item
+   * que o Jira confirmou tem de aparecer verde como os marcados à mão. */
+  .item-linha input[type="checkbox"]:disabled:checked {
+    appearance: none; -webkit-appearance: none; opacity: 1; border-radius: 3px;
+    background: var(--ok) var(--check-img) center / 13px no-repeat;
+  }
   .falta-jira { margin: 3px 0 0 26px; font-size: 0.72rem; line-height: 1.4; color: var(--ink-faint); }
   .falta-jira small { color: var(--ink-faint); margin-left: 4px; }
   .nota-jira { grid-column: 1 / -1; font-size: 0.74rem; color: var(--ink-faint); padding: 7px 10px; border-radius: 6px; background: var(--line-soft); }
