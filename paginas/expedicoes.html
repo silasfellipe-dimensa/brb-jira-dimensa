@@ -834,7 +834,7 @@
         return Dlg.avisar({ titulo: 'Edite esta Solução no Jira', mensagem: t.chave + ': ' + t.motivo, tom: 'aviso' });
       }
       Dlg.texto({
-        titulo: 'Solução no Jira', destaque: t.chave + (t.resumo ? ' — ' + t.resumo : ''),
+        titulo: 'Solução no Jira', destaque: t.chave + (t.resumo ? ' — ' + t.resumo : ''), tamanho: 'grande',
         mensagem: recado || '',
         campo: { valor: rascunho !== undefined ? rascunho : t.texto, maxlength: 4000, rotulo: 'Solução',
           placeholder: 'Texto puro: digite ou cole. Cada quebra de linha vira uma quebra de linha no Jira.' },

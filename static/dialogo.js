@@ -9,6 +9,7 @@
  *   Dialogo.texto({ titulo, destaque, mensagem, campo: { valor, maxlength, placeholder, rotulo }, nota,
  *                   rotuloConfirmar, rotuloCancelar })
  *       -> Promise<string|null>   (texto digitado; null = cancelou. Ctrl+Enter salva)
+ *   tamanho: 'grande' (opcional) - caixa larga e campo alto, para texto longo.
  *
  *   tom: 'perigo' (excluir; o foco já começa em Cancelar, para Enter nunca
  *        apagar sem querer), 'aviso' ou 'info'.
@@ -58,6 +59,9 @@
     '.dlgx-btn.principal{background:var(--dx-tom);border-color:var(--dx-tom);color:#fff}',
     '.dlgx-btn.principal:hover{filter:brightness(1.07);color:#fff}',
     '@media (prefers-color-scheme:dark){.dlgx-btn.principal{color:#1E212C}.dlgx-btn.principal:hover{color:#1E212C}}',
+    // tamanho 'grande': texto longo de ler e escrever (ex.: Solução do Jira)
+    'dialog.dlgx.grande{width:min(760px,calc(100vw - 32px))}',
+    'dialog.dlgx.grande .dlgx-campo textarea{min-height:min(340px,50vh);font-size:.92rem;line-height:1.6}',
     '@media (max-width:480px){.dlgx-rodape{flex-direction:column-reverse}.dlgx-btn{width:100%}}',
     '@keyframes dlgx-entra{from{opacity:0;transform:translateY(8px) scale(.97)}to{opacity:1;transform:none}}',
     '@keyframes dlgx-fundo{from{opacity:0}to{opacity:1}}',
@@ -98,7 +102,7 @@
       var id = 'dlgx-' + (++contador);
       var anterior = document.activeElement;
 
-      var caixa = el('dialog', 'dlgx ' + tom);
+      var caixa = el('dialog', 'dlgx ' + tom + (opcoes.tamanho === 'grande' ? ' grande' : ''));
       caixa.setAttribute('role', comCancelar ? 'alertdialog' : 'dialog');
       caixa.setAttribute('aria-labelledby', id + '-t');
 
