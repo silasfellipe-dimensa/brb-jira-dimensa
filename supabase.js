@@ -475,6 +475,23 @@ async function registrarAcesso(email, tipo) {
   }
 }
 
+/** Quem gravou o quê no Jira pela nossa tela (tabela jira_gravacoes,
+ * supabase-jira-gravacoes.sql). Quem chama espera: na Vercel a função pode
+ * ser congelada logo depois da resposta. Falha não desfaz a gravação no Jira
+ * (que já aconteceu): devolve { ok: false, semTabela } para a tela avisar. */
+async function registrarGravacaoJira({ email, issue, campo, anterior, novo }) {
+  try {
+    const { error } = await db().from('jira_gravacoes').insert({
+      email: String(email || '').trim().toLowerCase(), issue, campo,
+      valor_anterior: anterior === undefined ? null : anterior, valor_novo: novo === undefined ? null : novo
+    });
+    if (error) return { ok: false, semTabela: semTabelaExpedicoes(error), erro: error.message };
+    return { ok: true };
+  } catch (erro) {
+    return { ok: false, semTabela: false, erro: erro.message };
+  }
+}
+
 /** "Visita do dia": a primeira vez no dia (horário de Brasília) que alguém
  * usa o sistema, mesmo já logado. O login vale 7 dias, então só "login" no
  * histórico mostrava uma linha por semana de quem usa todo dia.
@@ -885,5 +902,5 @@ module.exports = {
   gravarPlanejamento, limparPlanejamento, lerPlanejamentoSprint, lerCarryOverEntregue,
   listarPlanejamentoPorSprint, resumirPlanejamento, porSemanaPlanejamento, listarItensPlanejamento,
   classificarItensPlanejamento, listarItensCarryOver, montarItensCarryOver, contarCarryOverPorSprint,
-  registrarAcesso, registrarVisitaDoDia, queimarPasse, listarAcessos, listarUsuarios, montarListaUsuarios, confirmarUsuarioManualmente
+  registrarAcesso, registrarGravacaoJira, registrarVisitaDoDia, queimarPasse, listarAcessos, listarUsuarios, montarListaUsuarios, confirmarUsuarioManualmente
 };

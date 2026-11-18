@@ -12,8 +12,9 @@ const {
   listarItensCarryOver, registrarAcesso, registrarVisitaDoDia, queimarPasse, listarAcessos, listarUsuarios, confirmarUsuarioManualmente,
   listarDemandas, criarDemanda, atualizarDemanda, removerDemanda, listarHistoricoDemandas,
   lerExpedicao, listarChavesExpedicoes, listarExpedicoes, criarExpedicao, atualizarExpedicao, removerExpedicao,
-  criarItemExpedicao, atualizarItemExpedicao, atualizarObservacaoItem, removerItemExpedicao
+  criarItemExpedicao, atualizarItemExpedicao, atualizarObservacaoItem, removerItemExpedicao, registrarGravacaoJira
 } = require('./supabase');
+const { podeGravarJira, lerSolucoes, validarPedido, gravarSolucao } = require('./gravarJira');
 const {
   normalizarCampos, idDemanda, interpretarMes, interpretarListaMeses, mesesDisponiveis,
   filtrarPorMeses, resumirMeses
@@ -50,7 +51,11 @@ const SENHA_MINIMA = 8;
 
 // Corpo pequeno de proposito: as rotas so recebem e-mail e senha, entao
 // nao ha motivo para aceitar payload grande (evita abuso de memoria).
-app.use(express.json({ limit: '10kb' }));
+// Exceção: a gravação no Jira recebe a Solução (até 4000 caracteres, que com
+// acento e quebra de linha passa de 10kb).
+const jsonPadrao = express.json({ limit: '10kb' });
+const jsonJira = express.json({ limit: '32kb' });
+app.use((req, res, next) => (req.path.startsWith('/api/jira/') ? jsonJira : jsonPadrao)(req, res, next));
 app.use(cookieParser());
 
 app.use((req, res, next) => {
@@ -510,6 +515,7 @@ app.get('/api/expedicoes', exigirSessaoApi, exigirEditorApi, async (req, res) =>
   const hoje = hojeBrasilia();
   res.json({
     hoje,
+    podeGravarJira: podeGravarJira(req.usuario.email),
     expedicoes: r.expedicoes.map((e) => decorar(e, snapshot, hoje, lidas[chaveJira(e.artefatoJira)] || null))
   });
 });
@@ -609,6 +615,69 @@ app.patch('/api/expedicoes/:id/itens/:itemId/observacao', exigirSessaoApi, exigi
   if (r.naoEncontrada) return res.status(404).json({ erro: 'Item não encontrado (pode ter sido removido).' });
   if (!r.ok) return res.status(500).json({ erro: 'Não foi possível salvar a observação.' });
   res.json({ expedicao: await decorarExpedicao(r.expedicao, await lerSnapshot()) });
+});
+
+/* ---------- gravação no Jira (gravarJira.js): por enquanto, só a Solução ----------
+ * Só @dimensa e @evertecinc (lista fixa em gravarJira.js, não segue EDITOR_DOMAINS).
+ * No Jira sai só a alteração do campo, em nome da conta do token; quem gravou
+ * fica na tabela jira_gravacoes. */
+function exigirGravadorJira(req, res, next) {
+  if (!podeGravarJira(req.usuario && req.usuario.email)) {
+    return res.status(403).json({ erro: 'Só a equipe Dimensa e Evertec pode gravar no Jira.' });
+  }
+  next();
+}
+
+// As Soluções que a expedição usa: a task, ou as tasks filhas do épico.
+app.get('/api/jira/solucao', exigirSessaoApi, exigirEditorApi, exigirGravadorJira, async (req, res) => {
+  try {
+    const r = await lerSolucoes(req.query.chave, chamarJira);
+    if (r.status === 'fora-do-projeto') return res.status(400).json({ erro: 'Só issues do projeto JDCBBRB podem ser editadas daqui.' });
+    if (r.status === 'nao-encontrada') return res.status(404).json({ erro: 'O Jira não encontrou essa chave.' });
+    res.json(r);
+  } catch (erro) {
+    console.error('[jira-gravar] não consegui ler a Solução:', erro.message);
+    res.status(503).json({ erro: 'Não consegui ler o Jira agora. Tente de novo.' });
+  }
+});
+
+app.put('/api/jira/solucao/:chave', exigirSessaoApi, exigirEditorApi, exigirGravadorJira, async (req, res) => {
+  const pedido = validarPedido(req.params.chave, req.body);
+  if (!pedido.ok) return res.status(400).json({ erro: pedido.erro });
+  let r;
+  try {
+    r = await gravarSolucao(pedido, chamarJira);
+  } catch (erro) {
+    console.error(`[jira-gravar] ${req.usuario.email} não conseguiu gravar a Solução de ${pedido.chave}:`, erro.message);
+    return res.status(502).json({ erro: 'O Jira não aceitou a gravação agora. Nada foi alterado; tente de novo ou edite no Jira.' });
+  }
+  if (!r.ok) {
+    const status = r.conflito || r.formatada ? 409 : r.naoEncontrada ? 404 : 400;
+    return res.status(status).json({ erro: r.erro, conflito: !!r.conflito, formatada: !!r.formatada, atual: r.atual || null });
+  }
+  let registro = { ok: true };
+  if (!r.semMudanca) {
+    console.log(`[jira-gravar] ${req.usuario.email} gravou a Solução de ${pedido.chave}`);
+    registro = await registrarGravacaoJira({ email: req.usuario.email, issue: pedido.chave, campo: 'Solução', anterior: r.anterior, novo: r.novo });
+    if (!registro.ok) console.error(`[jira-gravar] gravou no Jira, mas o registro falhou (${pedido.chave}):`, registro.erro);
+    // o checklist tem que ver o valor novo já
+    cacheJira.limpar();
+  }
+  // devolve o cartão da expedição atualizado, quando a tela disse qual é
+  let expedicao = null;
+  const id = idExpedicao(req.body.expedicaoId);
+  if (id) {
+    try {
+      const e = await lerExpedicao(id);
+      if (e) expedicao = await decorarExpedicao(e, await lerSnapshot(), true);
+    } catch (erro) { console.error('[jira-gravar] não consegui reler a expedição:', erro.message); }
+  }
+  res.json({
+    ok: true, semMudanca: !!r.semMudanca, expedicao,
+    aviso: registro.ok ? '' : registro.semTabela
+      ? 'Gravado no Jira, mas o registro de quem gravou ainda não está ativo (falta rodar supabase-jira-gravacoes.sql).'
+      : 'Gravado no Jira, mas não consegui guardar o registro de quem gravou.'
+  });
 });
 
 app.delete('/api/expedicoes/:id/itens/:itemId', exigirSessaoApi, exigirEditorApi, async (req, res) => {

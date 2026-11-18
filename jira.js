@@ -60,9 +60,16 @@ async function chamarJira(caminho, opcoes = {}) {
     if (resp.status === 401) dica = ' (token inválido ou expirado)';
     if (resp.status === 403) dica = ' (a conta não tem permissão)';
     if (resp.status === 404) dica = ' (board ou sprint não encontrado)';
+    // Na gravação (PUT), o 400 diz o porquê (ex.: campo fora da tela de edição).
+    // Vai só para o log do servidor: quem chama nunca repassa ao navegador.
+    if (resp.status === 400 && metodo !== 'GET') {
+      try { dica = ' ' + (await resp.text()).slice(0, 300); } catch (e) { /* sem corpo */ }
+    }
     throw new Error('Jira respondeu ' + resp.status + dica + ' em ' + caminho);
   }
 
+  // PUT de issue responde 204, sem corpo
+  if (resp.status === 204) return null;
   return resp.json();
 }
 

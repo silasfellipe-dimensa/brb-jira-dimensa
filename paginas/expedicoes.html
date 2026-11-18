@@ -232,6 +232,10 @@
   .motivo { margin: 4px 0 0 26px; font-size: 0.76rem; color: var(--ink-dim); line-height: 1.4; }
   .motivo small { color: var(--ink-faint); }
   .motivo-form { margin: 6px 0 0 26px; display: flex; flex-direction: column; gap: 6px; }
+  .escolha-solucao { margin: 6px 0 0 26px; font-size: 0.74rem; color: var(--ink-dim); }
+  .escolha-solucao .lista { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 5px; }
+  .escolha-solucao small { color: var(--ink-faint); font-weight: 400; }
+  .escolha-solucao em { color: var(--ink-faint); font-style: normal; }
   .motivo-form textarea { width: 100%; min-height: 54px; resize: vertical; }
   .motivo-form .acoes { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
   .erro-inline { color: var(--warn); font-size: 0.74rem; }
@@ -300,6 +304,8 @@
       status: 'abertas',
       abertas: {},        // id -> true/false, escolha manual do usuário
       motivo: {},         // itemId -> true: formulário de "não aplicável" aberto
+      podeGravarJira: false, // @dimensa/@evertecinc: edita a Solução direto no Jira
+      escolhaSolucao: {}, // itemId -> tasks do épico, para escolher qual Solução editar
       novoAberto: false,
       escolhida: null     // opção do autocomplete que preencheu o formulário
     };
@@ -501,6 +507,9 @@
         else if (i.assistido && i.jira && i.jira.ok) linha += seloJira('leia', 'Jira: leia', DICA_JIRA_LEIA);
       }
       if (!i.padrao) linha += '<span class="tag-avulso">avulso</span>';
+      if (podeEditarSolucao(e, i) && !na) {
+        linha += '<button type="button" class="mini" data-acao="editar-solucao" data-item="' + i.id + '" title="Editar a Solução direto no Jira (texto puro)">Editar</button>';
+      }
       var temObs = !!i.observacao;
       linha += '<button type="button" class="mini obs' + (temObs ? ' tem' : '') + '" data-acao="obs" data-item="' + i.id + '" aria-label="' +
         (temObs ? 'Ver ou editar a observação deste item' : 'Adicionar observação a este item') + '" title="' +
@@ -519,6 +528,16 @@
           '<blockquote>' + esc(i.jira.detalhe) + '</blockquote></div>';
       } else if (temInfo && !na && i.estado !== 'concluido') {
         extra += '<div class="falta-jira">' + esc(i.jira.motivo) + (i.jira.detalhe ? ' <small>' + esc(i.jira.detalhe) + '</small>' : '') + '</div>';
+      }
+      var escolha = estado.escolhaSolucao[i.id];
+      if (escolha) {
+        extra += '<div class="escolha-solucao"><span>Qual task? A Solução é de cada task do épico:</span><div class="lista">' +
+          escolha.map(function (t) {
+            return '<button type="button" class="mini" data-acao="escolher-solucao" data-item="' + i.id + '" data-chave="' + esc(t.chave) + '">' +
+              esc(t.chave) + ' <small>' + esc(t.resumo.length > 50 ? t.resumo.slice(0, 50) + '…' : t.resumo) + '</small>' +
+              (t.texto ? '' : ' <em>(vazia)</em>') + '</button>';
+          }).join('') +
+          '<button type="button" class="mini" data-acao="fechar-escolha" data-item="' + i.id + '">Cancelar</button></div></div>';
       }
       if (estado.motivo[i.id]) {
         extra += '<div class="motivo-form"><textarea maxlength="500" data-motivo="' + i.id + '" ' +
@@ -779,6 +798,78 @@
       });
     }
 
+    /* ---------- Solução: edição direto no Jira (texto puro) ----------
+     * Na issue fica só a alteração do campo, como se fosse feita no Jira. O
+     * servidor relê antes de gravar: se alguém mudou lá nesse meio-tempo,
+     * recusa e a tela mostra o texto atual, sem perder o que a pessoa digitou. */
+    var ITENS_SOLUCAO = ['Solução preenchida?', 'Solução com mais de 60 caracteres, objetivo e sem detalhes técnicos'];
+    function podeEditarSolucao(e, i) {
+      return estado.podeGravarJira && i.padrao && ITENS_SOLUCAO.indexOf(i.texto) >= 0 &&
+        !!e.artefatoJira && !!e.jira && (e.jira.status === 'ok' || e.jira.status === 'sem-filhos');
+    }
+    function avisoInfo(t) {
+      mostrarAviso(t);
+      aviso.classList.add('info');
+      timerInfo = setTimeout(function () { aviso.hidden = true; aviso.classList.remove('info'); }, 7000);
+    }
+    function textoLimpo(t) { return String(t || '').replace(/\r\n?/g, '\n').trim(); }
+
+    function editarSolucao(e, i) {
+      if (ocupado) return;
+      ocupado = true; mostrarAviso('');
+      chamar('GET', '/api/jira/solucao?chave=' + encodeURIComponent(e.artefatoJira)).then(function (r) {
+        ocupado = false;
+        if (!r.ok) return mostrarAviso(r.j.erro || 'Não consegui ler a Solução no Jira agora.');
+        var tarefas = r.j.tarefas || [];
+        if (!tarefas.length) return mostrarAviso('Este épico ainda não tem tasks no Jira: não há Solução para editar.');
+        if (tarefas.length === 1) return abrirEditorSolucao(e, tarefas[0]);
+        estado.escolhaSolucao[i.id] = tarefas;
+        atualizarCartaoLocal(e);
+      }).catch(function () { ocupado = false; mostrarAviso('Sem conexão com o servidor. Tente de novo.'); });
+    }
+
+    // `rascunho`: o texto que a pessoa já tinha digitado (quando o Jira mudou no meio)
+    function abrirEditorSolucao(e, t, rascunho, recado) {
+      if (!t.editavel) {
+        return Dlg.avisar({ titulo: 'Edite esta Solução no Jira', mensagem: t.chave + ': ' + t.motivo, tom: 'aviso' });
+      }
+      Dlg.texto({
+        titulo: 'Solução no Jira', destaque: t.chave + (t.resumo ? ' — ' + t.resumo : ''),
+        mensagem: recado || '',
+        campo: { valor: rascunho !== undefined ? rascunho : t.texto, maxlength: 4000, rotulo: 'Solução',
+          placeholder: 'Texto puro: digite ou cole. Cada quebra de linha vira uma quebra de linha no Jira.' },
+        nota: 'Grava direto na issue. Ctrl+Enter salva.', rotuloConfirmar: 'Salvar no Jira', rotuloCancelar: 'Cancelar'
+      }).then(function (texto) {
+        if (texto === null || texto === undefined) return; // cancelou
+        if (textoLimpo(texto) === textoLimpo(t.texto)) return; // nada mudou
+        salvarSolucao(e, t, texto);
+      });
+    }
+
+    function salvarSolucao(e, t, texto) {
+      situacao.salvando++; renderSituacao(); mostrarAviso('');
+      chamar('PUT', '/api/jira/solucao/' + encodeURIComponent(t.chave), { texto: texto, versao: t.versao, expedicaoId: e.id }).then(function (r) {
+        situacao.salvando--;
+        if (!r.ok) {
+          situacao.erro = true; renderSituacao();
+          if (r.j.conflito && r.j.atual) {
+            // mudou no Jira: mostra o que está lá agora e devolve o texto da pessoa
+            var atual = r.j.atual;
+            return abrirEditorSolucao(e, atual, texto,
+              'Alguém alterou esta Solução no Jira depois que você abriu. Hoje lá está:\n\n"' + (atual.texto || '(vazia)') + '"\n\nSeu texto está abaixo. Salvar agora substitui o que está no Jira.');
+          }
+          return mostrarAviso(r.j.erro || 'Não foi possível gravar no Jira agora.');
+        }
+        situacao.erro = false; situacao.salvoEm = new Date(); renderSituacao();
+        if (r.j.expedicao) atualizarExpedicao(r.j.expedicao);
+        if (r.j.aviso) mostrarAviso(r.j.aviso);
+        else avisoInfo(r.j.semMudanca ? 'A Solução de ' + t.chave + ' já estava com esse texto: nada foi alterado no Jira.' : 'Solução de ' + t.chave + ' gravada no Jira.');
+      }).catch(function () {
+        situacao.salvando--; situacao.erro = true; renderSituacao();
+        mostrarAviso('Sem conexão com o servidor: não sei se gravou. Clique em Atualizar e confira.');
+      });
+    }
+
     function removerItem(e, i) {
       var quem = rotuloExpedicao(e);
       Dlg.confirmar({
@@ -826,6 +917,13 @@
       else if (acao === 'add-item') adicionarItem(e, b.getAttribute('data-bloco'), card);
       else if (acao === 'remover-item' && i) removerItem(e, i);
       else if (acao === 'obs' && i) editarObservacao(e, i);
+      else if (acao === 'editar-solucao' && i) editarSolucao(e, i);
+      else if (acao === 'fechar-escolha' && i) { delete estado.escolhaSolucao[i.id]; atualizarCartaoLocal(e); }
+      else if (acao === 'escolher-solucao' && i) {
+        var t = (estado.escolhaSolucao[i.id] || []).filter(function (x) { return x.chave === b.getAttribute('data-chave'); })[0];
+        delete estado.escolhaSolucao[i.id]; atualizarCartaoLocal(e);
+        if (t) abrirEditorSolucao(e, t);
+      }
       else if (acao === 'excluir') excluirExpedicao(e);
     });
 
@@ -998,6 +1096,7 @@
         if (!r.ok) { area.innerHTML = '<div class="vazio">' + esc(r.j.erro || 'Não foi possível carregar as expedições agora.') + '</div>'; return false; }
         estado.expedicoes = r.j.expedicoes;
         estado.hoje = r.j.hoje;
+        estado.podeGravarJira = !!r.j.podeGravarJira;
         situacao.carregadoEm = new Date(); situacao.erroCarga = false;
         if (!estado.filtro) { try { estado.filtro = localStorage.getItem('expedicoes.responsavel') || ''; } catch (e) { estado.filtro = ''; } }
         renderTudo();
