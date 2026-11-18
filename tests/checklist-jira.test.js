@@ -13,7 +13,7 @@ const sub = (key, categoriaStatus, summary = 'Codificação - x', nome = 'x') =>
 const tudoPreenchido = () => ({
   description: adf('Descrição'), customfield_12864: adf('Ao reenviar a liberação, o histórico do meio de pagamento passa a aparecer na tela.'), customfield_12369: adf('Situação'),
   customfield_13096: adf('Docs'), customfield_12181: '2026-10-08', customfield_12456: '2026-10-07',
-  components: [{ name: 'SATÉLITE BRBCFI WEB VI' }], fixVersions: [{ name: 'DJSBRB_6.4.2.0' }], customfield_12379: '2026-09-28',
+  components: [{ name: 'SATÉLITE BRBCFI WEB VI' }], fixVersions: [{ name: 'DJSBRB_6.4.2.0', releaseDate: '2026-09-28' }], customfield_12379: '2026-09-28',
   status: { name: 'Concluído' }, subtasks: [sub('A-1', 'done'), sub('A-2', 'done', 'Documentação - x', 'Fechado')]
 });
 
@@ -66,9 +66,25 @@ describe('regras: cada item aponta para o campo certo', () => {
 
   test('versão para a data de entrega: precisa de "Versões corrigidas" E "Data prevista para entrega"; diz qual falta', () => {
     const f = (c) => J.avaliarTask(c)['A issue tem a versão correta para a data de entrega?'];
-    assert.ok(f({ fixVersions: [{ name: 'DJSBRB_6.4.2.0' }], customfield_12379: '2026-09-28' }).ok);
+    assert.ok(f({ fixVersions: [{ name: 'DJSBRB_6.4.2.0', releaseDate: '2026-09-28' }], customfield_12379: '2026-09-28' }).ok);
     assert.strictEqual(f({ fixVersions: [{ name: 'DJSBRB_6.4.2.0' }] }).motivo, 'Data prevista para entrega vazia no Jira');
     assert.strictEqual(f({ customfield_12379: '2026-09-28', fixVersions: [] }).motivo, 'Versões corrigidas vazias no Jira');
+  });
+
+  // Caso real (JDCBBRB-437): entrega prevista para 19/11, mas a versão marcada
+  // é a de 05/11 - os dois campos preenchidos não bastam, a data tem que bater.
+  test('versão para a data de entrega: a data de lançamento da versão tem que ser a data prevista', () => {
+    const f = (c) => J.avaliarTask(c)['A issue tem a versão correta para a data de entrega?'];
+    const errada = f({ fixVersions: [{ name: 'DJSCF_6.8.3.2', releaseDate: '2026-11-05' }], customfield_12379: '2026-11-19' });
+    assert.strictEqual(errada.ok, false);
+    assert.strictEqual(errada.motivo, 'Data prevista para entrega 19/11/2026, mas a versão DJSCF_6.8.3.2 é de 05/11/2026 no Jira');
+    // versão sem data de lançamento cadastrada não confirma nada
+    assert.match(f({ fixVersions: [{ name: 'X_1.0' }], customfield_12379: '2026-11-19' }).motivo, /versão X_1\.0 está sem data de lançamento/);
+    // duas versões: todas têm que bater
+    const duas = f({ fixVersions: [{ name: 'A', releaseDate: '2026-11-19' }, { name: 'B', releaseDate: '2026-11-26' }], customfield_12379: '2026-11-19' });
+    assert.strictEqual(duas.ok, false);
+    assert.match(duas.motivo, /versão B é de 26\/11\/2026/);
+    assert.doesNotMatch(duas.motivo, /versão A/);
   });
 
   test('documentação: subtarefa com título "Documentação..." concluída OU cancelada (categoria done); aberta derruba', () => {
@@ -380,5 +396,19 @@ describe('aplicação sobre os itens da expedição', () => {
     const sem = decorar({ artefatoJira: '', dataExpedicao: null, itens }, null, '2026-10-13', null);
     assert.strictEqual(sem.jira.status, 'sem-chave');
     assert.strictEqual(sem.progresso.concluidos, 1);
+  });
+
+  // Dica da tela: cada item diz de qual campo do Jira ele sai. Vai mesmo sem
+  // chave (é para o time saber onde preencher); item que o Jira não confere fica ''.
+  test('cada item padrão leva o campo do Jira que ele representa, com ou sem chave', () => {
+    const itens = ITENS_PADRAO.map((i, n) => deLinhaItem({ id: n + 1, bloco: i.bloco, texto: i.texto, padrao: true, estado: 'pendente' }));
+    const campo = (e, t) => e.itens.find((i) => i.texto === t).campoJira;
+    const sem = decorar({ artefatoJira: '', dataExpedicao: null, itens }, null, '2026-10-13', null);
+    assert.strictEqual(campo(sem, 'Requisito preenchido, em linguagem de usuário'), 'Situação/Requisito');
+    assert.match(campo(sem, 'A issue tem a versão correta para a data de entrega?'), /Versões corrigidas \+ Data prevista para entrega/);
+    assert.strictEqual(campo(sem, 'Branch: VERSÃO FIX → master | VERSÃO RELEASE → Developer?'), '');
+    for (const t of J.TEXTOS_JIRA) assert.ok(campo(sem, t), `sem campo do Jira: ${t}`);
+    const comItemDoTime = decorar({ artefatoJira: '', dataExpedicao: null, itens: [deLinhaItem({ id: 99, bloco: 'comitar', texto: 'Item do time', padrao: false, estado: 'pendente' })] }, null, '2026-10-13', null);
+    assert.strictEqual(comItemDoTime.itens[0].campoJira, undefined);
   });
 });

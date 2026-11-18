@@ -179,6 +179,19 @@
   .tag-jira.indisp { opacity: 0.7; }
   .tag-jira.falta { color: var(--ink-faint); border-style: dashed; }
   .tag-jira.leia { color: var(--accent); border-color: var(--accent); background: var(--accent-soft); }
+  /* Dica do selo Jira: aparece na hora (o title nativo demora e some rápido) */
+  .tag-jira[data-dica], .txt[data-dica] { position: relative; cursor: help; }
+  .txt[data-dica] { text-decoration: underline dotted var(--ink-faint); text-underline-offset: 3px; }
+  .tag-jira[data-dica]::after, .txt[data-dica]::after {
+    content: attr(data-dica); position: absolute; right: 0; top: calc(100% + 6px); z-index: 20;
+    width: max-content; max-width: min(300px, 80vw); white-space: normal; text-align: left;
+    font-size: 0.78rem; font-weight: 400; line-height: 1.4; padding: 8px 10px; border-radius: 6px;
+    color: var(--ink); background: var(--bg-panel); border: 1px solid var(--line); box-shadow: 0 4px 14px rgba(0, 0, 0, 0.25);
+    opacity: 0; visibility: hidden; pointer-events: none; transition: opacity 0.12s;
+  }
+  .txt[data-dica]::after { left: 0; right: auto; }
+  .tag-jira[data-dica]:hover::after, .tag-jira[data-dica]:focus-visible::after,
+  .txt[data-dica]:hover::after { opacity: 1; visibility: visible; }
   .texto-jira { margin: 4px 0 0 26px; font-size: 0.72rem; color: var(--ink-faint); }
   .texto-jira blockquote {
     margin: 3px 0 0; padding: 6px 10px; border-left: 3px solid var(--accent); background: var(--line-soft);
@@ -458,6 +471,13 @@
     }
 
     /* ---------- cartão de uma expedição ---------- */
+    // Dicas do selo "Jira": explicam por que o check não aceita clique
+    var DICA_JIRA_OK = 'Confirmado pelo Jira: o campo já está certo lá, por isso o check fica marcado e travado. Para mudar, altere no Jira e clique em Atualizar.';
+    var DICA_JIRA_FALTA = 'Quem marca este item é o Jira, por isso o check está bloqueado. Ele marca sozinho quando o campo estiver certo lá (depois, clique em Atualizar). Se não se aplica, use N/A com o motivo.';
+    var DICA_JIRA_LEIA = 'O Jira só conferiu o tamanho do texto. Se está objetivo e sem detalhes técnicos, quem decide é o time: leia e marque.';
+    function seloJira(classe, texto, dica) {
+      return '<span class="tag-jira ' + classe + '" tabindex="0" data-dica="' + esc(dica) + '" aria-label="' + esc(texto + '. ' + dica) + '">' + esc(texto) + '</span>';
+    }
     function itemHtml(e, i) {
       var na = i.estado === 'nao_aplicavel';
       var linha = '<div class="item-linha">';
@@ -466,17 +486,19 @@
       var travado = !!i.bloqueado;
       var soJira = !!i.soJira && !na;
       var temInfo = !!i.automatico && !!i.jira && !travado;
-      var dicaJira = travado ? 'Preenchido no Jira: já conferido'
-        : soJira ? 'Conferido pelo Jira: marca sozinho quando cumprir lá (depois, clique em Atualizar)' : '';
       var semClique = travado || soJira;
-      if (na) linha += '<span class="tag-na">N/A</span><span class="txt">' + esc(i.texto) + '</span>';
+      // Dica no texto: de qual campo do Jira o item sai (só itens padrão; os criados pelo time não têm)
+      var dicaCampo = !i.padrao ? '' : i.campoJira ? 'No Jira: ' + i.campoJira : 'Não vem do Jira: quem confere e marca é o time.';
+      var txt = '<span class="txt"' + (dicaCampo ? ' data-dica="' + esc(dicaCampo) + '"' : '') + '>' + esc(i.texto) + '</span>';
+      if (na) linha += '<span class="tag-na">N/A</span>' + txt;
       else {
-        linha += '<label' + (semClique ? ' class="somente-leitura" title="' + esc(dicaJira) + '"' : '') + '><input type="checkbox" data-acao="marcar" data-item="' + i.id + '"' +
+        // sem title no label: a explicação do bloqueio está na dica do selo "Jira"
+        linha += '<label' + (semClique ? ' class="somente-leitura"' : '') + '><input type="checkbox" data-acao="marcar" data-item="' + i.id + '"' +
           (i.estado === 'concluido' ? ' checked' : '') + (semClique ? ' disabled' : '') +
-          ' aria-label="' + esc(i.texto + (travado ? ' (confirmado no Jira)' : soJira ? ' (aguardando o Jira)' : '')) + '"> <span class="txt">' + esc(i.texto) + '</span></label>';
-        if (travado) linha += '<span class="tag-jira ok" title="' + esc(dicaJira) + '">Jira ✓</span>';
-        else if (soJira) linha += '<span class="tag-jira falta" title="' + esc(dicaJira) + '">Jira</span>';
-        else if (i.assistido && i.jira && i.jira.ok) linha += '<span class="tag-jira leia" title="O Jira conferiu o tamanho; o conteúdo quem confere é o time">Jira: leia</span>';
+          ' aria-label="' + esc(i.texto + (travado ? ' (confirmado no Jira)' : soJira ? ' (aguardando o Jira)' : '')) + '"> ' + txt + '</label>';
+        if (travado) linha += seloJira('ok', 'Jira ✓', DICA_JIRA_OK);
+        else if (soJira) linha += seloJira('falta', 'Jira', DICA_JIRA_FALTA);
+        else if (i.assistido && i.jira && i.jira.ok) linha += seloJira('leia', 'Jira: leia', DICA_JIRA_LEIA);
       }
       if (!i.padrao) linha += '<span class="tag-avulso">avulso</span>';
       var temObs = !!i.observacao;

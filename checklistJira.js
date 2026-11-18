@@ -110,34 +110,62 @@ function documentacao(f) {
     : { ok: true, motivo: '' };
 }
 
-/** Versão para a data de entrega: o time pediu os DOIS campos - "Versões
- * corrigidas" e "Data prevista para entrega". O motivo diz qual falta. */
+const dataBR = (iso) => String(iso).slice(0, 10).split('-').reverse().join('/');
+
+/** Versão para a data de entrega (pedido de 2026-11-18): a versão de
+ * "Versões corrigidas" precisa ser lançada NO DIA da "Data prevista para
+ * entrega" da task (a task principal, a que tem as subtarefas de dev). A data
+ * da versão é a "Data de lançamento" cadastrada nela. Havendo mais de uma
+ * versão, todas precisam bater. Sem um dos dois campos, o motivo diz qual falta. */
 function versaoEData(f) {
+  const versoes = Array.isArray(f.fixVersions) ? f.fixVersions : [];
+  const prevista = f[CAMPOS.dataPrevistaEntrega];
   const faltam = [];
-  if (!temConteudo(f.fixVersions)) faltam.push('Versões corrigidas vazias');
-  if (!temConteudo(f[CAMPOS.dataPrevistaEntrega])) faltam.push('Data prevista para entrega vazia');
-  return faltam.length ? { ok: false, motivo: faltam.join(' e ') } : { ok: true, motivo: '' };
+  if (!versoes.length) faltam.push('Versões corrigidas vazias');
+  if (!temConteudo(prevista)) faltam.push('Data prevista para entrega vazia');
+  if (faltam.length) return { ok: false, motivo: faltam.join(' e ') };
+  const dia = String(prevista).slice(0, 10);
+  const erradas = versoes.filter((v) => String(v.releaseDate || '').slice(0, 10) !== dia);
+  const detalhe = `prevista ${dataBR(dia)} · ` + versoes.map((v) => `${v.name} ${v.releaseDate ? dataBR(v.releaseDate) : 'sem data'}`).join(' · ');
+  if (!erradas.length) return { ok: true, motivo: '', detalhe };
+  // sem detalhe na falha: o motivo já traz as duas datas (repetir só confundia)
+  const desc = erradas.map((v) => (v.releaseDate ? `a versão ${v.name} é de ${dataBR(v.releaseDate)}` : `a versão ${v.name} está sem data de lançamento`)).join(' e ');
+  return { ok: false, motivo: `Data prevista para entrega ${dataBR(dia)}, mas ${desc}` };
 }
 
-/** `texto` é exatamente o texto do item em ITENS_PADRAO (é por ele que o item é achado). */
+/** `texto` é exatamente o texto do item em ITENS_PADRAO (é por ele que o item é achado).
+ * `campo` é o que a tela mostra na dica do item: o(s) campo(s) do Jira, com o
+ * nome que aparece na issue, para o time saber onde preencher. */
 const REGRAS = [
-  { texto: 'A issue tem a versão correta para a data de entrega?', rotulo: 'Versão/Data prevista', avaliar: versaoEData },
-  { texto: 'O componente corresponde ao módulo da versão?', rotulo: 'Componentes', avaliar: (f) => preenchido(f.components, 'Componentes vazio') },
-  { texto: 'Documentos de Configuração preenchidos?', rotulo: 'Documentação', avaliar: documentacao },
-  { texto: 'Descrição preenchida?', rotulo: 'Descrição', avaliar: (f) => preenchido(f.description, 'Descrição vazia') },
-  { texto: 'Solução preenchida?', rotulo: 'Solução', avaliar: (f) => preenchido(f[CAMPOS.solucao], 'Solução vazia') },
-  { texto: 'Requisito preenchido, em linguagem de usuário', rotulo: 'Situação/Requisito', avaliar: (f) => preenchido(f[CAMPOS.situacaoRequisito], 'Situação/Requisito vazio') },
+  {
+    texto: 'A issue tem a versão correta para a data de entrega?', rotulo: 'Versão/Data prevista', avaliar: versaoEData,
+    campo: 'Versões corrigidas + Data prevista para entrega (a data de lançamento da versão tem que ser a data prevista)'
+  },
+  { texto: 'O componente corresponde ao módulo da versão?', rotulo: 'Componentes', campo: 'Componentes', avaliar: (f) => preenchido(f.components, 'Componentes vazio') },
+  {
+    texto: 'Documentos de Configuração preenchidos?', rotulo: 'Documentação', avaliar: documentacao,
+    campo: 'Subtarefa com o título "Documentação - ...", concluída ou cancelada'
+  },
+  { texto: 'Descrição preenchida?', rotulo: 'Descrição', campo: 'Descrição', avaliar: (f) => preenchido(f.description, 'Descrição vazia') },
+  { texto: 'Solução preenchida?', rotulo: 'Solução', campo: 'Solução', avaliar: (f) => preenchido(f[CAMPOS.solucao], 'Solução vazia') },
+  {
+    texto: 'Requisito preenchido, em linguagem de usuário', rotulo: 'Situação/Requisito', campo: 'Situação/Requisito',
+    avaliar: (f) => preenchido(f[CAMPOS.situacaoRequisito], 'Situação/Requisito vazio')
+  },
   {
     texto: 'Solução com mais de 60 caracteres, objetivo e sem detalhes técnicos', rotulo: 'Solução (tamanho)',
-    assistido: true, avaliar: solucaoTamanho
+    campo: 'Solução (o Jira confere o tamanho; o conteúdo, o time)', assistido: true, avaliar: solucaoTamanho
   },
   {
-    texto: 'Demais Documentações preenchidas', rotulo: 'Demais Documentações',
+    texto: 'Demais Documentações preenchidas', rotulo: 'Demais Documentações', campo: 'Demais Documentações',
     avaliar: (f) => (CAMPOS.demaisDocumentacoes.some((k) => temConteudo(f[k])) ? { ok: true, motivo: '' } : { ok: false, motivo: 'Demais Documentações vazia' })
   },
-  { texto: 'Data interna acordada registrada? (boa prática)', rotulo: 'Data Interna Acordada', avaliar: (f) => preenchido(f[CAMPOS.dataInternaAcordada], 'Data Interna Acordada vazia') },
   {
-    texto: 'Todas as subtarefas concluídas', rotulo: 'Subtarefas',
+    texto: 'Data interna acordada registrada? (boa prática)', rotulo: 'Data Interna Acordada', campo: 'Data Interna Acordada',
+    avaliar: (f) => preenchido(f[CAMPOS.dataInternaAcordada], 'Data Interna Acordada vazia')
+  },
+  {
+    texto: 'Todas as subtarefas concluídas', rotulo: 'Subtarefas', campo: 'Subtarefas (todas fechadas, concluídas ou canceladas)',
     avaliar: (f) => {
       const sub = f.subtasks || [];
       if (!sub.length) return { ok: false, motivo: 'sem subtarefas' };
@@ -149,6 +177,7 @@ const REGRAS = [
   },
   {
     texto: 'Status: Teste de aceitação concluído', rotulo: 'Teste de aceitação',
+    campo: 'Status (Teste de aceitação concluído ou depois) ou Data Conclusão Teste Aceitação',
     avaliar: (f) => {
       if (temConteudo(f[CAMPOS.conclusaoTesteAceitacao])) return { ok: true, motivo: '' };
       const nome = f.status && f.status.name;
@@ -159,6 +188,8 @@ const REGRAS = [
 ];
 
 const TEXTOS_JIRA = REGRAS.map((r) => r.texto);
+// texto do item -> campo(s) do Jira, para a dica da tela
+const CAMPO_DO_ITEM = Object.fromEntries(REGRAS.map((r) => [r.texto, r.campo]));
 // Assistidos: o Jira barra quando não cumpre, mas quem marca é o time.
 const TEXTOS_ASSISTIDOS = REGRAS.filter((r) => r.assistido).map((r) => r.texto);
 
@@ -258,6 +289,6 @@ async function verificarVarias(chaves, chamar, { cache, forcar, limite = 5, teto
 }
 
 module.exports = {
-  CAMPOS, CAMPOS_PEDIDOS, REGRAS, TEXTOS_JIRA, TEXTOS_ASSISTIDOS, STATUS_IGNORADOS, TIPOS_IGNORADOS, STATUS_TESTE_OK, MIN_SOLUCAO,
+  CAMPOS, CAMPOS_PEDIDOS, REGRAS, TEXTOS_JIRA, TEXTOS_ASSISTIDOS, CAMPO_DO_ITEM, STATUS_IGNORADOS, TIPOS_IGNORADOS, STATUS_TESTE_OK, MIN_SOLUCAO,
   temConteudo, textoPlano, avaliarTask, avaliarEpico, lerDoJira, criarCache, verificar, verificarVarias
 };

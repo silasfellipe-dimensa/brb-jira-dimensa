@@ -2,7 +2,7 @@
 // Ficam aqui, e não no supabase.js, para serem testadas isoladamente.
 
 const { interpretarData, interpretarNumero, idDemanda, urlJira } = require('./demandas');
-const { TEXTOS_JIRA, TEXTOS_ASSISTIDOS } = require('./checklistJira');
+const { TEXTOS_JIRA, TEXTOS_ASSISTIDOS, CAMPO_DO_ITEM } = require('./checklistJira');
 
 const LIMITE = { jira: 40, nome: 300, acs: 40, item: 200, justificativa: 500, observacao: 1000 };
 const MIN_JUSTIFICATIVA = 10;
@@ -385,9 +385,16 @@ function recusaPeloJira(item, verificacao, novoEstado) {
   return '';
 }
 
+/** Dica de cada item padrão: qual campo do Jira ele representa. Vai sempre,
+ * mesmo sem chave ou com o Jira fora do ar - é para o time saber onde olhar.
+ * Item padrão que o Jira não confere (Branch, GCAD, horas...) leva campoJira ''. */
+function comCampoJira(itens) {
+  return itens.map((i) => (i.padrao ? { ...i, campoJira: CAMPO_DO_ITEM[i.texto] || '' } : i));
+}
+
 /** Expedição pronta para a tela: responsável de hoje, progresso e urgência. */
 function decorar(expedicao, snapshot, hoje, verificacao) {
-  const itens = aplicarVerificacao(expedicao.itens, verificacao || null);
+  const itens = comCampoJira(aplicarVerificacao(expedicao.itens, verificacao || null));
   const prog = progresso(itens);
   return {
     ...expedicao,
