@@ -16,9 +16,10 @@
 // - texto puro ("copiar e colar"). Cada linha vira um parágrafo, que é o que o
 //   editor do Jira faz hoje a cada Enter (conferido na Situação/Requisito da
 //   JDCBBRB-363 e na Descrição da JDCBBRB-517, em 2026-11-19). Na leitura,
-//   quebra de linha (hardBreak) também vira linha. Texto que já tem qualquer
-//   outra coisa (negrito, lista, link, imagem, título) NÃO é editado aqui:
-//   salvar por cima apagaria a formatação;
+//   quebra de linha (hardBreak) também vira linha. Texto que já tem formatação
+//   (negrito, lista, link, imagem, título) também se edita (pedido de
+//   2026-11-19: tudo é texto simples): a tela mostra o texto limpo e avisa o
+//   que some ao salvar. Abrir e não mudar nada não grava (a formatação fica);
 // - data no formato do Jira (AAAA-MM-DD); versões e componentes só dos que
 //   estão cadastrados no projeto;
 // - antes de gravar, confere se ninguém mudou o campo no Jira depois que a
@@ -67,32 +68,65 @@ function normalizarTexto(t) {
   return String(t === null || t === undefined ? '' : t).replace(/\r\n?/g, '\n').trim();
 }
 
-/** ADF do Jira -> texto. `simples` = só parágrafos com texto sem marca e
- * quebras de linha (o que dá para regravar sem perder nada). Vazio também é
- * simples. Qualquer outra coisa: simples false, e o texto serve só para mostrar. */
+/** ADF do Jira -> texto puro. `simples` = só parágrafos com texto sem marca e
+ * quebras de linha (regravar não perde nada). Senão, o texto vem "limpo"
+ * (lista vira "- item", título vira linha, link e menção viram texto) e
+ * `perde` diz o que some ao salvar - combinado em 2026-11-19: todo campo é
+ * texto simples, então formatado também se edita, com aviso. */
+const PERDA_MARCA = { link: 'link', code: 'código' };
 function adfParaTexto(doc) {
-  if (doc === null || doc === undefined || doc === '') return { texto: '', simples: true };
-  if (typeof doc === 'string') return { texto: doc, simples: true };
-  const blocos = (doc && doc.content) || [];
-  const partes = [];
-  let simples = doc.type === 'doc';
-  blocos.forEach((b, n) => {
-    if (n > 0) partes.push('\n');
-    if (!b || b.type !== 'paragraph') simples = false;
-    const andar = (no) => {
-      if (!no || typeof no !== 'object') return;
-      if (no.type === 'text') {
-        if (no.marks && no.marks.length) simples = false;
-        partes.push(String(no.text || ''));
-      } else if (no.type === 'hardBreak') partes.push('\n');
-      else {
-        if (no !== b) simples = false;
-        (no.content || []).forEach(andar);
+  if (doc === null || doc === undefined || doc === '') return { texto: '', simples: true, perde: [] };
+  if (typeof doc === 'string') return { texto: doc, simples: true, perde: [] };
+  const perde = new Set();
+  if (!doc || doc.type !== 'doc') perde.add('outra formatação');
+  const inline = (nos) => (nos || []).map((no) => {
+    if (!no || typeof no !== 'object') return '';
+    if (no.type === 'text') {
+      for (const m of no.marks || []) perde.add(PERDA_MARCA[m && m.type] || 'negrito, itálico ou cor');
+      return String(no.text || '');
+    }
+    if (no.type === 'hardBreak') return '\n';
+    const a = no.attrs || {};
+    if (no.type === 'mention') { perde.add('menção'); return String(a.text || ''); }
+    if (no.type === 'emoji') return String(a.text || a.shortName || '');
+    if (no.type === 'inlineCard') { perde.add('link'); return String(a.url || ''); }
+    if (no.type === 'status') { perde.add('outra formatação'); return String(a.text || ''); }
+    if (no.type === 'date') { perde.add('outra formatação'); return a.timestamp ? new Date(+a.timestamp).toISOString().slice(0, 10).split('-').reverse().join('/') : ''; }
+    if (/^media/.test(no.type)) { perde.add('imagem ou anexo'); return ''; }
+    perde.add('outra formatação');
+    return inline(no.content);
+  }).join('');
+  // cada bloco vira uma ou mais linhas
+  const linhas = (b, recuo = '') => {
+    if (!b || typeof b !== 'object') return [];
+    switch (b.type) {
+      case 'paragraph': return [recuo + inline(b.content)];
+      case 'heading': perde.add('título'); return [recuo + inline(b.content)];
+      case 'bulletList':
+      case 'orderedList': {
+        perde.add('lista');
+        const ini = (b.attrs && b.attrs.order) || 1;
+        return (b.content || []).flatMap((item, n) => {
+          const marca = b.type === 'bulletList' ? '- ' : `${ini + n}. `;
+          const dentro = (item.content || []).flatMap((c) => linhas(c, recuo + '  '));
+          if (!dentro.length) return [recuo + marca];
+          return [recuo + marca + dentro[0].slice(recuo.length + 2), ...dentro.slice(1)];
+        });
       }
-    };
-    andar(b);
-  });
-  return { texto: partes.join(''), simples };
+      case 'codeBlock': perde.add('código'); return inline(b.content).split('\n').map((l) => recuo + l);
+      case 'rule': perde.add('outra formatação'); return [];
+      case 'table':
+        perde.add('tabela');
+        return (b.content || []).map((linha) => recuo + (linha.content || []).map((cel) => (cel.content || []).flatMap((c) => linhas(c)).join(' ')).join(' | '));
+      case 'mediaSingle': case 'mediaGroup': case 'media': perde.add('imagem ou anexo'); return [];
+      case 'blockquote': case 'panel': case 'expand': case 'nestedExpand':
+        perde.add('citação, painel ou bloco');
+        return (b.content || []).flatMap((c) => linhas(c, recuo));
+      default: perde.add('outra formatação'); return (b.content || []).flatMap((c) => linhas(c, recuo));
+    }
+  };
+  const texto = ((doc && doc.content) || []).flatMap((b) => linhas(b)).join('\n');
+  return { texto, simples: perde.size === 0, perde: [...perde] };
 }
 
 /** Texto -> ADF como o editor do Jira grava: um parágrafo por linha (linha em
@@ -127,10 +161,11 @@ const idsDe = (lista) => (Array.isArray(lista) ? lista : []).map((x) => String(x
 function lerCampo(chaveCampo, bruto) {
   const c = CAMPOS_GRAVAVEIS[chaveCampo];
   if (c.tipo === 'texto') {
+    // formatado também é editável (tudo é texto simples); `perde` vai para o aviso da tela
     const lido = adfParaTexto(bruto);
     return {
-      valor: lido.texto, texto: lido.texto, editavel: lido.simples,
-      motivo: lido.simples ? '' : `Este campo (${c.nome}) tem formatação no Jira (negrito, lista, link, imagem ou título). Edite no Jira para não perder a formatação.`,
+      valor: lido.texto, texto: lido.texto, editavel: true, motivo: '',
+      formatado: !lido.simples, perde: lido.perde,
       versao: versaoDe(bruto === undefined ? null : bruto)
     };
   }

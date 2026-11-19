@@ -49,8 +49,8 @@ describe('cada item do checklist sabe o que grava', () => {
 describe('texto no formato do Jira', () => {
   test('lê parágrafos e quebras de linha como linhas (com o localId do editor novo)', () => {
     const real = doc({ type: 'paragraph', attrs: { localId: 'ae4994705c80' }, content: [txt('linha 1')] }, par(txt('linha 2'), BR, txt('linha 3')));
-    assert.deepStrictEqual(G.adfParaTexto(real), { texto: 'linha 1\nlinha 2\nlinha 3', simples: true });
-    assert.deepStrictEqual(G.adfParaTexto(null), { texto: '', simples: true });
+    assert.deepStrictEqual(G.adfParaTexto(real), { texto: 'linha 1\nlinha 2\nlinha 3', simples: true, perde: [] });
+    assert.deepStrictEqual(G.adfParaTexto(null), { texto: '', simples: true, perde: [] });
   });
 
   test('grava como o editor do Jira: um parágrafo por linha, linha em branco = parágrafo vazio', () => {
@@ -59,15 +59,26 @@ describe('texto no formato do Jira', () => {
     assert.strictEqual(G.textoParaAdf('   \n  '), null, 'vazio apaga o campo');
   });
 
-  test('qualquer formatação deixa o campo fora da edição (salvar por cima apagaria)', () => {
+  // 2026-11-19: tudo é texto simples - formatado também se edita, limpo, dizendo o que some
+  test('formatado vira texto simples legível e diz o que se perde ao salvar', () => {
     const casos = {
-      negrito: doc(par(txt('a', [{ type: 'strong' }]))),
-      link: doc(par(txt('a', [{ type: 'link', attrs: { href: 'https://x' } }]))),
-      mencao: doc(par(txt('a'), { type: 'mention', attrs: { id: '1' } })),
-      lista: doc({ type: 'bulletList', content: [] }),
-      titulo: doc({ type: 'heading', attrs: { level: 1 }, content: [txt('a')] })
+      negrito: [doc(par(txt('a', [{ type: 'strong' }]))), 'a', 'negrito, itálico ou cor'],
+      link: [doc(par(txt('site', [{ type: 'link', attrs: { href: 'https://x' } }]))), 'site', 'link'],
+      mencao: [doc(par(txt('fale com '), { type: 'mention', attrs: { id: '1', text: '@Ana' } })), 'fale com @Ana', 'menção'],
+      titulo: [doc({ type: 'heading', attrs: { level: 1 }, content: [txt('Título')] }, par(txt('corpo'))), 'Título\ncorpo', 'título'],
+      imagem: [doc(par(txt('veja')), { type: 'mediaSingle', content: [{ type: 'media', attrs: { id: 'x' } }] }), 'veja', 'imagem ou anexo']
     };
-    for (const [nome, d] of Object.entries(casos)) assert.strictEqual(G.adfParaTexto(d).simples, false, nome);
+    for (const [nome, [d, texto, perda]] of Object.entries(casos)) {
+      const l = G.adfParaTexto(d);
+      assert.strictEqual(l.simples, false, nome);
+      assert.strictEqual(l.texto, texto, nome);
+      assert.ok(l.perde.includes(perda), `${nome}: ${l.perde}`);
+    }
+    const lista = doc({ type: 'bulletList', content: [
+      { type: 'listItem', content: [par(txt('um'))] },
+      { type: 'listItem', content: [par(txt('dois')), { type: 'orderedList', content: [{ type: 'listItem', content: [par(txt('sub'))] }] }] }
+    ] });
+    assert.strictEqual(G.adfParaTexto(lista).texto, '- um\n- dois\n  1. sub');
   });
 });
 
@@ -185,11 +196,16 @@ describe('gravar um campo', () => {
     assert.strictEqual(escritas(j).length, 0);
   });
 
-  test('texto formatado no Jira: recusa (edite no Jira)', async () => {
-    const j = jiraFalso({ [ID('situacaoRequisito')]: doc(par(txt('a', [{ type: 'strong' }]))) });
-    const r = await G.gravarCampo(pedido('situacaoRequisito', 'b', j.versao('situacaoRequisito')), j.chamar);
-    assert.strictEqual(r.formatada, true);
+  test('texto formatado no Jira: grava como texto simples; abrir e não mudar não grava (a formatação fica)', async () => {
+    const formatado = doc(par(txt('Requisito ', []), txt('importante', [{ type: 'strong' }])));
+    const j = jiraFalso({ [ID('situacaoRequisito')]: formatado });
+    const lido = G.lerCampo('situacaoRequisito', formatado);
+    assert.deepStrictEqual([lido.editavel, lido.formatado, lido.valor], [true, true, 'Requisito importante']);
+    const igual = await G.gravarCampo(pedido('situacaoRequisito', 'Requisito importante', lido.versao), j.chamar);
+    assert.strictEqual(igual.semMudanca, true);
     assert.strictEqual(escritas(j).length, 0);
+    await G.gravarCampo(pedido('situacaoRequisito', 'Requisito novo', lido.versao), j.chamar);
+    assert.deepStrictEqual(escritas(j)[0].corpo, { fields: { [ID('situacaoRequisito')]: doc(par(txt('Requisito novo'))) } });
   });
 
   test('mesmo valor: não grava nada (nem linha no histórico do Jira)', async () => {

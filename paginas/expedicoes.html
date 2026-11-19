@@ -873,6 +873,13 @@
       var msg = recado ? [recado] : [];
       var opcoes;
       if (def.tipo === 'texto') {
+        // formatado no Jira: edita como texto simples, mas avisa o que some ao salvar
+        if (lido.formatado) {
+          var perde = lido.perde || [];
+          msg.push('No Jira este texto tem formatação (' + (perde.join(', ') || 'formatação') + '). Abaixo ele está como texto simples. ' +
+            (perde.indexOf('imagem ou anexo') >= 0 ? 'Atenção: a imagem/anexo sai do campo ao salvar. ' : '') +
+            'Ao salvar, fica no Jira exatamente como está aqui, sem a formatação. Se só fechar, nada muda lá.');
+        }
         opcoes = Object.assign(base, {
           tamanho: 'grande',
           campo: { valor: temRascunho ? rascunho : lido.valor, maxlength: 8000, rotulo: def.nome,
