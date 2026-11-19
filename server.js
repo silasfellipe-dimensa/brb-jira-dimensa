@@ -14,7 +14,7 @@ const {
   lerExpedicao, listarChavesExpedicoes, listarExpedicoes, criarExpedicao, atualizarExpedicao, removerExpedicao,
   criarItemExpedicao, atualizarItemExpedicao, atualizarObservacaoItem, removerItemExpedicao, registrarGravacaoJira
 } = require('./supabase');
-const { podeGravarJira, lerSolucoes, validarPedido, gravarSolucao } = require('./gravarJira');
+const { podeGravarJira, lerCampos, validarPedido, gravarCampo } = require('./gravarJira');
 const {
   normalizarCampos, idDemanda, interpretarMes, interpretarListaMeses, mesesDisponiveis,
   filtrarPorMeses, resumirMeses
@@ -617,7 +617,7 @@ app.patch('/api/expedicoes/:id/itens/:itemId/observacao', exigirSessaoApi, exigi
   res.json({ expedicao: await decorarExpedicao(r.expedicao, await lerSnapshot()) });
 });
 
-/* ---------- gravação no Jira (gravarJira.js): por enquanto, só a Solução ----------
+/* ---------- gravação no Jira (gravarJira.js): os campos do checklist ----------
  * Só @dimensa e @evertecinc (lista fixa em gravarJira.js, não segue EDITOR_DOMAINS).
  * No Jira sai só a alteração do campo, em nome da conta do token; quem gravou
  * fica na tabela jira_gravacoes. */
@@ -628,27 +628,29 @@ function exigirGravadorJira(req, res, next) {
   next();
 }
 
-// As Soluções que a expedição usa: a task, ou as tasks filhas do épico.
-app.get('/api/jira/solucao', exigirSessaoApi, exigirEditorApi, exigirGravadorJira, async (req, res) => {
+// Os campos pedidos (?campos=versoes,dataPrevista) da task, ou das tasks filhas do épico.
+app.get('/api/jira/campos', exigirSessaoApi, exigirEditorApi, exigirGravadorJira, async (req, res) => {
   try {
-    const r = await lerSolucoes(req.query.chave, chamarJira);
+    const r = await lerCampos(req.query.chave, req.query.campos, chamarJira);
     if (r.status === 'fora-do-projeto') return res.status(400).json({ erro: 'Só issues do projeto JDCBBRB podem ser editadas daqui.' });
+    if (r.status === 'campo-invalido') return res.status(400).json({ erro: 'Campo que não pode ser gravado daqui.' });
     if (r.status === 'nao-encontrada') return res.status(404).json({ erro: 'O Jira não encontrou essa chave.' });
     res.json(r);
   } catch (erro) {
-    console.error('[jira-gravar] não consegui ler a Solução:', erro.message);
+    console.error('[jira-gravar] não consegui ler os campos:', erro.message);
     res.status(503).json({ erro: 'Não consegui ler o Jira agora. Tente de novo.' });
   }
 });
 
-app.put('/api/jira/solucao/:chave', exigirSessaoApi, exigirEditorApi, exigirGravadorJira, async (req, res) => {
+// Grava UM campo de UMA task. Corpo: { campo, valor, versao, expedicaoId }.
+app.put('/api/jira/campo/:chave', exigirSessaoApi, exigirEditorApi, exigirGravadorJira, async (req, res) => {
   const pedido = validarPedido(req.params.chave, req.body);
   if (!pedido.ok) return res.status(400).json({ erro: pedido.erro });
   let r;
   try {
-    r = await gravarSolucao(pedido, chamarJira);
+    r = await gravarCampo(pedido, chamarJira);
   } catch (erro) {
-    console.error(`[jira-gravar] ${req.usuario.email} não conseguiu gravar a Solução de ${pedido.chave}:`, erro.message);
+    console.error(`[jira-gravar] ${req.usuario.email} não conseguiu gravar ${pedido.campo} de ${pedido.chave}:`, erro.message);
     return res.status(502).json({ erro: 'O Jira não aceitou a gravação agora. Nada foi alterado; tente de novo ou edite no Jira.' });
   }
   if (!r.ok) {
@@ -657,8 +659,8 @@ app.put('/api/jira/solucao/:chave', exigirSessaoApi, exigirEditorApi, exigirGrav
   }
   let registro = { ok: true };
   if (!r.semMudanca) {
-    console.log(`[jira-gravar] ${req.usuario.email} gravou a Solução de ${pedido.chave}`);
-    registro = await registrarGravacaoJira({ email: req.usuario.email, issue: pedido.chave, campo: 'Solução', anterior: r.anterior, novo: r.novo });
+    console.log(`[jira-gravar] ${req.usuario.email} gravou ${r.nome} de ${pedido.chave}`);
+    registro = await registrarGravacaoJira({ email: req.usuario.email, issue: pedido.chave, campo: r.nome, anterior: r.anterior, novo: r.novo });
     if (!registro.ok) console.error(`[jira-gravar] gravou no Jira, mas o registro falhou (${pedido.chave}):`, registro.erro);
     // o checklist tem que ver o valor novo já
     cacheJira.limpar();

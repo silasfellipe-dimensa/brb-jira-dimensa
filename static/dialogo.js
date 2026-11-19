@@ -10,6 +10,11 @@
  *                   rotuloConfirmar, rotuloCancelar })
  *       -> Promise<string|null>   (texto digitado; null = cancelou. Ctrl+Enter salva)
  *   tamanho: 'grande' (opcional) - caixa larga e campo alto, para texto longo.
+ *   campo.tipo (opcional): 'texto' (padrão, caixa de texto), 'data' (calendário;
+ *        devolve 'AAAA-MM-DD' ou '' para apagar) ou 'lista' (marcar várias
+ *        opções; campo.opcoes = [{ valor, rotulo, detalhe }], campo.marcados =
+ *        [valor]; devolve a lista de valores marcados; com muitas opções
+ *        aparece um filtro).
  *
  *   tom: 'perigo' (excluir; o foco já começa em Cancelar, para Enter nunca
  *        apagar sem querer), 'aviso' ou 'info'.
@@ -62,6 +67,17 @@
     // tamanho 'grande': texto longo de ler e escrever (ex.: Solução do Jira)
     'dialog.dlgx.grande{width:min(760px,calc(100vw - 32px))}',
     'dialog.dlgx.grande .dlgx-campo textarea{min-height:min(340px,50vh);font-size:.92rem;line-height:1.6}',
+    // campo de data e lista de escolha
+    '.dlgx-campo input{display:block;font:inherit;font-size:.9rem;color:var(--dx-ink);background:var(--bg,var(--dx-bg));',
+    'border:1px solid var(--dx-line);border-radius:10px;padding:8px 12px;color-scheme:light dark}',
+    '.dlgx-campo input[type=date]{width:auto;min-width:200px}.dlgx-campo input.dlgx-filtro{width:100%;margin-bottom:8px}',
+    '.dlgx-campo input:focus{outline:none;border-color:var(--dx-tom);box-shadow:0 0 0 3px color-mix(in srgb,var(--dx-tom) 25%,transparent)}',
+    '.dlgx-lista{max-height:min(320px,45vh);overflow:auto;border:1px solid var(--dx-line);border-radius:10px;padding:4px}',
+    '.dlgx-op{display:flex;gap:10px;align-items:flex-start;padding:7px 9px;border-radius:8px;cursor:pointer;font-size:.86rem;line-height:1.35}',
+    '.dlgx-op:hover{background:var(--dx-soft)}.dlgx-op input{margin-top:2px;accent-color:var(--dx-tom)}',
+    '.dlgx-op small{display:block;color:var(--dx-faint);font-size:.74rem}.dlgx-op[hidden]{display:none}',
+    '.dlgx-vazia{padding:10px;font-size:.8rem;color:var(--dx-faint)}',
+    '.dlgx-limpar{font:inherit;font-size:.78rem;background:none;border:0;color:var(--dx-tom);cursor:pointer;padding:6px 0 0;text-decoration:underline}',
     '@media (max-width:480px){.dlgx-rodape{flex-direction:column-reverse}.dlgx-btn{width:100%}}',
     '@keyframes dlgx-entra{from{opacity:0;transform:translateY(8px) scale(.97)}to{opacity:1;transform:none}}',
     '@keyframes dlgx-fundo{from{opacity:0}to{opacity:1}}',
@@ -122,7 +138,78 @@
         texto.appendChild(m);
       });
       var area = null;
-      if (comCampo) {
+      var lerValor = function () { return area.value; };
+      var tipoCampo = comCampo ? (opcoes.campo.tipo || 'texto') : '';
+      if (tipoCampo === 'data') {
+        var rotuloData = el('label', 'dlgx-campo');
+        if (opcoes.campo.rotulo) rotuloData.appendChild(el('span', '', opcoes.campo.rotulo));
+        area = el('input');
+        area.type = 'date';
+        area.value = opcoes.campo.valor || '';
+        area.setAttribute('aria-label', opcoes.campo.rotulo || opcoes.titulo || 'Data');
+        rotuloData.appendChild(area);
+        texto.appendChild(rotuloData);
+        var limpar = el('button', 'dlgx-limpar', 'Deixar sem data');
+        limpar.type = 'button';
+        limpar.addEventListener('click', function () { area.value = ''; area.focus(); });
+        texto.appendChild(limpar);
+        if (opcoes.nota) texto.appendChild(el('p', 'dlgx-msg', opcoes.nota));
+        area.addEventListener('keydown', function (ev) {
+          if (ev.key === 'Enter') { ev.preventDefault(); fechar(area.value); }
+        });
+      } else if (tipoCampo === 'lista') {
+        var bloco = el('div', 'dlgx-campo');
+        if (opcoes.campo.rotulo) bloco.appendChild(el('span', '', opcoes.campo.rotulo));
+        var ops = opcoes.campo.opcoes || [];
+        var marcados = (opcoes.campo.marcados || []).map(String);
+        var filtro = null;
+        if (ops.length > 8) {
+          filtro = el('input', 'dlgx-filtro');
+          filtro.type = 'search';
+          filtro.placeholder = 'Filtrar…';
+          filtro.setAttribute('aria-label', 'Filtrar opções');
+          bloco.appendChild(filtro);
+        }
+        var lista = el('div', 'dlgx-lista');
+        lista.setAttribute('role', 'group');
+        lista.setAttribute('aria-label', opcoes.campo.rotulo || 'Opções');
+        var caixas = [];
+        ops.forEach(function (o) {
+          var linha = el('label', 'dlgx-op');
+          var cb = el('input');
+          cb.type = 'checkbox';
+          cb.value = String(o.valor);
+          cb.checked = marcados.indexOf(String(o.valor)) >= 0;
+          var t = el('span', '', o.rotulo);
+          if (o.detalhe) t.appendChild(el('small', '', o.detalhe));
+          linha.appendChild(cb);
+          linha.appendChild(t);
+          linha.setAttribute('data-busca', (String(o.rotulo) + ' ' + String(o.detalhe || '')).toLowerCase());
+          lista.appendChild(linha);
+          caixas.push(cb);
+        });
+        var nenhuma = el('div', 'dlgx-vazia', 'Nenhuma opção com esse filtro.');
+        nenhuma.hidden = true;
+        lista.appendChild(nenhuma);
+        if (!ops.length) { nenhuma.textContent = 'Nenhuma opção disponível.'; nenhuma.hidden = false; }
+        if (filtro) {
+          filtro.addEventListener('input', function () {
+            var q = filtro.value.trim().toLowerCase();
+            var visiveis = 0;
+            Array.prototype.forEach.call(lista.querySelectorAll('.dlgx-op'), function (l) {
+              l.hidden = q !== '' && l.getAttribute('data-busca').indexOf(q) < 0;
+              if (!l.hidden) visiveis++;
+            });
+            nenhuma.hidden = visiveis > 0;
+          });
+          filtro.addEventListener('keydown', function (ev) { if (ev.key === 'Enter') ev.preventDefault(); });
+        }
+        bloco.appendChild(lista);
+        texto.appendChild(bloco);
+        if (opcoes.nota) texto.appendChild(el('p', 'dlgx-msg', opcoes.nota));
+        area = filtro || caixas[0] || null;
+        lerValor = function () { return caixas.filter(function (c) { return c.checked; }).map(function (c) { return c.value; }); };
+      } else if (comCampo) {
         var rotuloCampo = el('label', 'dlgx-campo');
         if (opcoes.campo.rotulo) rotuloCampo.appendChild(el('span', '', opcoes.campo.rotulo));
         area = el('textarea');
@@ -180,7 +267,7 @@
         if (ev.key === 'Escape') { ev.preventDefault(); ev.stopPropagation(); fechar(vazio); }
       }
 
-      ok.addEventListener('click', function () { fechar(comCampo ? area.value : true); });
+      ok.addEventListener('click', function () { fechar(comCampo ? lerValor() : true); });
       if (cancelar) cancelar.addEventListener('click', function () { fechar(vazio); });
       // clique no fundo (fora da caixa) cancela; o <dialog> não tem padding, então só o fundo chega aqui
       caixa.addEventListener('click', function (ev) { if (ev.target === caixa) fechar(vazio); });
@@ -191,7 +278,10 @@
       if (typeof caixa.showModal === 'function') caixa.showModal();
       else caixa.setAttribute('open', '');
       // Excluir: o foco começa em "Cancelar" - Enter sem querer nunca apaga.
-      if (area) { area.focus(); area.setSelectionRange(area.value.length, area.value.length); }
+      if (area) {
+        area.focus();
+        if (tipoCampo === 'texto') area.setSelectionRange(area.value.length, area.value.length);
+      }
       else (tom === 'perigo' && cancelar ? cancelar : ok).focus();
     });
   }

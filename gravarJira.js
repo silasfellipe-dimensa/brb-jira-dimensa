@@ -1,6 +1,11 @@
-// Gravação no Jira a partir da tela de Expedições (pedido de 2026-11-18).
+// Gravação no Jira a partir da tela de Expedições.
 //
-// Começa por UM campo: a Solução. Regras combinadas com o usuário:
+// 2026-11-18: começou pela Solução. 2026-11-19: todos os campos que o
+// checklist confere e que são campo de verdade na issue (CAMPOS_GRAVAVEIS).
+// Fica de fora o que não é campo: status (é transição de fluxo), subtarefas e
+// a subtarefa "Documentação".
+//
+// Regras combinadas com o usuário:
 // - só @dimensa.com.br e @evertecinc.com.br gravam (TOTVS e BRB nunca). A
 //   lista é fixa AQUI de propósito: não segue EDITOR_DOMAINS, para que mudar
 //   quem edita as telas não abra, sem querer, a gravação no Jira;
@@ -8,13 +13,16 @@
 //   próprio Jira: só a alteração do campo, sem comentário, etiqueta ou marca.
 //   A gravação usa o token configurado (JIRA_EMAIL), então o histórico da issue
 //   mostra essa conta; quem gravou de verdade fica só no nosso banco;
-// - texto puro. No Jira a Solução é um parágrafo só, com cada quebra de linha
-//   virando um "hardBreak" (conferido nas 21 Soluções do projeto em
-//   2026-11-18). Gravamos nesse mesmo formato. Solução que já tem qualquer
-//   outra coisa (negrito, lista, link, imagem, vários parágrafos) NÃO é
-//   editada aqui: salvar por cima apagaria a formatação;
-// - antes de gravar, confere se ninguém mudou a Solução no Jira depois que a
-//   tela leu (versão = hash do texto lido). Se mudou, recusa em vez de apagar.
+// - texto puro ("copiar e colar"). Cada linha vira um parágrafo, que é o que o
+//   editor do Jira faz hoje a cada Enter (conferido na Situação/Requisito da
+//   JDCBBRB-363 e na Descrição da JDCBBRB-517, em 2026-11-19). Na leitura,
+//   quebra de linha (hardBreak) também vira linha. Texto que já tem qualquer
+//   outra coisa (negrito, lista, link, imagem, título) NÃO é editado aqui:
+//   salvar por cima apagaria a formatação;
+// - data no formato do Jira (AAAA-MM-DD); versões e componentes só dos que
+//   estão cadastrados no projeto;
+// - antes de gravar, confere se ninguém mudou o campo no Jira depois que a
+//   tela leu (versão = hash do valor lido). Se mudou, recusa em vez de apagar.
 
 const crypto = require('crypto');
 const { CAMPOS, STATUS_IGNORADOS } = require('./checklistJira');
@@ -22,8 +30,23 @@ const { CAMPOS, STATUS_IGNORADOS } = require('./checklistJira');
 const DOMINIOS_GRAVAM_JIRA = ['dimensa.com.br', 'evertecinc.com.br'];
 // Só issues deste projeto: o token enxerga a empresa inteira no Jira.
 const PROJETO = 'JDCBBRB';
-const CAMPO_SOLUCAO = CAMPOS.solucao;
-const MAX_TEXTO = 4000;
+const MAX_TEXTO = 8000;
+
+/** Campos que a tela pode gravar. `id` é o da issue nesta instância do Jira.
+ * Demais Documentações: existem dois campos com esse nome; o que está na tela
+ * de edição do Jira é o 13096 (o 12493 é antigo e o Jira não deixa editar). */
+const CAMPOS_GRAVAVEIS = {
+  solucao: { id: CAMPOS.solucao, nome: 'Solução', tipo: 'texto' },
+  descricao: { id: 'description', nome: 'Descrição', tipo: 'texto' },
+  situacaoRequisito: { id: CAMPOS.situacaoRequisito, nome: 'Situação/Requisito', tipo: 'texto' },
+  demaisDocumentacoes: { id: CAMPOS.demaisDocumentacoes[0], nome: 'Demais Documentações', tipo: 'texto' },
+  dataPrevista: { id: CAMPOS.dataPrevistaEntrega, nome: 'Data prevista para entrega', tipo: 'data' },
+  dataInterna: { id: CAMPOS.dataInternaAcordada, nome: 'Data Interna Acordada', tipo: 'data' },
+  conclusaoTeste: { id: CAMPOS.conclusaoTesteAceitacao, nome: 'Data Conclusão Teste Aceitação', tipo: 'data' },
+  versoes: { id: 'fixVersions', nome: 'Versões corrigidas', tipo: 'versoes' },
+  componentes: { id: 'components', nome: 'Componentes', tipo: 'componentes' }
+};
+const CAMPO_SOLUCAO = CAMPOS_GRAVAVEIS.solucao.id;
 
 const norm = (t) => String(t || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').trim();
 
@@ -44,16 +67,15 @@ function normalizarTexto(t) {
   return String(t === null || t === undefined ? '' : t).replace(/\r\n?/g, '\n').trim();
 }
 
-/** ADF do Jira -> texto. `simples` = só um parágrafo com texto sem marca e
- * quebras de linha (o formato que a gente sabe regravar idêntico). Vazio
- * também é simples. Qualquer outra coisa: simples false, e o texto serve só
- * para mostrar. */
+/** ADF do Jira -> texto. `simples` = só parágrafos com texto sem marca e
+ * quebras de linha (o que dá para regravar sem perder nada). Vazio também é
+ * simples. Qualquer outra coisa: simples false, e o texto serve só para mostrar. */
 function adfParaTexto(doc) {
   if (doc === null || doc === undefined || doc === '') return { texto: '', simples: true };
   if (typeof doc === 'string') return { texto: doc, simples: true };
   const blocos = (doc && doc.content) || [];
   const partes = [];
-  let simples = doc.type === 'doc' && blocos.length <= 1;
+  let simples = doc.type === 'doc';
   blocos.forEach((b, n) => {
     if (n > 0) partes.push('\n');
     if (!b || b.type !== 'paragraph') simples = false;
@@ -73,103 +95,203 @@ function adfParaTexto(doc) {
   return { texto: partes.join(''), simples };
 }
 
-/** Texto -> ADF no mesmo formato que o Jira usa nesta Solução: um parágrafo,
- * quebra de linha = hardBreak. Texto vazio apaga o campo (null). */
+/** Texto -> ADF como o editor do Jira grava: um parágrafo por linha (linha em
+ * branco = parágrafo vazio). Texto vazio apaga o campo (null). */
 function textoParaAdf(texto) {
   const t = normalizarTexto(texto);
   if (!t) return null;
-  const content = [];
-  t.split('\n').forEach((linha, n) => {
-    if (n > 0) content.push({ type: 'hardBreak' });
-    if (linha !== '') content.push({ type: 'text', text: linha });
-  });
-  return { type: 'doc', version: 1, content: [{ type: 'paragraph', content }] };
+  const content = t.split('\n').map((linha) => (linha === ''
+    ? { type: 'paragraph', content: [] }
+    : { type: 'paragraph', content: [{ type: 'text', text: linha }] }));
+  return { type: 'doc', version: 1, content };
 }
 
-/** "Versão" do que a tela leu: muda se qualquer coisa mudar no campo. */
-function versaoDe(valorCampo) {
-  return crypto.createHash('sha256').update(JSON.stringify(valorCampo === undefined ? null : valorCampo)).digest('hex').slice(0, 32);
+/** "Versão" do que a tela leu: muda se o valor mudar no Jira. */
+function versaoDe(valor) {
+  return crypto.createHash('sha256').update(JSON.stringify(valor === undefined ? null : valor)).digest('hex').slice(0, 32);
 }
 
-function tarefaDe(issue) {
-  const f = issue.fields || {};
-  const lido = adfParaTexto(f[CAMPO_SOLUCAO]);
+const DATA_RE = /^(\d{4})-(\d{2})-(\d{2})$/;
+function dataValida(s) {
+  const m = DATA_RE.exec(s);
+  if (!m) return false;
+  const d = new Date(Date.UTC(+m[1], +m[2] - 1, +m[3]));
+  return d.getUTCFullYear() === +m[1] && d.getUTCMonth() === +m[2] - 1 && d.getUTCDate() === +m[3] && +m[1] >= 2000 && +m[1] <= 2100;
+}
+const dataBR = (iso) => (iso ? String(iso).slice(0, 10).split('-').reverse().join('/') : '');
+const idsDe = (lista) => (Array.isArray(lista) ? lista : []).map((x) => String(x && x.id)).filter((x) => x && x !== 'undefined').sort();
+
+/** O valor de um campo como a tela usa: { valor, texto (para ler/registrar),
+ * editavel, motivo, versao }. A versão olha só o que importa de cada tipo
+ * (lançar uma versão no Jira não pode virar "conflito" na lista de versões). */
+function lerCampo(chaveCampo, bruto) {
+  const c = CAMPOS_GRAVAVEIS[chaveCampo];
+  if (c.tipo === 'texto') {
+    const lido = adfParaTexto(bruto);
+    return {
+      valor: lido.texto, texto: lido.texto, editavel: lido.simples,
+      motivo: lido.simples ? '' : `Este campo (${c.nome}) tem formatação no Jira (negrito, lista, link, imagem ou título). Edite no Jira para não perder a formatação.`,
+      versao: versaoDe(bruto === undefined ? null : bruto)
+    };
+  }
+  if (c.tipo === 'data') {
+    const v = bruto ? String(bruto).slice(0, 10) : '';
+    return { valor: v, texto: dataBR(v), editavel: true, motivo: '', versao: versaoDe(v) };
+  }
+  const lista = Array.isArray(bruto) ? bruto : [];
+  const ids = idsDe(lista);
   return {
-    chave: issue.key,
-    resumo: String(f.summary || ''),
-    status: (f.status && f.status.name) || '',
-    texto: lido.texto,
-    editavel: lido.simples,
-    motivo: lido.simples ? '' : 'Esta Solução tem formatação (negrito, lista, link, imagem ou mais de um parágrafo). Edite no Jira para não perder a formatação.',
-    versao: versaoDe(f[CAMPO_SOLUCAO])
+    valor: ids,
+    texto: lista.map((x) => x.name).filter(Boolean).join(', '),
+    itens: lista.map((x) => ({ id: String(x.id), nome: x.name || '', data: x.releaseDate || '', lancada: !!x.released })),
+    editavel: true, motivo: '', versao: versaoDe(ids)
   };
 }
 
-const CAMPOS_LIDOS = ['summary', 'status', 'issuetype', 'project', CAMPO_SOLUCAO].join(',');
+function validarCampos(lista) {
+  const campos = [...new Set((Array.isArray(lista) ? lista : String(lista || '').split(',')).map((s) => String(s).trim()).filter(Boolean))];
+  if (!campos.length || campos.some((k) => !Object.prototype.hasOwnProperty.call(CAMPOS_GRAVAVEIS, k))) return null;
+  return campos;
+}
 
-/** As tasks cuja Solução a expedição usa: a própria task ou, num épico, as
+const CAMPOS_BASE = ['summary', 'status', 'issuetype', 'project'];
+const camposLidos = (campos) => [...CAMPOS_BASE, ...campos.map((k) => CAMPOS_GRAVAVEIS[k].id)].join(',');
+
+function tarefaDe(issue, campos) {
+  const f = issue.fields || {};
+  const lidos = {};
+  for (const k of campos) lidos[k] = lerCampo(k, f[CAMPOS_GRAVAVEIS[k].id]);
+  return { chave: issue.key, resumo: String(f.summary || ''), status: (f.status && f.status.name) || '', campos: lidos };
+}
+
+/** Opções do projeto para versões e componentes. Versão: só as não
+ * arquivadas (as já escolhidas na task entram sempre, para não sumirem). */
+async function lerOpcoes(campos, chamar) {
+  const opcoes = {};
+  if (campos.includes('versoes')) {
+    const vs = await chamar(`/rest/api/3/project/${PROJETO}/versions`);
+    opcoes.versoes = (vs || []).map((v) => ({
+      id: String(v.id), nome: v.name || '', data: v.releaseDate || '', lancada: !!v.released, arquivada: !!v.archived
+    }));
+  }
+  if (campos.includes('componentes')) {
+    const cs = await chamar(`/rest/api/3/project/${PROJETO}/components`);
+    opcoes.componentes = (cs || []).map((c) => ({ id: String(c.id), nome: c.name || '' }));
+  }
+  return opcoes;
+}
+
+/** As tasks cujos campos a expedição usa: a própria task ou, num épico, as
  * filhas (sem subtarefas, sem canceladas/recusadas) - as mesmas que o checklist
- * confere. Devolve { status: 'ok' | 'nao-encontrada' | 'fora-do-projeto', tarefas }. */
-async function lerSolucoes(chaveExpedicao, chamar) {
+ * confere. Devolve { status: 'ok' | 'nao-encontrada' | 'fora-do-projeto' | 'campo-invalido', tipo, tarefas, opcoes }. */
+async function lerCampos(chaveExpedicao, listaCampos, chamar) {
   const chave = chaveDoProjeto(chaveExpedicao);
   if (!chave) return { status: 'fora-do-projeto', tarefas: [] };
+  const campos = validarCampos(listaCampos);
+  if (!campos) return { status: 'campo-invalido', tarefas: [] };
+  const fields = camposLidos(campos);
   let issue;
   try {
-    issue = await chamar(`/rest/api/3/issue/${chave}?fields=${CAMPOS_LIDOS}`);
+    issue = await chamar(`/rest/api/3/issue/${chave}?fields=${fields}`);
   } catch (erro) {
     if (/respondeu 40[04]\b/.test(String(erro.message))) return { status: 'nao-encontrada', tarefas: [] };
     throw erro;
   }
   const nivel = issue.fields && issue.fields.issuetype ? issue.fields.issuetype.hierarchyLevel : 0;
+  let tipo = 'task';
+  let tarefas;
   if (nivel >= 1) {
+    tipo = 'epico';
     const jql = encodeURIComponent(`parent = ${chave} AND issuetype not in subTaskIssueTypes() ORDER BY key ASC`);
-    const r = await chamar(`/rest/api/3/search/jql?jql=${jql}&maxResults=100&fields=${CAMPOS_LIDOS}`);
-    const filhos = (r.issues || []).filter((i) => !STATUS_IGNORADOS.includes(norm(i.fields && i.fields.status && i.fields.status.name)))
-      .filter((i) => chaveDoProjeto(i.key));
-    return { status: 'ok', tipo: 'epico', tarefas: filhos.map(tarefaDe) };
+    const r = await chamar(`/rest/api/3/search/jql?jql=${jql}&maxResults=100&fields=${fields}`);
+    tarefas = (r.issues || []).filter((i) => !STATUS_IGNORADOS.includes(norm(i.fields && i.fields.status && i.fields.status.name)))
+      .filter((i) => chaveDoProjeto(i.key)).map((i) => tarefaDe(i, campos));
+  } else {
+    tarefas = [tarefaDe(issue, campos)];
   }
-  return { status: 'ok', tipo: 'task', tarefas: [tarefaDe(issue)] };
+  const definicoes = Object.fromEntries(campos.map((k) => [k, { nome: CAMPOS_GRAVAVEIS[k].nome, tipo: CAMPOS_GRAVAVEIS[k].tipo }]));
+  return { status: 'ok', tipo, campos, definicoes, tarefas, opcoes: await lerOpcoes(campos, chamar) };
 }
 
-/** Valida o pedido da tela antes de qualquer chamada ao Jira. */
+/** Valida o pedido da tela antes de qualquer chamada ao Jira.
+ * corpo: { campo, valor, versao }. valor: texto (texto), 'AAAA-MM-DD' ou ''
+ * (data), lista de ids (versões/componentes). */
 function validarPedido(chaveTask, corpo) {
   const chave = chaveDoProjeto(chaveTask);
   if (!chave) return { ok: false, erro: `Só issues do projeto ${PROJETO} podem ser editadas daqui.` };
   if (!corpo || typeof corpo !== 'object') return { ok: false, erro: 'Corpo inválido.' };
-  if (typeof corpo.texto !== 'string') return { ok: false, erro: 'Texto da Solução inválido.' };
-  if (typeof corpo.versao !== 'string' || !/^[0-9a-f]{32}$/.test(corpo.versao)) return { ok: false, erro: 'Abra a Solução de novo antes de salvar.' };
-  const texto = normalizarTexto(corpo.texto);
-  if (texto.length > MAX_TEXTO) return { ok: false, erro: `A Solução passa de ${MAX_TEXTO} caracteres.` };
-  return { ok: true, chave, texto, versao: corpo.versao };
+  const campo = String(corpo.campo || '');
+  const c = Object.prototype.hasOwnProperty.call(CAMPOS_GRAVAVEIS, campo) ? CAMPOS_GRAVAVEIS[campo] : null;
+  if (!c) return { ok: false, erro: 'Este campo não pode ser gravado daqui.' };
+  if (typeof corpo.versao !== 'string' || !/^[0-9a-f]{32}$/.test(corpo.versao)) return { ok: false, erro: 'Abra o campo de novo antes de salvar.' };
+  let valor;
+  if (c.tipo === 'texto') {
+    if (typeof corpo.valor !== 'string') return { ok: false, erro: `${c.nome}: texto inválido.` };
+    valor = normalizarTexto(corpo.valor);
+    if (valor.length > MAX_TEXTO) return { ok: false, erro: `${c.nome} passa de ${MAX_TEXTO} caracteres.` };
+  } else if (c.tipo === 'data') {
+    valor = typeof corpo.valor === 'string' ? corpo.valor.trim() : null;
+    if (valor === null || (valor !== '' && !dataValida(valor))) return { ok: false, erro: `${c.nome}: data inválida.` };
+  } else {
+    if (!Array.isArray(corpo.valor) || corpo.valor.length > 30 || corpo.valor.some((x) => !/^\d{1,12}$/.test(String(x)))) {
+      return { ok: false, erro: `${c.nome}: escolha inválida.` };
+    }
+    valor = [...new Set(corpo.valor.map(String))].sort();
+  }
+  return { ok: true, chave, campo, valor, versao: corpo.versao };
 }
 
-/** Grava a Solução de UMA task. Relê o campo antes: formatado ou mudado
- * desde a leitura da tela = recusa (conflito). Mesmo texto = não grava nada
- * (nem linha no histórico do Jira).
- * Devolve { ok, semMudanca?, anterior, novo } ou { ok: false, conflito|formatada|naoEncontrada|foraDoProjeto, erro, atual? }. */
-async function gravarSolucao(pedido, chamar) {
+/** O que vai no PUT para o valor pedido (já validado). */
+function valorParaJira(campo, valor) {
+  const c = CAMPOS_GRAVAVEIS[campo];
+  if (c.tipo === 'texto') return textoParaAdf(valor);
+  if (c.tipo === 'data') return valor || null;
+  return valor.map((id) => ({ id }));
+}
+
+const mesmoValor = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+
+/** Grava UM campo de UMA task. Relê o campo antes: formatado ou mudado desde a
+ * leitura da tela = recusa (conflito). Mesmo valor = não grava nada (nem linha
+ * no histórico do Jira). Versão/componente fora do cadastro do projeto = recusa.
+ * Devolve { ok, semMudanca?, nome, anterior, novo } (textos para o registro) ou
+ * { ok: false, conflito|formatada|naoEncontrada|foraDoProjeto|invalido, erro, atual? }. */
+async function gravarCampo(pedido, chamar) {
+  const c = CAMPOS_GRAVAVEIS[pedido.campo];
   let issue;
   try {
-    issue = await chamar(`/rest/api/3/issue/${pedido.chave}?fields=${CAMPOS_LIDOS}`);
+    issue = await chamar(`/rest/api/3/issue/${pedido.chave}?fields=${camposLidos([pedido.campo])}`);
   } catch (erro) {
     if (/respondeu 40[04]\b/.test(String(erro.message))) return { ok: false, naoEncontrada: true, erro: 'A issue não foi encontrada no Jira.' };
     throw erro;
   }
   const f = issue.fields || {};
   if ((f.project && f.project.key) !== PROJETO) return { ok: false, foraDoProjeto: true, erro: `Só issues do projeto ${PROJETO} podem ser editadas daqui.` };
-  if (f.issuetype && f.issuetype.subtask) return { ok: false, foraDoProjeto: true, erro: 'Subtarefa não tem Solução: edite a task principal.' };
-  const atual = tarefaDe(issue);
-  if (!atual.editavel) return { ok: false, formatada: true, erro: atual.motivo, atual };
-  if (atual.versao !== pedido.versao) {
-    return { ok: false, conflito: true, erro: 'A Solução mudou no Jira depois que você abriu. Confira o texto atual e salve de novo.', atual };
+  if (f.issuetype && f.issuetype.subtask) return { ok: false, foraDoProjeto: true, erro: `Subtarefa não tem ${c.nome}: edite a task principal.` };
+  const atual = tarefaDe(issue, [pedido.campo]);
+  const lido = atual.campos[pedido.campo];
+  if (!lido.editavel) return { ok: false, formatada: true, erro: lido.motivo, atual };
+  if (lido.versao !== pedido.versao) {
+    return { ok: false, conflito: true, erro: `${c.nome} mudou no Jira depois que você abriu. Confira o valor atual e salve de novo.`, atual };
   }
-  if (normalizarTexto(atual.texto) === pedido.texto) return { ok: true, semMudanca: true, anterior: atual.texto, novo: pedido.texto };
-  await chamar(`/rest/api/3/issue/${pedido.chave}`, { metodo: 'PUT', corpo: { fields: { [CAMPO_SOLUCAO]: textoParaAdf(pedido.texto) } } });
-  return { ok: true, anterior: atual.texto, novo: pedido.texto };
+  const valorAtual = c.tipo === 'texto' ? normalizarTexto(lido.valor) : lido.valor;
+  let textoNovo = c.tipo === 'texto' ? pedido.valor : c.tipo === 'data' ? dataBR(pedido.valor) : '';
+  if (mesmoValor(valorAtual, pedido.valor)) return { ok: true, semMudanca: true, nome: c.nome, anterior: lido.texto, novo: lido.texto };
+  if (c.tipo === 'versoes' || c.tipo === 'componentes') {
+    const opcoes = (await lerOpcoes([pedido.campo], chamar))[pedido.campo];
+    const porId = new Map(opcoes.map((o) => [o.id, o]));
+    const ja = new Set(lido.valor);
+    // versão arquivada só fica se já estava na task (o Jira também não oferece arquivada)
+    const ruim = pedido.valor.filter((id) => !porId.has(id) || (porId.get(id).arquivada && !ja.has(id)));
+    if (ruim.length) return { ok: false, invalido: true, erro: `${c.nome}: escolha que não existe (mais) no projeto. Abra de novo e escolha outra vez.` };
+    textoNovo = pedido.valor.map((id) => porId.get(id).nome).join(', ');
+  }
+  await chamar(`/rest/api/3/issue/${pedido.chave}`, { metodo: 'PUT', corpo: { fields: { [c.id]: valorParaJira(pedido.campo, pedido.valor) } } });
+  return { ok: true, nome: c.nome, anterior: lido.texto, novo: textoNovo };
 }
 
 module.exports = {
-  DOMINIOS_GRAVAM_JIRA, PROJETO, CAMPO_SOLUCAO, MAX_TEXTO,
-  podeGravarJira, chaveDoProjeto, normalizarTexto, adfParaTexto, textoParaAdf, versaoDe,
-  lerSolucoes, validarPedido, gravarSolucao
+  DOMINIOS_GRAVAM_JIRA, PROJETO, CAMPOS_GRAVAVEIS, CAMPO_SOLUCAO, MAX_TEXTO,
+  podeGravarJira, chaveDoProjeto, normalizarTexto, adfParaTexto, textoParaAdf, versaoDe, dataValida,
+  lerCampo, lerCampos, validarPedido, valorParaJira, gravarCampo
 };

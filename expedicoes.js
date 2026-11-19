@@ -2,7 +2,7 @@
 // Ficam aqui, e não no supabase.js, para serem testadas isoladamente.
 
 const { interpretarData, interpretarNumero, idDemanda, urlJira } = require('./demandas');
-const { TEXTOS_JIRA, TEXTOS_ASSISTIDOS, CAMPO_DO_ITEM } = require('./checklistJira');
+const { TEXTOS_JIRA, TEXTOS_ASSISTIDOS, CAMPO_DO_ITEM, GRAVAVEIS_DO_ITEM } = require('./checklistJira');
 
 const LIMITE = { jira: 40, nome: 300, acs: 40, item: 200, justificativa: 500, observacao: 1000 };
 const MIN_JUSTIFICATIVA = 10;
@@ -387,9 +387,12 @@ function recusaPeloJira(item, verificacao, novoEstado) {
 
 /** Dica de cada item padrão: qual campo do Jira ele representa. Vai sempre,
  * mesmo sem chave ou com o Jira fora do ar - é para o time saber onde olhar.
- * Item padrão que o Jira não confere (Branch, GCAD, horas...) leva campoJira ''. */
+ * Item padrão que o Jira não confere (Branch, GCAD, horas...) leva campoJira ''.
+ * camposGravaveis: os campos que o botão "Editar" grava no Jira (vazio = sem botão). */
 function comCampoJira(itens) {
-  return itens.map((i) => (i.padrao ? { ...i, campoJira: CAMPO_DO_ITEM[i.texto] || '' } : i));
+  return itens.map((i) => (i.padrao
+    ? { ...i, campoJira: CAMPO_DO_ITEM[i.texto] || '', camposGravaveis: GRAVAVEIS_DO_ITEM[i.texto] || [] }
+    : i));
 }
 
 /** Expedição pronta para a tela: responsável de hoje, progresso e urgência. */
