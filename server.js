@@ -12,6 +12,7 @@ const {
   listarItensCarryOver, registrarAcesso, registrarVisitaDoDia, queimarPasse, listarAcessos, listarUsuarios, confirmarUsuarioManualmente,
   listarDemandas, criarDemanda, atualizarDemanda, removerDemanda, listarHistoricoDemandas,
   lerExpedicao, listarChavesExpedicoes, listarExpedicoes, criarExpedicao, atualizarExpedicao, removerExpedicao,
+  contarExpedicoesExcluidas, listarExpedicoesExcluidas, restaurarExpedicao,
   criarItemExpedicao, atualizarItemExpedicao, atualizarObservacaoItem, removerItemExpedicao, registrarGravacaoJira
 } = require('./supabase');
 const { podeGravarJira, lerCampos, validarPedido, gravarCampo } = require('./gravarJira');
@@ -21,7 +22,8 @@ const {
 } = require('./demandas');
 const {
   chaveJira, normalizarExpedicao, normalizarItemNovo, normalizarEstadoItem, normalizarObservacao, itensDoQuadro, montarOpcoes,
-  decorar, hojeBrasilia, idExpedicao, planoParaDemandas, planoParaExpedicao, recadoSincronia, recusaPeloJira
+  decorar, hojeBrasilia, idExpedicao, planoParaDemandas, planoParaExpedicao, recadoSincronia, recusaPeloJira,
+  normalizarMotivoExclusao
 } = require('./expedicoes');
 const { criarCache, verificar, verificarVarias } = require('./checklistJira');
 const { normalizarTermo, pesquisar, MAX_TEXTO, MAX_TERMOS, limparTermo, extrairTermos, pesquisarAmplo } = require('./pesquisa');
@@ -502,7 +504,7 @@ app.get('/expedicoes', exigirSessaoPagina, exigirEquipePagina, (req, res) => {
 });
 
 app.get('/api/expedicoes', exigirSessaoApi, exigirEditorApi, async (req, res) => {
-  const r = await listarExpedicoes();
+  const [r, excluidas] = await Promise.all([listarExpedicoes(), contarExpedicoesExcluidas()]);
   if (r.semTabela) {
     return res.status(503).json({ erro: MSG_SEM_TABELA_EXPEDICOES, semTabela: true });
   }
@@ -516,8 +518,26 @@ app.get('/api/expedicoes', exigirSessaoApi, exigirEditorApi, async (req, res) =>
   res.json({
     hoje,
     podeGravarJira: podeGravarJira(req.usuario.email),
+    excluidas, // só a quantidade (null = não consegui contar); a lista vem de /api/expedicoes/excluidas
     expedicoes: r.expedicoes.map((e) => decorar(e, snapshot, hoje, lidas[chaveJira(e.artefatoJira)] || null))
   });
+});
+
+// Filtro "Excluídas": quem excluiu, quando e por quê (mais recentes primeiro).
+app.get('/api/expedicoes/excluidas', exigirSessaoApi, exigirEditorApi, async (req, res) => {
+  const r = await listarExpedicoesExcluidas();
+  if (!r.ok) return res.status(503).json({ erro: 'Não foi possível carregar as expedições excluídas agora.' });
+  res.json({ expedicoes: r.expedicoes });
+});
+
+app.post('/api/expedicoes/:id/restaurar', exigirSessaoApi, exigirEditorApi, async (req, res) => {
+  const id = idExpedicao(req.params.id);
+  if (!id) return res.status(400).json({ erro: 'Identificador inválido.' });
+  const r = await restaurarExpedicao(id, req.usuario.email);
+  if (r.naoEncontrada) return res.status(404).json({ erro: 'Expedição não encontrada entre as excluídas (pode já ter sido restaurada).' });
+  if (!r.ok || !r.expedicao) return res.status(500).json({ erro: 'Não foi possível restaurar.' });
+  console.log(`[expedicoes] ${req.usuario.email} restaurou a expedição #${id}`);
+  res.json({ expedicao: await decorarExpedicao(r.expedicao, await lerSnapshot(), true) });
 });
 
 /** Autocomplete: o que está no quadro Kanban, com ACS e data já cadastrados em
@@ -563,10 +583,20 @@ app.patch('/api/expedicoes/:id', exigirSessaoApi, exigirEditorApi, async (req, r
 app.delete('/api/expedicoes/:id', exigirSessaoApi, exigirEditorApi, async (req, res) => {
   const id = idExpedicao(req.params.id);
   if (!id) return res.status(400).json({ erro: 'Identificador inválido.' });
-  const r = await removerExpedicao(id, req.usuario.email);
+  let atual;
+  try { atual = await lerExpedicao(id); } catch (erro) {
+    console.error('[expedicoes] não consegui ler a expedição antes de excluir:', erro.message);
+    return res.status(500).json({ erro: 'Não foi possível remover.' });
+  }
+  if (!atual) return res.status(404).json({ erro: 'Expedição não encontrada (pode já ter sido removida).' });
+  // motivo obrigatório (menos na expedição em branco)
+  const m = normalizarMotivoExclusao(atual, req.body && req.body.motivo);
+  if (!m.ok) return res.status(400).json({ erro: m.erro });
+  const r = await removerExpedicao(id, req.usuario.email, m.motivo);
+  if (r.semColunaMotivo) return res.status(503).json({ erro: 'O motivo da exclusão ainda não foi ativado no banco (falta rodar supabase-expedicoes-exclusao.sql). Nada foi excluído.', semTabela: true });
   if (r.naoEncontrada) return res.status(404).json({ erro: 'Expedição não encontrada (pode já ter sido removida).' });
   if (!r.ok) return res.status(500).json({ erro: 'Não foi possível remover.' });
-  console.log(`[expedicoes] ${req.usuario.email} removeu a expedição #${id}`);
+  console.log(`[expedicoes] ${req.usuario.email} removeu a expedição #${id}${m.motivo ? ` (motivo: ${m.motivo.slice(0, 80)})` : ''}`);
   res.json({ ok: true });
 });
 

@@ -6,8 +6,20 @@ const assert = require('node:assert');
 const {
   ITENS_PADRAO, chaveJira, normalizarExpedicao, normalizarItemNovo, normalizarEstadoItem, progresso,
   hojeBrasilia, classificar, itensDoQuadro, montarOpcoes, responsavelAtual, decorar, normalizarObservacao, deLinhaItem,
-  deLinhaExpedicao, mesmaDemanda, linhaMaisRecente, planoParaDemandas, planoParaExpedicao, recadoSincronia, rotuloMes
+  deLinhaExpedicao, mesmaDemanda, linhaMaisRecente, planoParaDemandas, planoParaExpedicao, recadoSincronia, rotuloMes,
+  normalizarMotivoExclusao, MAX_MOTIVO_EXCLUSAO
 } = require('../expedicoes');
+
+// 2026-11-19: excluir pede o motivo - menos na expedição em branco (rascunho)
+test('motivo da exclusão: obrigatório com Jira/nome/ACS; em branco sai sem motivo', () => {
+  const comJira = { artefatoJira: 'JDCBBRB-391', nome: '', demandaAcs: '' };
+  assert.strictEqual(normalizarMotivoExclusao(comJira, '').ok, false);
+  assert.strictEqual(normalizarMotivoExclusao(comJira, '   ab ').ok, false);
+  assert.strictEqual(normalizarMotivoExclusao({ nome: 'só nome' }, null).ok, false);
+  assert.deepStrictEqual(normalizarMotivoExclusao(comJira, '  Duplicada  —   da 391 '), { ok: true, motivo: 'Duplicada — da 391' });
+  assert.strictEqual(normalizarMotivoExclusao(comJira, 'x'.repeat(MAX_MOTIVO_EXCLUSAO + 1)).ok, false);
+  assert.deepStrictEqual(normalizarMotivoExclusao({ artefatoJira: '', nome: ' ', demandaAcs: '' }, undefined), { ok: true, motivo: '' });
+});
 
 const QUADRO = {
   pessoas: { p1: { nome: 'Ana Souza' }, p2: { nome: 'Bruno Lima' } },

@@ -812,16 +812,75 @@ async function atualizarExpedicao(id, registro, email) {
   }
 }
 
-async function removerExpedicao(id, email) {
+// motivo_exclusao (supabase-expedicoes-exclusao.sql)
+const semColunaMotivo = (error) => !!error && (error.code === '42703' || /motivo_exclusao/i.test(error.message || ''));
+
+/** Exclusão lógica. `motivo` vazio só para expedição em branco (o servidor decide). */
+async function removerExpedicao(id, email, motivo) {
   try {
+    const mudar = { removido: true, atualizado_por: email, atualizado_em: new Date().toISOString() };
+    if (motivo) mudar.motivo_exclusao = motivo;
     const { data, error } = await db().from('expedicoes')
-      .update({ removido: true, atualizado_por: email, atualizado_em: new Date().toISOString() })
-      .eq('id', id).eq('removido', false).select('id').maybeSingle();
+      .update(mudar).eq('id', id).eq('removido', false).select('id').maybeSingle();
+    if (motivo && semColunaMotivo(error)) return { ok: false, semColunaMotivo: true };
     if (error) throw new Error(error.message);
     if (!data) return { ok: false, naoEncontrada: true };
     return { ok: true };
   } catch (erro) {
     console.error('[supabase] falha ao remover expedicao:', erro.message);
+    return { ok: false };
+  }
+}
+
+/** Só a quantidade de excluídas (vai no rótulo do filtro "Excluídas (n)"). */
+async function contarExpedicoesExcluidas() {
+  try {
+    const { count, error } = await db().from('expedicoes').select('id', { count: 'exact', head: true }).eq('removido', true);
+    if (error) throw new Error(error.message);
+    return count || 0;
+  } catch (erro) {
+    console.error('[supabase] falha ao contar expedicoes excluidas:', erro.message);
+    return null;
+  }
+}
+
+/** As excluídas, mais recentes primeiro. Quem/quando = a última alteração
+ * (é a exclusão: depois dela nada mais muda a expedição). Sem o SQL do
+ * motivo, vêm sem ele. */
+async function listarExpedicoesExcluidas() {
+  try {
+    const base = 'id,artefato_jira,nome,demanda_acs,data_expedicao,atualizado_por,atualizado_em';
+    const consulta = (colunas) => db().from('expedicoes').select(colunas).eq('removido', true)
+      .order('atualizado_em', { ascending: false }).limit(500);
+    let { data, error } = await consulta(base + ',motivo_exclusao');
+    if (semColunaMotivo(error)) ({ data, error } = await consulta(base));
+    if (error) throw new Error(error.message);
+    return {
+      ok: true,
+      expedicoes: (data || []).map((l) => ({
+        id: l.id, artefatoJira: l.artefato_jira || '', nome: l.nome || '', demandaAcs: l.demanda_acs || '',
+        dataExpedicao: l.data_expedicao || null, excluidaPor: l.atualizado_por || '', excluidaEm: l.atualizado_em || null,
+        motivo: l.motivo_exclusao || ''
+      }))
+    };
+  } catch (erro) {
+    console.error('[supabase] falha ao listar expedicoes excluidas:', erro.message);
+    return { ok: false };
+  }
+}
+
+/** Volta a excluída para a lista. O motivo sai da expedição (fica no histórico). */
+async function restaurarExpedicao(id, email) {
+  try {
+    const mudar = { removido: false, atualizado_por: email, atualizado_em: new Date().toISOString() };
+    const tentar = (m) => db().from('expedicoes').update(m).eq('id', id).eq('removido', true).select('id').maybeSingle();
+    let { data, error } = await tentar({ ...mudar, motivo_exclusao: null });
+    if (semColunaMotivo(error)) ({ data, error } = await tentar(mudar));
+    if (error) throw new Error(error.message);
+    if (!data) return { ok: false, naoEncontrada: true };
+    return { ok: true, expedicao: await lerExpedicao(id) };
+  } catch (erro) {
+    console.error('[supabase] falha ao restaurar expedicao:', erro.message);
     return { ok: false };
   }
 }
@@ -895,6 +954,7 @@ async function removerItemExpedicao(expedicaoId, itemId, email) {
 
 module.exports = {
   lerExpedicao, listarChavesExpedicoes, listarExpedicoes, criarExpedicao, atualizarExpedicao, removerExpedicao,
+  contarExpedicoesExcluidas, listarExpedicoesExcluidas, restaurarExpedicao,
   criarItemExpedicao, atualizarItemExpedicao, atualizarObservacaoItem, removerItemExpedicao,
   listarDemandas, criarDemanda, atualizarDemanda, removerDemanda, listarHistoricoDemandas,
   cadastrar, entrar, lerSnapshot, gravarSnapshot, gravarHistorico, lerHistorico,

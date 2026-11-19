@@ -403,7 +403,12 @@ function decorar(expedicao, snapshot, hoje, verificacao) {
     ...expedicao,
     itens,
     jira: verificacao
-      ? { status: verificacao.status, tipo: verificacao.tipo || '', filhos: verificacao.filhos || 0, lidoEm: verificacao.lidoEm || null, desatualizado: !!verificacao.desatualizado, subtarefasAbertas: verificacao.subtarefasAbertas || 0 }
+      ? {
+        status: verificacao.status, tipo: verificacao.tipo || '', filhos: verificacao.filhos || 0, lidoEm: verificacao.lidoEm || null,
+        desatualizado: !!verificacao.desatualizado, subtarefasAbertas: verificacao.subtarefasAbertas || 0,
+        // selo do cartão: o status da issue para o teste de aceitação
+        statusTeste: verificacao.statusTeste || null
+      }
       : { status: 'sem-chave' },
     responsavel: responsavelAtual(expedicao, snapshot),
     progresso: prog,
@@ -412,7 +417,23 @@ function decorar(expedicao, snapshot, hoje, verificacao) {
   };
 }
 
+/** Motivo da exclusão (pedido de 2026-11-19). Expedição em branco (sem Jira,
+ * nome e ACS) sai sem motivo: é rascunho. As outras precisam de pelo menos
+ * MIN_MOTIVO_EXCLUSAO caracteres ("Duplicada" já passa; "Outro" pede texto,
+ * isso a tela cuida). */
+const MIN_MOTIVO_EXCLUSAO = 5;
+const MAX_MOTIVO_EXCLUSAO = 500;
+const expedicaoEmBranco = (e) => !String(e.artefatoJira || '').trim() && !String(e.nome || '').trim() && !String(e.demandaAcs || '').trim();
+function normalizarMotivoExclusao(expedicao, motivo) {
+  const m = String(motivo === null || motivo === undefined ? '' : motivo).replace(/\s+/g, ' ').trim();
+  if (expedicaoEmBranco(expedicao)) return { ok: true, motivo: m.slice(0, MAX_MOTIVO_EXCLUSAO) };
+  if (m.length < MIN_MOTIVO_EXCLUSAO) return { ok: false, erro: 'Explique por que está excluindo esta expedição.' };
+  if (m.length > MAX_MOTIVO_EXCLUSAO) return { ok: false, erro: `O motivo passa de ${MAX_MOTIVO_EXCLUSAO} caracteres.` };
+  return { ok: true, motivo: m };
+}
+
 module.exports = {
+  expedicaoEmBranco, normalizarMotivoExclusao, MIN_MOTIVO_EXCLUSAO, MAX_MOTIVO_EXCLUSAO,
   decorar, aplicarVerificacao, recusaPeloJira, mesmaDemanda, linhaMaisRecente, planoParaDemandas, planoParaExpedicao, recadoSincronia, rotuloMes,
   ITENS_PADRAO, ITENS_RENOMEADOS, ITENS_RETIRADOS, BLOCOS, ESTADOS, MIN_JUSTIFICATIVA, normalizarObservacao, chaveJira, normalizarExpedicao, normalizarItemNovo,
   normalizarEstadoItem, progresso, hojeBrasilia, classificar, itensDoQuadro, montarOpcoes,

@@ -100,6 +100,14 @@
   .aviso { margin-bottom: 12px; padding: 9px 12px; border-left: 3px solid var(--warn); background: var(--line-soft); border-radius: 0 6px 6px 0; font-size: 0.78rem; }
   .aviso[hidden] { display: none; }
   .aviso.info { border-left-color: var(--ok); }
+  /* filtro "Excluídas": lista simples, com o motivo e o Restaurar */
+  .excl { display: flex; gap: 14px; align-items: flex-start; justify-content: space-between; padding: 12px 16px; margin-bottom: 8px;
+    border: 1px solid var(--line); border-radius: 12px; background: var(--bg-panel); }
+  .excl .quem { font-size: 0.86rem; font-weight: 700; color: var(--ink); overflow-wrap: anywhere; }
+  .excl .meta { margin-top: 3px; font-size: 0.74rem; color: var(--ink-faint); }
+  .excl .porque { margin-top: 6px; font-size: 0.8rem; color: var(--ink-dim); line-height: 1.45; overflow-wrap: anywhere; }
+  .excl .porque em { color: var(--ink-faint); }
+  .excl .btn { flex: 0 0 auto; }
   .vazio { padding: 26px; text-align: center; color: var(--ink-faint); font-size: 0.82rem; line-height: 1.5; }
 
   /* nova expedição */
@@ -202,6 +210,14 @@
   .chip-sub { display: inline-flex; align-items: center; gap: 5px; font-weight: 700; color: var(--ink-dim);
     padding: 2px 9px; border-radius: 100px; border: 1px solid var(--line); background: var(--line-soft); }
   .chip-sub.perto { color: var(--warn); border-color: var(--warn); background: var(--warn-soft); }
+  /* Selo do status do teste de aceitação (2026-11-19): pode estar tudo preenchido
+   * e a issue não estar em "Teste de Aceitação Concluído" - isso trava a expedição.
+   * Verde como no Jira quando está; vermelho, com o status atual, quando não. */
+  .selo-teste { display: inline-flex; align-items: center; gap: 6px; font-weight: 700; font-size: 0.74rem;
+    padding: 3px 10px; border-radius: 7px; border: 1px solid; white-space: nowrap; vertical-align: middle; }
+  .selo-teste.ok { color: var(--ok); border-color: var(--ok); background: var(--ok-soft); }
+  .selo-teste.falta { color: var(--warn); border-color: var(--warn); background: var(--warn-soft); }
+  .bloco h4 .selo-teste { margin-left: 10px; }
   label.somente-leitura { cursor: default; }
   .item-linha input[type="checkbox"]:disabled { cursor: not-allowed; opacity: 0.85; }
   /* O navegador pinta de cinza o checkbox travado e ignora o accent-color: o item
@@ -302,7 +318,9 @@
       // Filtro de status. Não é lembrado de propósito: toda entrada na tela
       // começa pelo que ainda pede trabalho (em andamento + atrasadas).
       status: 'abertas',
-      abertas: {},        // id -> true/false, escolha manual do usuário
+      qtdExcluidas: null, // quantas excluídas (vem com a lista; null = não sei)
+      excluidas: null,    // a lista, lida só quando o filtro "Excluídas" é escolhido
+      abertas: {},      // id -> true/false, escolha manual do usuário
       motivo: {},         // itemId -> true: formulário de "não aplicável" aberto
       podeGravarJira: false, // @dimensa/@evertecinc: editam os campos do checklist direto no Jira
       escolhaJira: {}, // itemId -> { passo: 'task' | 'campo', dados, tarefa }: qual task/campo editar
@@ -401,13 +419,16 @@
       { valor: 'andamento', rotulo: 'Em andamento' },
       { valor: 'atrasada', rotulo: 'Atrasadas' },
       { valor: 'concluida', rotulo: 'Concluídas' },
-      { valor: 'todas', rotulo: 'Todas' }
+      { valor: 'todas', rotulo: 'Todas' },
+      // as excluídas não entram em "Todas": vêm de outra consulta, com o motivo e o Restaurar
+      { valor: 'excluidas', rotulo: 'Excluídas' }
     ];
     function statusDe(e) {
       if (concluida(e)) return 'concluida';
       return e.grupo === 'atrasadas' ? 'atrasada' : 'andamento';
     }
     function passaStatus(e, alvo) {
+      if (alvo === 'excluidas') return false;
       var s = statusDe(e);
       if (alvo === 'todas') return true;
       if (alvo === 'abertas') return s !== 'concluida';
@@ -428,9 +449,11 @@
       var sel = document.getElementById('selStatus');
       if (!sel) return;
       var c = contagemStatus();
+      // excluídas: o total (não depende do responsável, que é do quadro de hoje)
+      c.excluidas = estado.excluidas ? estado.excluidas.length : estado.qtdExcluidas;
       STATUS.forEach(function (s) {
         var op = sel.querySelector('option[value="' + s.valor + '"]');
-        if (op) op.textContent = s.rotulo + ' (' + c[s.valor] + ')';
+        if (op) op.textContent = s.rotulo + (c[s.valor] === null || c[s.valor] === undefined ? '' : ' (' + c[s.valor] + ')');
       });
     }
     function estaAberta(e) {
@@ -460,6 +483,13 @@
       atualizarContagens();
     }
     function renderResumo() {
+      if (estado.status === 'excluidas') {
+        var n = estado.excluidas ? estado.excluidas.length : 0;
+        document.getElementById('resumo').innerHTML = estado.excluidas
+          ? '<span class="pilula">' + n + (n === 1 ? ' expedição excluída' : ' expedições excluídas') + '</span>' : '';
+        atualizarContagens();
+        return;
+      }
       var v = visiveis();
       var alertas = v.filter(function (e) { return e.alerta; }).length;
       var semResp = v.filter(function (e) { return !e.responsavel.nome; }).length;
@@ -594,9 +624,30 @@
       return { status: partes.some(function (p) { return p.status !== 'atualizada'; }) ? 'aviso' : 'atualizada', texto: partes.map(function (p) { return p.texto; }).join(' ') };
     }
 
+    // Selo do status do teste de aceitação, lido do Jira. Vale o status da
+    // issue (ou uma etapa depois dele); a data de conclusão é só informação.
+    function seloTeste(e) {
+      var j = e.jira || {};
+      var s = j.statusTeste;
+      if (j.status !== 'ok' || !s || !s.total) return '';
+      var texto, dica;
+      if (j.tipo === 'epico') {
+        texto = s.ok ? '✓ Teste de Aceitação Concluído' + (s.total > 1 ? ' nas ' + s.total + ' tasks' : '')
+          : '✗ Teste de Aceitação Concluído: ' + s.okCount + ' de ' + s.total + ' tasks';
+        dica = s.ok ? 'Todas as tasks do épico estão em Teste de Aceitação Concluído (ou numa etapa depois).'
+          : 'Faltam: ' + s.faltam.map(function (f) { return f.chave + ' (' + (f.status || '?') + ')'; }).join(', ') + '.';
+      } else {
+        texto = s.ok ? '✓ ' + (s.status || 'Teste de Aceitação Concluído') : '✗ Status no Jira: ' + (s.status || '?');
+        dica = s.ok ? 'Status da issue no Jira: ' + s.status + '.' + (s.data ? ' Data Conclusão Teste Aceitação: ' + fmtData(s.data) + '.' : '')
+          : 'A issue ainda não está em Teste de Aceitação Concluído: sem isso não dá para expedir, mesmo com o checklist todo preenchido.' +
+            (s.data ? ' (A Data Conclusão Teste Aceitação está preenchida - ' + fmtData(s.data) + ' -, mas o que vale é o status.)' : '');
+      }
+      return '<span class="selo-teste ' + (s.ok ? 'ok' : 'falta') + '" title="' + esc(dica) + '" aria-label="' + esc(texto.replace(/^[✓✗] /, '') + '. ' + dica) + '">' + esc(texto) + '</span>';
+    }
+
     function blocoHtml(e, bloco) {
       var itens = e.itens.filter(function (i) { return i.bloco === bloco; });
-      return '<section class="bloco"><h4>' + ROTULO_BLOCO[bloco] + '</h4><ul class="itens">' +
+      return '<section class="bloco"><h4>' + ROTULO_BLOCO[bloco] + (bloco === 'expedir' ? seloTeste(e) : '') + '</h4><ul class="itens">' +
         itens.map(function (i) { return itemHtml(e, i); }).join('') + '</ul>' +
         '<div class="novo-item"><input type="text" maxlength="200" data-novo-item="' + bloco + '" placeholder="+ Item só desta demanda" aria-label="Novo item em ' + bloco + '">' +
         '<button type="button" class="btn" data-acao="add-item" data-bloco="' + bloco + '">Adicionar</button></div></section>';
@@ -630,7 +681,7 @@
           '<div class="campo"><span class="rot">ACS' + (semAcs ? tag : '') + '</span><input data-campo="demandaAcs" aria-label="ACS' + (semAcs ? ' (obrigatório preencher)' : '') + '"' + (semAcs ? ' class="precisa" aria-invalid="true"' : '') + ' value="' + esc(e.demandaAcs) + '" maxlength="40" placeholder="número ACS"></div>' +
           '<div class="campo"><span class="rot">Data de expedição' + (semData ? tag : '') + '</span><input type="date" data-campo="dataExpedicao" aria-label="Data de expedição' + (semData ? ' (obrigatório preencher)' : '') + '"' + (semData ? ' class="precisa" aria-invalid="true"' : '') + ' value="' + esc(e.dataExpedicao || '') + '"></div>' +
           '<div class="campo"><span class="rot">PF</span><input data-campo="pontosFuncao" inputmode="decimal" maxlength="9" aria-label="PF (pontos de função)" placeholder="0,0" value="' + esc(fmtPf(e.pontosFuncao)) + '"></div>' +
-        '</div><div class="exp-resumo">' + resp +
+        '</div><div class="exp-resumo">' + resp + seloTeste(e) +
           '<span class="barra-prog" role="progressbar" aria-valuenow="' + pct + '" aria-valuemin="0" aria-valuemax="100"><i style="width:' + pct + '%"></i></span>' +
           '<span class="prog-txt">' + resolvidos + ' de ' + p.total + (p.naoAplicaveis ? ' · ' + p.naoAplicaveis + ' N/A' : '') + '</span> ' + estadoTxt + alertaSub +
           (e.observacoes ? ' <span class="chip-obs">' + ICONE_NOTA + e.observacoes + (e.observacoes === 1 ? ' observação' : ' observações') + '</span>' : '') +
@@ -648,7 +699,53 @@
       return h + '</article>';
     }
 
+    // Filtro "Excluídas": quem excluiu, quando, por quê, e o botão Restaurar.
+    function renderExcluidas() {
+      if (!estado.excluidas) { area.innerHTML = '<div class="vazio">Carregando as excluídas…</div>'; return; }
+      if (!estado.excluidas.length) { area.innerHTML = '<div class="vazio">Nenhuma expedição excluída.</div>'; return; }
+      area.innerHTML = '<p class="vazio" style="padding:4px 0 12px;text-align:left">Excluir não apaga: a expedição só sai da lista. ' +
+        'Restaurar traz de volta com o checklist como estava. O filtro de responsável não vale aqui.</p>' +
+        estado.excluidas.map(function (x) {
+          var quando = x.excluidaEm ? new Date(x.excluidaEm).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '';
+          return '<div class="excl" data-excluida="' + x.id + '"><div>' +
+            '<div class="quem">' + esc(rotuloExpedicao(x) || 'Expedição em branco') + '</div>' +
+            '<div class="meta">Excluída' + (x.excluidaPor ? ' por ' + esc(x.excluidaPor) : '') + (quando ? ' em ' + esc(quando) : '') +
+              (x.dataExpedicao ? ' · data de expedição ' + esc(fmtData(x.dataExpedicao)) : '') + '</div>' +
+            '<div class="porque">' + (x.motivo ? '<strong>Motivo:</strong> ' + esc(x.motivo) : '<em>Sem motivo registrado (excluída antes de o motivo ser pedido, ou em branco).</em>') + '</div>' +
+            '</div><button type="button" class="btn" data-acao="restaurar" data-id="' + x.id + '">Restaurar</button></div>';
+        }).join('');
+    }
+    function carregarExcluidas() {
+      estado.excluidas = null; renderResumo(); renderLista();
+      chamar('GET', '/api/expedicoes/excluidas').then(function (r) {
+        if (estado.status !== 'excluidas') return;
+        if (!r.ok) { area.innerHTML = '<div class="vazio">' + esc(r.j.erro || 'Não foi possível carregar as excluídas agora.') + '</div>'; return; }
+        estado.excluidas = r.j.expedicoes || [];
+        estado.qtdExcluidas = estado.excluidas.length;
+        renderResumo(); renderLista();
+      }).catch(function () { area.innerHTML = '<div class="vazio">Sem conexão com o servidor. Tente de novo.</div>'; });
+    }
+    function restaurar(id) {
+      var x = (estado.excluidas || []).filter(function (y) { return y.id === id; })[0];
+      if (!x) return;
+      Dlg.confirmar({
+        titulo: 'Restaurar esta expedição?', destaque: rotuloExpedicao(x) || 'Expedição em branco',
+        mensagem: 'Ela volta para a lista, com o checklist como estava quando foi excluída.', rotuloConfirmar: 'Restaurar'
+      }).then(function (sim) {
+        if (!sim) return;
+        executar(chamar('POST', '/api/expedicoes/' + id + '/restaurar'), function (j) {
+          estado.excluidas = estado.excluidas.filter(function (y) { return y.id !== id; });
+          estado.qtdExcluidas = estado.excluidas.length;
+          estado.expedicoes.push(j.expedicao);
+          estado.abertas[j.expedicao.id] = true;
+          ordenar(); renderTudo();
+          avisoInfo('Expedição ' + (rotuloExpedicao(x) || 'em branco') + ' restaurada: ela está de volta na lista (filtro "Todas").');
+        });
+      });
+    }
+
     function renderLista() {
+      if (estado.status === 'excluidas') return renderExcluidas();
       var v = visiveis();
       if (!estado.expedicoes.length) {
         area.innerHTML = '<div class="vazio">Nenhuma expedição cadastrada ainda. Use "+ Nova expedição" e busque pelo Jira, nome ou ACS.</div>';
@@ -959,20 +1056,48 @@
       });
     }
 
+    // Motivo obrigatório ao excluir (menos a expedição em branco, que é rascunho).
+    var MOTIVOS_EXCLUSAO = [
+      { valor: 'Duplicada', rotulo: 'Duplicada (já existe outra para a mesma demanda)' },
+      { valor: 'Criada por engano / chave errada', rotulo: 'Criada por engano ou com a chave errada' },
+      { valor: 'Demanda cancelada ou adiada', rotulo: 'Demanda cancelada ou adiada' },
+      { valor: 'Outro', rotulo: 'Outro (explique abaixo)' }
+    ];
+    function textoMotivo(v) {
+      var detalhe = String(v.texto || '').replace(/\s+/g, ' ').trim();
+      if (v.escolha === 'Outro') return detalhe;
+      return detalhe ? v.escolha + ' — ' + detalhe : v.escolha;
+    }
+    function removerDaTela(e) {
+      estado.expedicoes = estado.expedicoes.filter(function (x) { return x.id !== e.id; });
+      if (estado.qtdExcluidas !== null) estado.qtdExcluidas++;
+      estado.excluidas = null; // relê na próxima vez que o filtro "Excluídas" for aberto
+      renderTudo();
+    }
     function excluirExpedicao(e) {
       var quem = rotuloExpedicao(e);
-      Dlg.confirmar(quem ? {
-        titulo: 'Deseja realmente excluir a expedição?', destaque: quem,
-        mensagem: 'Ela sai da lista. O histórico continua guardado.', rotuloConfirmar: 'Excluir', tom: 'perigo'
-      } : {
-        titulo: 'Deseja realmente excluir esta expedição em branco?',
-        mensagem: 'A expedição vazia será removida da lista.', rotuloConfirmar: 'Excluir', tom: 'perigo'
-      }).then(function (sim) {
-        if (!sim) return;
-        executar(chamar('DELETE', '/api/expedicoes/' + e.id), function () {
-          estado.expedicoes = estado.expedicoes.filter(function (x) { return x.id !== e.id; });
-          renderTudo();
+      if (!quem) {
+        return Dlg.confirmar({
+          titulo: 'Deseja realmente excluir esta expedição em branco?',
+          mensagem: 'A expedição vazia será removida da lista.', rotuloConfirmar: 'Excluir', tom: 'perigo'
+        }).then(function (sim) {
+          if (sim) executar(chamar('DELETE', '/api/expedicoes/' + e.id, {}), function () { removerDaTela(e); });
         });
+      }
+      Dlg.texto({
+        titulo: 'Por que excluir esta expedição?', destaque: quem, tom: 'perigo',
+        mensagem: 'Ela sai da lista, mas não é apagada: fica no filtro "Excluídas", com o motivo, e pode ser restaurada.',
+        campo: { tipo: 'escolha', opcoes: MOTIVOS_EXCLUSAO, rotulo: 'Motivo', rotuloTexto: 'Detalhe do motivo', maxlength: 400,
+          placeholder: 'Detalhe (opcional; obrigatório em "Outro"). Ex.: duplicada da JDCBBRB-391 com o ACS certo.' },
+        validar: function (v) {
+          if (!v.escolha) return 'Escolha o motivo.';
+          if (v.escolha === 'Outro' && String(v.texto || '').trim().length < 10) return 'Em "Outro", explique o motivo (mínimo 10 caracteres).';
+          return '';
+        },
+        rotuloConfirmar: 'Excluir', rotuloCancelar: 'Cancelar'
+      }).then(function (v) {
+        if (!v) return; // cancelou
+        executar(chamar('DELETE', '/api/expedicoes/' + e.id, { motivo: textoMotivo(v) }), function () { removerDaTela(e); });
       });
     }
 
@@ -980,6 +1105,8 @@
       var b = ev.target.closest('[data-acao]');
       if (!b) return;
       var acao = b.getAttribute('data-acao');
+      // a excluída não está em estado.expedicoes: trata antes de procurar o cartão
+      if (acao === 'restaurar') return restaurar(Number(b.getAttribute('data-id')));
       var e = expedicaoDe(b);
       if (!e) return;
       var card = b.closest('.exp');
@@ -1043,7 +1170,11 @@
     /* ---------- barra ---------- */
     document.getElementById('barra').addEventListener('change', function (ev) {
       if (ev.target.id === 'selResp') { estado.filtro = ev.target.value; guardarFiltro(estado.filtro); renderBarra(); renderResumo(); renderLista(); document.getElementById('selResp').focus(); }
-      if (ev.target.id === 'selStatus') { estado.status = ev.target.value; renderResumo(); renderLista(); }
+      if (ev.target.id === 'selStatus') {
+        estado.status = ev.target.value;
+        if (estado.status === 'excluidas') return carregarExcluidas();
+        renderResumo(); renderLista();
+      }
     });
     document.getElementById('barra').addEventListener('click', function (ev) {
       var b = ev.target.closest('[data-acao]');
@@ -1181,6 +1312,9 @@
         estado.expedicoes = r.j.expedicoes;
         estado.hoje = r.j.hoje;
         estado.podeGravarJira = !!r.j.podeGravarJira;
+        estado.qtdExcluidas = typeof r.j.excluidas === 'number' ? r.j.excluidas : null;
+        estado.excluidas = null;
+        if (estado.status === 'excluidas') carregarExcluidas();
         situacao.carregadoEm = new Date(); situacao.erroCarga = false;
         if (!estado.filtro) { try { estado.filtro = localStorage.getItem('expedicoes.responsavel') || ''; } catch (e) { estado.filtro = ''; } }
         renderTudo();

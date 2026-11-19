@@ -43,7 +43,6 @@ const CAMPOS_GRAVAVEIS = {
   demaisDocumentacoes: { id: CAMPOS.demaisDocumentacoes[0], nome: 'Demais Documentações', tipo: 'texto' },
   dataPrevista: { id: CAMPOS.dataPrevistaEntrega, nome: 'Data prevista para entrega', tipo: 'data' },
   dataInterna: { id: CAMPOS.dataInternaAcordada, nome: 'Data Interna Acordada', tipo: 'data' },
-  conclusaoTeste: { id: CAMPOS.conclusaoTesteAceitacao, nome: 'Data Conclusão Teste Aceitação', tipo: 'data' },
   versoes: { id: 'fixVersions', nome: 'Versões corrigidas', tipo: 'versoes' },
   componentes: { id: 'components', nome: 'Componentes', tipo: 'componentes' }
 };

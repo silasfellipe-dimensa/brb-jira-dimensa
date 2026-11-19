@@ -114,15 +114,27 @@ describe('regras: cada item aponta para o campo certo', () => {
     assert.strictEqual(f().ok, false, 'sem subtarefas não vira "ok" por falta do que conferir');
   });
 
-  test('teste de aceitação: vale a data de conclusão OU o status "Teste de Aceitação Concluído" ou posterior', () => {
+  // 2026-11-19: vale SÓ o status. A data preenchida com a issue em outra etapa
+  // dava check falso - é o caso "tudo preenchido, mas o status não".
+  test('teste de aceitação: vale só o status "Teste de Aceitação Concluído" ou posterior; a data sozinha não', () => {
     const f = (campos) => J.avaliarTask(campos)['Status: Teste de aceitação concluído'];
-    assert.ok(f({ customfield_12456: '2026-10-07', status: { name: 'Em Desenvolvimento' } }).ok, 'pela data');
+    const soData = f({ customfield_12456: '2026-10-07', status: { name: 'Em Desenvolvimento' } });
+    assert.strictEqual(soData.ok, false, 'a data não basta');
+    assert.strictEqual(soData.motivo, 'status "Em Desenvolvimento" no Jira');
     for (const nome of ['Teste de Aceitação Concluído', 'TESTE DE ACEITACAO CONCLUIDO', 'Resolvido', 'Implantação', 'Concluído']) {
       assert.ok(f({ status: { name: nome } }).ok, nome);
     }
     for (const nome of ['Em Desenvolvimento', 'Aberto', 'Desenvolvimento Concluído', 'Reaberto', undefined]) {
       assert.strictEqual(f({ status: nome ? { name: nome } : null }).ok, false, String(nome));
     }
+  });
+
+  test('selo do cartão: status da task; no épico, quantas estão ok e quais faltam', () => {
+    const t = (key, nome, data) => ({ key, fields: { status: { name: nome }, customfield_12456: data || null } });
+    assert.deepStrictEqual(J.resumoStatusTeste([t('A-1', 'Teste de Aceitação Concluído', '2026-10-21')]),
+      { ok: true, total: 1, okCount: 1, faltam: [], status: 'Teste de Aceitação Concluído', data: '2026-10-21' });
+    const ep = J.resumoStatusTeste([t('A-1', 'Implantação'), t('A-2', 'Em Teste'), t('A-3', 'Concluído')]);
+    assert.deepStrictEqual([ep.ok, ep.total, ep.okCount, ep.faltam], [false, 3, 2, [{ chave: 'A-2', status: 'Em Teste' }]]);
   });
 
   test('épico: o item só fica ok se TODAS as tasks cumprem; o detalhe mostra task por task', () => {
@@ -392,7 +404,11 @@ describe('aplicação sobre os itens da expedição', () => {
     const v = verif(Object.fromEntries(J.TEXTOS_JIRA.map((t, n) => [t, n < 5 ? OK : FALTA('falta')])), { subtarefasAbertas: 2 });
     const e = decorar({ artefatoJira: 'A-1', dataExpedicao: null, itens }, null, '2026-10-13', v);
     assert.deepStrictEqual(e.progresso, { total: 16, concluidos: 6, naoAplicaveis: 0, pendentes: 10 }, '5 do Jira + 1 marcado à mão');
-    assert.deepStrictEqual(e.jira, { status: 'ok', tipo: 'task', filhos: 0, lidoEm: '2026-10-13T12:00:00Z', desatualizado: false, subtarefasAbertas: 2 });
+    assert.deepStrictEqual(e.jira, { status: 'ok', tipo: 'task', filhos: 0, lidoEm: '2026-10-13T12:00:00Z', desatualizado: false, subtarefasAbertas: 2, statusTeste: null });
+    // o selo do cartão passa adiante o resumo do status do teste
+    const comSelo = decorar({ artefatoJira: 'A-1', dataExpedicao: null, itens }, null, '2026-10-13',
+      verif({}, { statusTeste: { ok: false, total: 1, okCount: 0, faltam: [{ chave: 'A-1', status: 'Em Teste' }], status: 'Em Teste', data: '' } }));
+    assert.strictEqual(comSelo.jira.statusTeste.status, 'Em Teste');
     const sem = decorar({ artefatoJira: '', dataExpedicao: null, itens }, null, '2026-10-13', null);
     assert.strictEqual(sem.jira.status, 'sem-chave');
     assert.strictEqual(sem.progresso.concluidos, 1);

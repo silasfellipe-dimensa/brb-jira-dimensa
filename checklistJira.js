@@ -181,17 +181,29 @@ const REGRAS = [
   },
   {
     texto: 'Status: Teste de aceitação concluído', rotulo: 'Teste de aceitação',
-    campo: 'Status (Teste de aceitação concluído ou depois) ou Data Conclusão Teste Aceitação',
-    // o status é fluxo (transição), não campo: daqui só dá para gravar a data
-    gravaveis: ['conclusaoTeste'],
-    avaliar: (f) => {
-      if (temConteudo(f[CAMPOS.conclusaoTesteAceitacao])) return { ok: true, motivo: '' };
-      const nome = f.status && f.status.name;
-      if (STATUS_TESTE_OK.includes(norm(nome))) return { ok: true, motivo: '' };
-      return { ok: false, motivo: `status "${nome || '?'}"` };
-    }
+    campo: 'Status da issue (Teste de Aceitação Concluído, ou uma etapa depois dele)',
+    // 2026-11-19: vale SÓ o status. Antes a "Data Conclusão Teste Aceitação"
+    // preenchida bastava - e dava check com a issue ainda em outra etapa. O
+    // status é fluxo (transição), não campo: não tem "Editar".
+    avaliar: statusTeste
   }
 ];
+
+/** Status da task para o teste de aceitação: { ok, motivo, status, data }. */
+function statusTeste(f) {
+  const nome = (f.status && f.status.name) || '';
+  const data = temConteudo(f[CAMPOS.conclusaoTesteAceitacao]) ? String(f[CAMPOS.conclusaoTesteAceitacao]).slice(0, 10) : '';
+  const ok = STATUS_TESTE_OK.includes(norm(nome));
+  return { ok, motivo: ok ? '' : `status "${nome || '?'}"`, status: nome, data, detalhe: data ? `Data Conclusão Teste Aceitação ${dataBR(data)}` : '' };
+}
+
+/** Resumo do status para o selo do cartão (pedido de 2026-11-19).
+ * Task: { ok, status, data }. Épico: { ok, total, okCount, faltam: [{ chave, status }] }. */
+function resumoStatusTeste(lista) {
+  const por = lista.map((t) => ({ chave: t.key, ...statusTeste(t.fields || {}) }));
+  const faltam = por.filter((p) => !p.ok).map((p) => ({ chave: p.chave, status: p.status }));
+  return { ok: faltam.length === 0, total: por.length, okCount: por.length - faltam.length, faltam, status: por.length === 1 ? por[0].status : '', data: por.length === 1 ? por[0].data : '' };
+}
 
 const TEXTOS_JIRA = REGRAS.map((r) => r.texto);
 // texto do item -> campo(s) do Jira, para a dica da tela
@@ -247,10 +259,14 @@ async function lerDoJira(chave, chamar) {
     if (!filhos.length) return { status: 'sem-filhos', tipo: 'epico', filhos: 0 };
     return {
       status: 'ok', tipo: 'epico', filhos: filhos.length, itens: avaliarEpico(filhos),
-      subtarefasAbertas: filhos.reduce((n, f) => n + subtarefasAbertas(f.fields), 0)
+      subtarefasAbertas: filhos.reduce((n, f) => n + subtarefasAbertas(f.fields), 0),
+      statusTeste: resumoStatusTeste(filhos)
     };
   }
-  return { status: 'ok', tipo: 'task', filhos: 0, itens: avaliarTask(issue.fields), subtarefasAbertas: subtarefasAbertas(issue.fields) };
+  return {
+    status: 'ok', tipo: 'task', filhos: 0, itens: avaliarTask(issue.fields), subtarefasAbertas: subtarefasAbertas(issue.fields),
+    statusTeste: resumoStatusTeste([issue])
+  };
 }
 
 /** Cache curto: a tela abre várias vezes por minuto e o Jira não precisa ser
@@ -298,5 +314,5 @@ async function verificarVarias(chaves, chamar, { cache, forcar, limite = 5, teto
 
 module.exports = {
   CAMPOS, CAMPOS_PEDIDOS, REGRAS, TEXTOS_JIRA, TEXTOS_ASSISTIDOS, CAMPO_DO_ITEM, GRAVAVEIS_DO_ITEM, STATUS_IGNORADOS, TIPOS_IGNORADOS, STATUS_TESTE_OK, MIN_SOLUCAO,
-  temConteudo, textoPlano, avaliarTask, avaliarEpico, lerDoJira, criarCache, verificar, verificarVarias
+  temConteudo, textoPlano, statusTeste, resumoStatusTeste, avaliarTask, avaliarEpico, lerDoJira, criarCache, verificar, verificarVarias
 };

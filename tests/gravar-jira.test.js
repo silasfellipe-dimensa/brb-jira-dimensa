@@ -41,7 +41,9 @@ describe('cada item do checklist sabe o que grava', () => {
   test('todo campo gravável existe; status, subtarefas e Documentação não gravam', () => {
     for (const r of REGRAS) for (const k of r.gravaveis || []) assert.ok(G.CAMPOS_GRAVAVEIS[k], `${r.texto} -> ${k}`);
     const sem = REGRAS.filter((r) => !(r.gravaveis || []).length).map((r) => r.rotulo).sort();
-    assert.deepStrictEqual(sem, ['Documentação', 'Subtarefas']);
+    // teste de aceitação = status (fluxo do Jira); a data não marca mais o item, então não se edita daqui
+    assert.deepStrictEqual(sem, ['Documentação', 'Subtarefas', 'Teste de aceitação']);
+    assert.strictEqual(G.CAMPOS_GRAVAVEIS.conclusaoTeste, undefined);
     assert.deepStrictEqual(REGRAS.find((r) => r.rotulo === 'Versão/Data prevista').gravaveis, ['versoes', 'dataPrevista']);
   });
 });

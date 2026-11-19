@@ -14,7 +14,10 @@
  *        devolve 'AAAA-MM-DD' ou '' para apagar) ou 'lista' (marcar várias
  *        opções; campo.opcoes = [{ valor, rotulo, detalhe }], campo.marcados =
  *        [valor]; devolve a lista de valores marcados; com muitas opções
- *        aparece um filtro).
+ *        aparece um filtro) ou 'escolha' (uma opção entre campo.opcoes =
+ *        [{ valor, rotulo }] + texto complementar; devolve { escolha, texto }).
+ *   validar(valor) (opcional): devolve '' se está ok, ou a mensagem de erro -
+ *        a caixa continua aberta e mostra a mensagem.
  *
  *   tom: 'perigo' (excluir; o foco já começa em Cancelar, para Enter nunca
  *        apagar sem querer), 'aviso' ou 'info'.
@@ -77,6 +80,9 @@
     '.dlgx-op:hover{background:var(--dx-soft)}.dlgx-op input{margin-top:2px;accent-color:var(--dx-tom)}',
     '.dlgx-op small{display:block;color:var(--dx-faint);font-size:.74rem}.dlgx-op[hidden]{display:none}',
     '.dlgx-vazia{padding:10px;font-size:.8rem;color:var(--dx-faint)}',
+    '.dlgx-escolhas{display:flex;flex-direction:column;gap:2px;margin-bottom:10px}',
+    '.dlgx-escolhas .dlgx-op input{accent-color:var(--dx-tom)}',
+    '.dlgx-erro{margin:8px 0 0;font-size:.8rem;font-weight:600;color:var(--dx-warn)}.dlgx-erro:empty{display:none}',
     '.dlgx-limpar{font:inherit;font-size:.78rem;background:none;border:0;color:var(--dx-tom);cursor:pointer;padding:6px 0 0;text-decoration:underline}',
     '@media (max-width:480px){.dlgx-rodape{flex-direction:column-reverse}.dlgx-btn{width:100%}}',
     '@keyframes dlgx-entra{from{opacity:0;transform:translateY(8px) scale(.97)}to{opacity:1;transform:none}}',
@@ -155,7 +161,7 @@
         texto.appendChild(limpar);
         if (opcoes.nota) texto.appendChild(el('p', 'dlgx-msg', opcoes.nota));
         area.addEventListener('keydown', function (ev) {
-          if (ev.key === 'Enter') { ev.preventDefault(); fechar(area.value); }
+          if (ev.key === 'Enter') { ev.preventDefault(); confirmar(); }
         });
       } else if (tipoCampo === 'lista') {
         var bloco = el('div', 'dlgx-campo');
@@ -209,6 +215,43 @@
         if (opcoes.nota) texto.appendChild(el('p', 'dlgx-msg', opcoes.nota));
         area = filtro || caixas[0] || null;
         lerValor = function () { return caixas.filter(function (c) { return c.checked; }).map(function (c) { return c.value; }); };
+      } else if (tipoCampo === 'escolha') {
+        var grupo = el('div', 'dlgx-campo');
+        if (opcoes.campo.rotulo) grupo.appendChild(el('span', '', opcoes.campo.rotulo));
+        var escolhas = el('div', 'dlgx-escolhas');
+        escolhas.setAttribute('role', 'radiogroup');
+        escolhas.setAttribute('aria-label', opcoes.campo.rotulo || 'Opções');
+        var radios = [];
+        (opcoes.campo.opcoes || []).forEach(function (o) {
+          var linha = el('label', 'dlgx-op');
+          var rb = el('input');
+          rb.type = 'radio';
+          rb.name = id + '-escolha';
+          rb.value = String(o.valor);
+          rb.checked = String(o.valor) === String(opcoes.campo.escolhido || '');
+          linha.appendChild(rb);
+          linha.appendChild(el('span', '', o.rotulo));
+          escolhas.appendChild(linha);
+          radios.push(rb);
+        });
+        grupo.appendChild(escolhas);
+        area = el('textarea');
+        area.value = opcoes.campo.valor || '';
+        area.style.minHeight = '80px';
+        if (opcoes.campo.maxlength) area.maxLength = opcoes.campo.maxlength;
+        if (opcoes.campo.placeholder) area.placeholder = opcoes.campo.placeholder;
+        area.setAttribute('aria-label', opcoes.campo.rotuloTexto || 'Detalhe');
+        grupo.appendChild(area);
+        texto.appendChild(grupo);
+        if (opcoes.nota) texto.appendChild(el('p', 'dlgx-msg', opcoes.nota));
+        lerValor = function () {
+          var marcado = radios.filter(function (r) { return r.checked; })[0];
+          return { escolha: marcado ? marcado.value : '', texto: area.value };
+        };
+        area.addEventListener('keydown', function (ev) {
+          if (ev.key === 'Enter' && (ev.ctrlKey || ev.metaKey)) { ev.preventDefault(); confirmar(); }
+        });
+        if (radios.length) area = radios.filter(function (r) { return r.checked; })[0] || radios[0];
       } else if (comCampo) {
         var rotuloCampo = el('label', 'dlgx-campo');
         if (opcoes.campo.rotulo) rotuloCampo.appendChild(el('span', '', opcoes.campo.rotulo));
@@ -233,9 +276,13 @@
         texto.appendChild(rotuloCampo);
         texto.appendChild(contador);
         area.addEventListener('keydown', function (ev) {
-          if (ev.key === 'Enter' && (ev.ctrlKey || ev.metaKey)) { ev.preventDefault(); fechar(area.value); }
+          if (ev.key === 'Enter' && (ev.ctrlKey || ev.metaKey)) { ev.preventDefault(); confirmar(); }
         });
       }
+      // erro da validação: a caixa fica aberta e diz o que falta
+      var erroEl = el('p', 'dlgx-erro');
+      erroEl.setAttribute('role', 'alert');
+      texto.appendChild(erroEl);
       corpo.appendChild(icone);
       corpo.appendChild(texto);
 
@@ -267,7 +314,13 @@
         if (ev.key === 'Escape') { ev.preventDefault(); ev.stopPropagation(); fechar(vazio); }
       }
 
-      ok.addEventListener('click', function () { fechar(comCampo ? lerValor() : true); });
+      function confirmar() {
+        var valor = comCampo ? lerValor() : true;
+        var problema = typeof opcoes.validar === 'function' ? opcoes.validar(valor) : '';
+        if (problema) { erroEl.textContent = problema; return; }
+        fechar(valor);
+      }
+      ok.addEventListener('click', confirmar);
       if (cancelar) cancelar.addEventListener('click', function () { fechar(vazio); });
       // clique no fundo (fora da caixa) cancela; o <dialog> não tem padding, então só o fundo chega aqui
       caixa.addEventListener('click', function (ev) { if (ev.target === caixa) fechar(vazio); });

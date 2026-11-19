@@ -55,12 +55,30 @@ test('cada opção do filtro mostra o que promete', () => {
 test('a contagem de cada opção respeita o filtro de responsável', () => {
   const r = regras({ filtro: 'ana', expedicoes: TODAS.concat([exp('hoje', 0, 'bia')]) });
   assert.deepStrictEqual(JSON.parse(JSON.stringify(r.contagemStatus())),
-    { abertas: 2, andamento: 1, atrasada: 1, concluida: 2, todas: 4 });
+    { abertas: 2, andamento: 1, atrasada: 1, concluida: 2, todas: 4, excluidas: 0 });
+});
+
+// 2026-11-19: "Excluídas" é uma opção do filtro, vinda de outra consulta. Não
+// entra em "Todas" (todas = as ativas) e o número vem do servidor.
+test('"Excluídas" no filtro: nenhuma ativa passa nele; o número vem do servidor', () => {
+  const r = regras({ expedicoes: TODAS });
+  assert.deepStrictEqual(regras({ status: 'excluidas', expedicoes: TODAS }).visiveis(), []);
+  assert.strictEqual(r.STATUS[r.STATUS.length - 1].valor, 'excluidas');
+  assert.match(html, /c\.excluidas = estado\.excluidas \? estado\.excluidas\.length : estado\.qtdExcluidas;/);
+  assert.match(html, /if \(estado\.status === 'excluidas'\) return carregarExcluidas\(\);/);
+  assert.match(html, /data-acao="restaurar"/);
+});
+
+test('excluir pede o motivo (menos expedição em branco); "Outro" exige explicação', () => {
+  assert.match(html, /titulo: 'Por que excluir esta expedição\?'/);
+  assert.match(html, /tipo: 'escolha', opcoes: MOTIVOS_EXCLUSAO/);
+  assert.match(html, /v\.escolha === 'Outro' && String\(v\.texto \|\| ''\)\.trim\(\)\.length < 10/);
+  assert.match(html, /chamar\('DELETE', '\/api\/expedicoes\/' \+ e\.id, \{ motivo: textoMotivo\(v\) \}\)/);
 });
 
 test('a contagem fica no filtro; sem pílula de "ocultas"; tela vazia explica uma vez', () => {
   assert.match(html, /<label for="selStatus">Status<\/label><select id="selStatus">/);
-  assert.match(html, /op\.textContent = s\.rotulo \+ ' \(' \+ c\[s\.valor\] \+ '\)'/);
+  assert.match(html, /op\.textContent = s\.rotulo \+ \(c\[s\.valor\] === null \|\| c\[s\.valor\] === undefined \? '' : ' \(' \+ c\[s\.valor\] \+ '\)'\)/);
   assert.ok(!html.includes('ver-concluidas'), 'a pílula foi trocada pela contagem no filtro');
   assert.ok(!html.includes('ocultarConc'), 'a caixa "Ocultar concluídas" foi substituída pelo filtro');
   assert.match(html, /escolha "Concluídas" no filtro Status\./);
