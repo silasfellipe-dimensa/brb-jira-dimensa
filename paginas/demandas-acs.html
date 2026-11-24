@@ -1,0 +1,474 @@
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Demandas · Kanban BRB</title>
+
+<style>
+  :root {
+    color-scheme: light dark;
+    --bg: #F5F5F5;
+    --bg-panel: #FFFFFF;
+    --ink: #1E212C;
+    --ink-dim: #4B5A68;
+    --ink-faint: #7C8894;
+    --line: #E5E6E7;
+    --line-soft: #EFEFEF;
+    --accent: #FF6C0C;
+    --accent-soft: #FFE8D9;
+    --warn: #B83A22;
+    --warn-soft: #FBE3DD;
+    --ok: #0B9C7F;
+    --ok-soft: #D8F1EB;
+    --info: #3C6FD8;
+    --info-soft: #E2EAFB;
+    --shadow: 0 1px 2px rgba(30,33,44,0.06), 0 1px 1px rgba(30,33,44,0.04);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #1E212C;
+      --bg-panel: #262B38;
+      --ink: #F5F5F5;
+      --ink-dim: #A7B0BC;
+      --ink-faint: #78838F;
+      --line: #333846;
+      --line-soft: #2A2E3A;
+      --accent: #FF8A3D;
+      --accent-soft: #3A2A1C;
+      --warn: #F08A72;
+      --warn-soft: #3F2320;
+      --ok: #3EE8C4;
+      --ok-soft: #173A33;
+      --info: #8FB0F5;
+      --info-soft: #222D45;
+      --shadow: 0 1px 3px rgba(0,0,0,0.35);
+    }
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--ink);
+    font-family: Lato, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  button { font: inherit; color: inherit; cursor: pointer; }
+  a { color: inherit; }
+
+  header.top { background: var(--bg); border-bottom: 1px solid var(--line); padding: 22px 28px; }
+  .top-row { display: flex; align-items: center; justify-content: space-between; gap: 24px; flex-wrap: wrap; max-width: 1400px; margin: 0 auto; }
+  .titles h1 { margin: 0; font-size: 1.5rem; font-weight: 700; letter-spacing: -0.01em; }
+  .titles p { margin: 3px 0 0; font-size: 0.8rem; color: var(--ink-faint); }
+
+  main { max-width: 1400px; margin: 0 auto; padding: 22px 28px 60px; }
+  .painel { background: var(--bg-panel); border: 1px solid var(--line-soft); border-radius: 10px; padding: 16px 18px 18px; box-shadow: var(--shadow); }
+
+  /* Linha da coleta: quando foi a última atualização + botão Atualizar. */
+  .coleta { display: flex; align-items: center; justify-content: space-between; gap: 12px 20px; flex-wrap: wrap; margin-bottom: 14px; }
+  .coleta .quando { font-size: 0.85rem; color: var(--ink-dim); }
+  .coleta .quando b { color: var(--ink); }
+  .btn {
+    display: inline-flex; align-items: center; gap: 7px; font-size: 0.85rem; font-weight: 700;
+    border: 1px solid var(--ink); border-radius: 100px; padding: 8px 18px 8px 14px; background: var(--ink); color: var(--bg);
+    transition: transform .15s ease;
+  }
+  .btn:hover { transform: translateY(-1px); }
+  .btn:disabled { opacity: 0.6; cursor: default; transform: none; }
+  .btn svg { width: 15px; height: 15px; fill: none; stroke: var(--accent); stroke-width: 2.3; stroke-linecap: round; stroke-linejoin: round; }
+
+  .aviso { margin-bottom: 12px; padding: 10px 13px; border-left: 3px solid var(--warn); background: var(--warn-soft); border-radius: 0 6px 6px 0; font-size: 0.82rem; line-height: 1.5; }
+  .aviso b { font-weight: 700; }
+  .aviso.info { border-left-color: var(--info); background: var(--info-soft); }
+  .aviso.leve { background: var(--line-soft); }
+  .aviso .detalhe { display: block; margin-top: 3px; color: var(--ink-dim); overflow-wrap: anywhere; }
+
+  .filtros { display: flex; align-items: center; gap: 10px 14px; flex-wrap: wrap; margin-bottom: 12px; }
+  .chips { display: flex; flex-wrap: wrap; gap: 7px; align-items: center; flex: 1 1 520px; }
+  .chip {
+    display: inline-flex; align-items: center; gap: 6px; font-size: 0.76rem; font-weight: 700;
+    padding: 5px 11px; border-radius: 100px; border: 1px solid var(--line); background: var(--bg); color: var(--ink-dim);
+  }
+  .chip:hover { border-color: var(--accent); }
+  .chip .n { font-weight: 400; color: var(--ink-faint); }
+  .chip[aria-pressed="true"] { background: var(--ink); border-color: var(--ink); color: var(--bg); }
+  .chip[aria-pressed="true"] .n { color: var(--bg); opacity: 0.75; }
+  input.busca {
+    flex: 0 1 300px; font: inherit; font-size: 0.85rem; color: var(--ink); background: var(--bg);
+    border: 1px solid var(--line); border-radius: 100px; padding: 8px 14px;
+  }
+  input.busca:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-soft); }
+
+  .tabela-scroll { overflow-x: auto; border: 1px solid var(--line-soft); border-radius: 8px; }
+  table.grade { width: 100%; min-width: 1040px; border-collapse: collapse; font-size: 0.82rem; }
+  table.grade th {
+    text-align: left; font-size: 0.66rem; text-transform: uppercase; letter-spacing: 0.03em; color: var(--ink-faint);
+    font-weight: 700; padding: 0; border-bottom: 2px solid var(--accent); white-space: nowrap; background: var(--bg-panel);
+  }
+  table.grade th button { width: 100%; border: 0; background: none; padding: 9px 10px; text-align: left; font: inherit; text-transform: inherit; letter-spacing: inherit; color: inherit; }
+  table.grade th button:hover { color: var(--accent); }
+  table.grade th[aria-sort] button { color: var(--ink); }
+  table.grade th[aria-sort="ascending"] button::after { content: ' ▲'; color: var(--accent); }
+  table.grade th[aria-sort="descending"] button::after { content: ' ▼'; color: var(--accent); }
+  table.grade td { padding: 9px 10px; border-bottom: 1px solid var(--line-soft); vertical-align: top; }
+  table.grade tbody tr:hover td { background: var(--line-soft); }
+  table.grade tbody tr:last-child td { border-bottom: 0; }
+  td.numero { font-weight: 700; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  td.data, td.tempo { white-space: nowrap; font-variant-numeric: tabular-nums; color: var(--ink-dim); }
+  td.resumo { min-width: 300px; line-height: 1.4; }
+  td.gestor { color: var(--ink-dim); min-width: 150px; }
+  .vazio-data { color: var(--ink-faint); }
+
+  .status { display: inline-block; font-size: 0.68rem; font-weight: 700; padding: 3px 9px; border-radius: 4px; background: var(--line-soft); color: var(--ink-dim); text-transform: uppercase; letter-spacing: 0.02em; white-space: nowrap; }
+  .status.exec { background: var(--info-soft); color: var(--info); }
+  .status.parada { background: var(--warn-soft); color: var(--warn); }
+  .status.homologacao { background: var(--accent-soft); color: var(--accent); }
+  .status.feita { background: var(--ok-soft); color: var(--ok); }
+
+  .vazio { padding: 26px; border: 1px dashed var(--line); border-radius: 10px; text-align: center; color: var(--ink-dim); font-size: 0.88rem; line-height: 1.55; }
+  .rodape-nota { margin: 12px 2px 0; font-size: 0.74rem; color: var(--ink-faint); line-height: 1.5; }
+  .rodape-nota a { color: var(--ink-dim); }
+
+  @media (max-width: 760px) {
+    main { padding: 16px; }
+    header.top { padding: 16px; }
+    input.busca { flex-basis: 100%; }
+  }
+</style>
+
+<header class="top">
+  <div class="top-row">
+    <div class="titles">
+      <h1>Demandas</h1>
+      <p>Solicitações em andamento no ACS do BRB · sistema TTB</p>
+    </div>
+    <nav data-menu="demandas"></nav>
+  </div>
+</header>
+
+<main>
+  <div class="painel">
+    <div class="coleta">
+      <span class="quando" id="quando" aria-live="polite">Carregando…</span>
+      <button class="btn" type="button" id="btnAtualizar" disabled>
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 3v6h-6"/></svg>Atualizar
+      </button>
+    </div>
+    <div id="avisos" aria-live="polite"></div>
+    <div class="filtros" id="filtros" hidden>
+      <div class="chips" id="chips" role="group" aria-label="Filtrar por status"></div>
+      <input class="busca" id="busca" type="search" maxlength="80" placeholder="Filtrar por número, resumo ou gestor" aria-label="Filtrar por número, resumo ou gestor">
+    </div>
+    <div id="lista"></div>
+    <p class="rodape-nota" id="rodape" hidden></p>
+  </div>
+</main>
+
+<script src="/menu.js"></script>
+<script>
+  (function () {
+    var elQuando = document.getElementById('quando');
+    var elAvisos = document.getElementById('avisos');
+    var elFiltros = document.getElementById('filtros');
+    var elChips = document.getElementById('chips');
+    var elBusca = document.getElementById('busca');
+    var elLista = document.getElementById('lista');
+    var elRodape = document.getElementById('rodape');
+    var btnAtualizar = document.getElementById('btnAtualizar');
+
+    // Ordem do fluxo da solicitação no ACS. Status que não está aqui (o ACS
+    // pode criar outro) aparece no fim, com a cor neutra.
+    var STATUS = [
+      { codigo: 'S', classe: '' },            // Solicitada
+      { codigo: 'A', classe: '' },            // Liberada para atendimento
+      { codigo: 'X', classe: 'exec' },        // Em execução
+      { codigo: 'D', classe: 'parada' },      // Pendente
+      { codigo: 'P', classe: 'parada' },      // Suspensa
+      { codigo: 'H', classe: 'homologacao' }, // Aguardando homologação
+      { codigo: 'G', classe: 'feita' },       // Homologada
+      { codigo: 'Q', classe: 'feita' }        // Em implantação
+    ];
+    function ordemStatus(codigo) {
+      for (var i = 0; i < STATUS.length; i++) if (STATUS[i].codigo === codigo) return i;
+      return STATUS.length;
+    }
+    function classeStatus(codigo) {
+      var i = ordemStatus(codigo);
+      return i < STATUS.length ? STATUS[i].classe : '';
+    }
+
+    var COLUNAS = [
+      { id: 'numero', rotulo: 'Nº ACS' },
+      { id: 'status', rotulo: 'Status' },
+      { id: 'resumo', rotulo: 'Resumo' },
+      { id: 'gestor', rotulo: 'Gestor de negócio' },
+      { id: 'dataSolicitacao', rotulo: 'Solicitada em' },
+      { id: 'previsaoInicio', rotulo: 'Previsão de início' },
+      { id: 'previsaoTermino', rotulo: 'Previsão de término' },
+      { id: 'dataImplantacao', rotulo: 'Implantação' },
+      { id: 'statusDesde', rotulo: 'Neste status' }
+    ];
+
+    var estado = {
+      hoje: null, solicitacoes: [], coleta: null,
+      filtroStatus: {},            // códigos ligados; vazio = todos
+      termo: '',
+      ordem: { coluna: 'status', sentido: 1 },
+      pedindo: false
+    };
+    var acompanhamento = null;      // intervalo que espera o coletor atender o pedido
+    var ACOMPANHAR_A_CADA_MS = 20000;
+    var ACOMPANHAR_NO_MAXIMO = 45;  // 45 x 20s = 15 minutos
+
+    function esc(s) {
+      return String(s === null || s === undefined ? '' : s).replace(/[&<>"']/g, function (c) {
+        return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+      });
+    }
+    function dataDia(iso) { // AAAA-MM-DD, sem fuso
+      var m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(iso || ''));
+      return m ? m[3] + '/' + m[2] + '/' + m[1] : '';
+    }
+    function diaBrasilia(instante) { // instante -> AAAA-MM-DD em Brasília
+      var d = new Date(instante);
+      if (isNaN(d)) return '';
+      return new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Sao_Paulo', year: 'numeric', month: '2-digit', day: '2-digit' }).format(d);
+    }
+    function dataHora(instante) {
+      var d = new Date(instante);
+      if (isNaN(d)) return '';
+      return d.toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo', day: '2-digit', month: '2-digit' }) + ' às ' +
+        d.toLocaleTimeString('pt-BR', { timeZone: 'America/Sao_Paulo', hour: '2-digit', minute: '2-digit' });
+    }
+    function diasEntre(deIso, ateIso) {
+      var a = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(deIso || ''));
+      var b = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(ateIso || ''));
+      if (!a || !b) return null;
+      return Math.round((Date.UTC(+b[1], +b[2] - 1, +b[3]) - Date.UTC(+a[1], +a[2] - 1, +a[3])) / 86400000);
+    }
+    function semAcento(s) {
+      return String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
+    }
+
+    // ---- coleta: quando atualizou, avisos ----
+
+    function renderColeta() {
+      var c = estado.coleta;
+      var avisos = '';
+      if (!c) { elQuando.textContent = ''; elAvisos.innerHTML = ''; return; }
+
+      if (c.estado === 'nunca') {
+        elQuando.innerHTML = 'Ainda sem dados do ACS';
+        avisos += '<div class="aviso"><b>Nenhuma coleta foi feita até agora.</b> O coletor (na máquina dentro da rede do BRB) ainda não mandou a lista de demandas.</div>';
+      } else {
+        elQuando.innerHTML = 'Atualizado em <b>' + esc(dataHora(c.ultimaOk)) + '</b> · ' +
+          estado.solicitacoes.length + (estado.solicitacoes.length === 1 ? ' demanda em andamento' : ' demandas em andamento');
+        if (c.estado === 'atrasada') {
+          avisos += '<div class="aviso"><b>Sem atualização há mais de 1 dia útil.</b> A última coleta que deu certo foi em ' +
+            esc(dataHora(c.ultimaOk)) + '. A lista abaixo pode estar desatualizada: vale conferir se a máquina do coletor está ligada e na rede do BRB.</div>';
+        }
+      }
+      if (c.ultimaFalha) {
+        avisos += '<div class="aviso' + (c.estado === 'em-dia' ? ' leve' : '') + '"><b>A última tentativa de atualização falhou</b> (' + esc(dataHora(c.ultimaFalha.quando)) + ').' +
+          (c.ultimaFalha.erro ? '<span class="detalhe">Motivo: ' + esc(c.ultimaFalha.erro) + '</span>' : '') + '</div>';
+      }
+      if (c.pedido) {
+        avisos += '<div class="aviso info"><b>Atualização pedida</b> por ' + esc(c.pedido.pedidoPor) + ' em ' + esc(dataHora(c.pedido.pedidoEm)) +
+          '. O coletor atende em até 5 minutos, se a máquina dele estiver ligada e na rede do BRB. Esta tela se atualiza sozinha.</div>';
+      }
+      elAvisos.innerHTML = avisos;
+      btnAtualizar.disabled = estado.pedindo || !!c.pedido;
+    }
+
+    // ---- filtros e tabela ----
+
+    function contagemPorStatus() {
+      var mapa = {};
+      estado.solicitacoes.forEach(function (s) {
+        if (!mapa[s.statusCodigo]) mapa[s.statusCodigo] = { codigo: s.statusCodigo, nome: s.status, n: 0 };
+        mapa[s.statusCodigo].n++;
+      });
+      return Object.keys(mapa).map(function (k) { return mapa[k]; })
+        .sort(function (a, b) { return ordemStatus(a.codigo) - ordemStatus(b.codigo) || a.nome.localeCompare(b.nome); });
+    }
+
+    function renderChips() {
+      var algum = Object.keys(estado.filtroStatus).length > 0;
+      var h = '<button type="button" class="chip" data-status="" aria-pressed="' + (!algum) + '">Todas <span class="n">' + estado.solicitacoes.length + '</span></button>';
+      contagemPorStatus().forEach(function (g) {
+        h += '<button type="button" class="chip" data-status="' + esc(g.codigo) + '" aria-pressed="' + (!!estado.filtroStatus[g.codigo]) + '">' +
+          esc(g.nome.charAt(0) + g.nome.slice(1).toLowerCase()) + ' <span class="n">' + g.n + '</span></button>';
+      });
+      elChips.innerHTML = h;
+    }
+
+    function visiveis() {
+      var algum = Object.keys(estado.filtroStatus).length > 0;
+      var termo = semAcento(estado.termo.trim());
+      var lista = estado.solicitacoes.filter(function (s) {
+        if (algum && !estado.filtroStatus[s.statusCodigo]) return false;
+        if (!termo) return true;
+        return semAcento(s.numero + ' ' + s.resumo + ' ' + s.gestor + ' ' + s.status).indexOf(termo) >= 0;
+      });
+      var col = estado.ordem.coluna;
+      var sentido = estado.ordem.sentido;
+      function chave(s) {
+        if (col === 'status') return ordemStatus(s.statusCodigo);
+        if (col === 'numero') return s.numero;
+        if (col === 'resumo' || col === 'gestor') return semAcento(s[col]);
+        return s[col] || ''; // datas AAAA-MM-DD e instante ISO ordenam como texto
+      }
+      return lista.sort(function (a, b) {
+        var ka = chave(a), kb = chave(b);
+        // sem data vai sempre para o fim, em qualquer sentido
+        if (ka === '' && kb !== '') return 1;
+        if (kb === '' && ka !== '') return -1;
+        if (ka < kb) return -sentido;
+        if (ka > kb) return sentido;
+        // empate: término previsto mais próximo primeiro, depois o número
+        var ta = a.previsaoTermino || '9999', tb = b.previsaoTermino || '9999';
+        if (ta !== tb) return ta < tb ? -1 : 1;
+        return a.numero - b.numero;
+      });
+    }
+
+    function tempoNoStatus(s) {
+      var dias = diasEntre(diaBrasilia(s.statusDesde), estado.hoje);
+      if (dias === null) return '<span class="vazio-data">—</span>';
+      var texto = dias <= 0 ? 'desde hoje' : (dias === 1 ? 'há 1 dia' : 'há ' + dias + ' dias');
+      if (s.statusDesdeAproximado) {
+        // O ACS não diz quando o status mudou: só sabemos desde quando passamos a acompanhar.
+        texto = dias <= 0 ? 'pelo menos desde hoje' : (dias === 1 ? 'há 1 dia ou mais' : 'há ' + dias + ' dias ou mais');
+        return '<span title="O ACS não informa quando o status mudou. A contagem começa no dia em que esta tela passou a acompanhar a demanda.">' + texto + '</span>';
+      }
+      return texto;
+    }
+
+    function celulaData(iso) {
+      var d = dataDia(iso);
+      return '<td class="data">' + (d || '<span class="vazio-data">—</span>') + '</td>';
+    }
+
+    function renderLista() {
+      if (!estado.solicitacoes.length) {
+        elFiltros.hidden = true;
+        elLista.innerHTML = estado.coleta && estado.coleta.estado === 'nunca' ? ''
+          : '<div class="vazio">Nenhuma demanda em andamento no ACS.</div>';
+        return;
+      }
+      elFiltros.hidden = false;
+      renderChips();
+      var lista = visiveis();
+      if (!lista.length) {
+        elLista.innerHTML = '<div class="vazio">Nenhuma demanda bate com o filtro.</div>';
+        return;
+      }
+      var h = '<div class="tabela-scroll"><table class="grade"><thead><tr>';
+      COLUNAS.forEach(function (c) {
+        var marcada = estado.ordem.coluna === c.id;
+        h += '<th' + (marcada ? ' aria-sort="' + (estado.ordem.sentido > 0 ? 'ascending' : 'descending') + '"' : '') + '>' +
+          '<button type="button" data-ordem="' + c.id + '" title="Ordenar por ' + esc(c.rotulo.toLowerCase()) + '">' + esc(c.rotulo) + '</button></th>';
+      });
+      h += '</tr></thead><tbody>';
+      lista.forEach(function (s) {
+        h += '<tr><td class="numero">' + esc(s.numero) + '</td>' +
+          '<td><span class="status ' + classeStatus(s.statusCodigo) + '">' + esc(s.status) + '</span></td>' +
+          '<td class="resumo">' + esc(s.resumo) + '</td>' +
+          '<td class="gestor">' + esc(s.gestor) + '</td>' +
+          celulaData(s.dataSolicitacao) + celulaData(s.previsaoInicio) + celulaData(s.previsaoTermino) + celulaData(s.dataImplantacao) +
+          '<td class="tempo">' + tempoNoStatus(s) + '</td></tr>';
+      });
+      h += '</tbody></table></div>';
+      elLista.innerHTML = h;
+    }
+
+    function render() { renderColeta(); renderLista(); }
+
+    elChips.addEventListener('click', function (e) {
+      var chip = e.target.closest('.chip');
+      if (!chip) return;
+      var codigo = chip.getAttribute('data-status');
+      if (!codigo) estado.filtroStatus = {};
+      else if (estado.filtroStatus[codigo]) delete estado.filtroStatus[codigo];
+      else estado.filtroStatus[codigo] = true;
+      renderLista();
+    });
+    elBusca.addEventListener('input', function () { estado.termo = elBusca.value; renderLista(); });
+    elLista.addEventListener('click', function (e) {
+      var b = e.target.closest('button[data-ordem]');
+      if (!b) return;
+      var col = b.getAttribute('data-ordem');
+      estado.ordem = { coluna: col, sentido: estado.ordem.coluna === col ? -estado.ordem.sentido : 1 };
+      renderLista();
+    });
+
+    // ---- servidor ----
+
+    function pedirJson(url, opcoes) {
+      return fetch(url, opcoes).then(function (r) {
+        if (r.status === 401) { window.location.href = '/login.html'; return null; }
+        return r.json().then(function (j) { return { ok: r.ok, status: r.status, j: j }; });
+      });
+    }
+
+    function pararAcompanhamento() {
+      if (acompanhamento) { clearInterval(acompanhamento); acompanhamento = null; }
+    }
+    // Enquanto há pedido esperando o coletor, relê a lista de tempos em tempos.
+    function acompanharPedido() {
+      if (acompanhamento) return;
+      var voltas = 0;
+      acompanhamento = setInterval(function () {
+        voltas++;
+        if (voltas > ACOMPANHAR_NO_MAXIMO) { pararAcompanhamento(); return; }
+        carregar(true);
+      }, ACOMPANHAR_A_CADA_MS);
+    }
+
+    function carregar(silencioso) {
+      return pedirJson('/api/acs', { cache: 'no-store' }).then(function (x) {
+        if (!x) return;
+        if (!x.ok) {
+          if (silencioso) return; // falha passageira durante o acompanhamento: mantém o que está na tela
+          elQuando.textContent = '';
+          elFiltros.hidden = true;
+          elLista.innerHTML = '';
+          elAvisos.innerHTML = '<div class="aviso">' + esc((x.j && x.j.erro) || 'Não foi possível carregar as demandas agora.') + '</div>';
+          return;
+        }
+        estado.hoje = x.j.hoje;
+        estado.solicitacoes = x.j.solicitacoes || [];
+        estado.coleta = x.j.coleta;
+        render();
+        if (estado.coleta && estado.coleta.pedido) acompanharPedido(); else pararAcompanhamento();
+      }).catch(function () {
+        if (!silencioso) elAvisos.innerHTML = '<div class="aviso">Sem conexão com o servidor. Recarregue a página para tentar de novo.</div>';
+      });
+    }
+
+    btnAtualizar.addEventListener('click', function () {
+      estado.pedindo = true;
+      btnAtualizar.disabled = true;
+      pedirJson('/api/acs/atualizar', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' })
+        .then(function (x) {
+          estado.pedindo = false;
+          if (!x) return;
+          if (!x.ok) {
+            btnAtualizar.disabled = false;
+            elAvisos.insertAdjacentHTML('afterbegin', '<div class="aviso">' + esc((x.j && x.j.erro) || 'Não foi possível pedir a atualização.') + '</div>');
+            return;
+          }
+          if (estado.coleta) estado.coleta.pedido = x.j.pedido;
+          renderColeta();
+          acompanharPedido();
+        })
+        .catch(function () {
+          estado.pedindo = false;
+          btnAtualizar.disabled = false;
+          elAvisos.insertAdjacentHTML('afterbegin', '<div class="aviso">Sem conexão com o servidor. Tente de novo.</div>');
+        });
+    });
+
+    elRodape.innerHTML = 'A lista vem do ACS uma vez por dia útil, às 8h, e quando alguém clica em Atualizar. ' +
+      'A tela de Pontos de Função continua em <a href="/demandas/editar">Demandas e Pontos de Função</a>.';
+    elRodape.hidden = false;
+
+    carregar(false);
+  })();
+</script>

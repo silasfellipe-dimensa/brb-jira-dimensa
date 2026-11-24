@@ -19,6 +19,7 @@ const PAGINAS = path.join(__dirname, '..', 'paginas');
 // tela -> item que fica de fora do menu ('' = nenhum: tela que não é item)
 const TELAS = {
   'index.html': 'kanban',
+  'demandas-acs.html': 'demandas',
   'demandas.html': 'demandas',
   'demandas-historico.html': '',
   'expedicoes.html': 'expedicoes',

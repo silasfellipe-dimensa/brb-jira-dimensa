@@ -1,6 +1,7 @@
 const { createClient } = require('@supabase/supabase-js');
 const { deLinha } = require('./demandas');
 const { ITENS_PADRAO, deLinhaExpedicao } = require('./expedicoes');
+const { deLinhaAcs, MAX_SOLICITACOES } = require('./acs');
 
 // Dois clientes, de proposito:
 //
@@ -952,7 +953,115 @@ async function removerItemExpedicao(expedicaoId, itemId, email) {
   }
 }
 
+/* ---- Demandas do ACS (tabelas acs_*, supabase-acs.sql) ----
+ * Mesmo contrato das demais: devolvem { ok, ... }, nunca lançam, e o erro cru
+ * do Postgres fica só no log. semTabela = o script SQL ainda não foi rodado. */
+const COLUNAS_ACS = 'numero,sistema,status_codigo,status,resumo,gestor,data_solicitacao,previsao_inicio,' +
+  'previsao_termino,data_implantacao,status_desde,primeira_coleta';
+
+function falhaAcs(contexto, erro) {
+  console.error(`[supabase] falha ao ${contexto}:`, erro.message);
+  return { ok: false, semTabela: !!erro.semTabela };
+}
+function erroAcs(error) {
+  return Object.assign(new Error(error.message), { semTabela: !!semTabelaExpedicoes(error) });
+}
+
+async function listarSolicitacoesAcs() {
+  try {
+    const { data, error } = await db().from('acs_solicitacoes').select(COLUNAS_ACS)
+      .eq('em_andamento', true).order('numero', { ascending: false }).limit(MAX_SOLICITACOES);
+    if (error) throw erroAcs(error);
+    return { ok: true, solicitacoes: (data || []).map(deLinhaAcs) };
+  } catch (erro) {
+    return falhaAcs('listar solicitações do ACS', erro);
+  }
+}
+
+/** O que a tela e o coletor precisam saber da coleta: a última que deu certo,
+ * a última tentativa (certa ou não) e se há pedido do botão Atualizar. */
+async function lerEstadoColetaAcs() {
+  try {
+    const [ultima, ultimaOk, pedido] = await Promise.all([
+      db().from('acs_coletas').select('quando,ok,quantidade,erro').order('quando', { ascending: false }).limit(1),
+      db().from('acs_coletas').select('quando,quantidade').eq('ok', true).order('quando', { ascending: false }).limit(1),
+      db().from('acs_pedidos').select('pedido_por,pedido_em').is('atendido_em', null).order('pedido_em', { ascending: true }).limit(1)
+    ]);
+    for (const r of [ultima, ultimaOk, pedido]) if (r.error) throw erroAcs(r.error);
+    const u = (ultima.data || [])[0] || null;
+    const o = (ultimaOk.data || [])[0] || null;
+    const p = (pedido.data || [])[0] || null;
+    return {
+      ok: true,
+      ultimaOk: o ? o.quando : null,
+      ultimaFalha: u && !u.ok ? { quando: u.quando, erro: u.erro || '' } : null,
+      pedido: p ? { pedidoPor: p.pedido_por, pedidoEm: p.pedido_em } : null
+    };
+  } catch (erro) {
+    return falhaAcs('ler o estado da coleta do ACS', erro);
+  }
+}
+
+async function fecharPedidosAcs(agora) {
+  const { error } = await db().from('acs_pedidos').update({ atendido_em: agora }).is('atendido_em', null);
+  if (error) console.error('[supabase] falha ao fechar pedidos de atualização do ACS:', error.message);
+}
+
+/** Grava a lista que o coletor mandou. Quem não veio nesta lista deixa de
+ * estar "em andamento" (a linha fica, para o histórico). O histórico de status
+ * é gravado pelo gatilho do banco. */
+async function gravarCargaAcs(linhas) {
+  try {
+    const agora = new Date().toISOString();
+    const gravar = await db().from('acs_solicitacoes')
+      .upsert(linhas.map((l) => ({ ...l, em_andamento: true, ultima_coleta: agora })), { onConflict: 'numero' });
+    if (gravar.error) throw erroAcs(gravar.error);
+    const sairam = await db().from('acs_solicitacoes')
+      .update({ em_andamento: false }).eq('em_andamento', true).lt('ultima_coleta', agora);
+    if (sairam.error) throw erroAcs(sairam.error);
+    const coleta = await db().from('acs_coletas').insert({ quando: agora, ok: true, quantidade: linhas.length });
+    if (coleta.error) throw erroAcs(coleta.error);
+    await fecharPedidosAcs(agora);
+    return { ok: true, quantidade: linhas.length };
+  } catch (erro) {
+    return falhaAcs('gravar a carga do ACS', erro);
+  }
+}
+
+/** Coleta que não deu certo (ACS fora do ar, login recusado, lista inválida).
+ * O pedido do botão Atualizar também se fecha: a tela mostra a falha, e quem
+ * quiser pede de novo - senão o coletor ficaria tentando sem parar. */
+async function registrarFalhaColetaAcs(motivo) {
+  try {
+    const agora = new Date().toISOString();
+    const { error } = await db().from('acs_coletas').insert({ quando: agora, ok: false, erro: motivo });
+    if (error) throw erroAcs(error);
+    await fecharPedidosAcs(agora);
+    return { ok: true };
+  } catch (erro) {
+    return falhaAcs('registrar a falha da coleta do ACS', erro);
+  }
+}
+
+/** Botão "Atualizar". Um pedido por vez: se já há um esperando, é ele que vale. */
+async function pedirAtualizacaoAcs(email) {
+  try {
+    const pendente = await db().from('acs_pedidos').select('pedido_por,pedido_em').is('atendido_em', null).limit(1);
+    if (pendente.error) throw erroAcs(pendente.error);
+    if (pendente.data && pendente.data.length) {
+      return { ok: true, jaPedido: true, pedido: { pedidoPor: pendente.data[0].pedido_por, pedidoEm: pendente.data[0].pedido_em } };
+    }
+    const { data, error } = await db().from('acs_pedidos')
+      .insert({ pedido_por: String(email || '').trim().toLowerCase() }).select('pedido_por,pedido_em').single();
+    if (error) throw erroAcs(error);
+    return { ok: true, jaPedido: false, pedido: { pedidoPor: data.pedido_por, pedidoEm: data.pedido_em } };
+  } catch (erro) {
+    return falhaAcs('registrar o pedido de atualização do ACS', erro);
+  }
+}
+
 module.exports = {
+  listarSolicitacoesAcs, lerEstadoColetaAcs, gravarCargaAcs, registrarFalhaColetaAcs, pedirAtualizacaoAcs,
   lerExpedicao, listarChavesExpedicoes, listarExpedicoes, criarExpedicao, atualizarExpedicao, removerExpedicao,
   contarExpedicoesExcluidas, listarExpedicoesExcluidas, restaurarExpedicao,
   criarItemExpedicao, atualizarItemExpedicao, atualizarObservacaoItem, removerItemExpedicao,

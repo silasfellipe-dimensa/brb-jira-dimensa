@@ -375,7 +375,7 @@
       mostra.map(cardHtml).join('') + (n > mostra.length ? '<a class="bz-mais" href="' + esc(telaInteira.getAttribute('href')) + '">Ver todas na tela inteira →</a>' : '') + '</div>';
   }
   function baseHtml(b) {
-    var linhas = b.demandas.map(function (d) { return '<li><a href="/demandas">Demandas</a> · ' + esc(d.acs) + ' · ' + esc(d.nome) + (d.jira ? ' · ' + esc(d.jira) : '') + '</li>'; })
+    var linhas = b.demandas.map(function (d) { return '<li><a href="/demandas/editar">Demandas</a> · ' + esc(d.acs) + ' · ' + esc(d.nome) + (d.jira ? ' · ' + esc(d.jira) : '') + '</li>'; })
       .concat(b.expedicoes.map(function (e) { return '<li><a href="/expedicoes">Expedições</a> · ' + esc(e.nome) + (e.jira ? ' · ' + esc(e.jira) : '') + '</li>'; }));
     return linhas.length ? '<div class="bz-sec"><h4>Na nossa base</h4><ul class="bz-base">' + linhas.join('') + '</ul></div>' : '';
   }

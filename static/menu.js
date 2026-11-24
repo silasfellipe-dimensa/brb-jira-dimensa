@@ -63,12 +63,12 @@
   };
 
   /* Mesma ordem do Portal. Cada item só aparece para quem tem acesso:
-   *   Expedições -> eu.editor (Dimensa/Evertec);
+   *   Demandas e Expedições -> eu.editor (Dimensa/Evertec);
    *   Qualidade  -> eu.qualidadeUrl (o servidor só manda para quem o
    *                 Qualidade aceita; é outro sistema, com login próprio). */
   var ITENS = [
     { id: 'kanban', rotulo: 'Kanban BRB', href: '/', dica: 'Quadro do sprint, espelhado do Jira' },
-    { id: 'demandas', rotulo: 'Demandas', href: '/demandas', dica: 'Demandas, pontos de função e o que cada etapa já entregou' },
+    { id: 'demandas', rotulo: 'Demandas', href: '/demandas', dica: 'Demandas em andamento no ACS do BRB', soEquipe: true },
     { id: 'expedicoes', rotulo: 'Expedições', href: '/expedicoes', dica: 'Checklist do time antes de comitar e de expedir', soEquipe: true },
     { id: 'dashboard', rotulo: 'Dashboard', href: '/dashboard', dica: 'Métricas e andamento do sprint' },
     // /ir/qualidade leva o passe do login único (sso.js); sem ele, o servidor

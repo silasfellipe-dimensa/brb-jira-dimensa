@@ -13,8 +13,10 @@ const {
   listarDemandas, criarDemanda, atualizarDemanda, removerDemanda, listarHistoricoDemandas,
   lerExpedicao, listarChavesExpedicoes, listarExpedicoes, criarExpedicao, atualizarExpedicao, removerExpedicao,
   contarExpedicoesExcluidas, listarExpedicoesExcluidas, restaurarExpedicao,
-  criarItemExpedicao, atualizarItemExpedicao, atualizarObservacaoItem, removerItemExpedicao, registrarGravacaoJira
+  criarItemExpedicao, atualizarItemExpedicao, atualizarObservacaoItem, removerItemExpedicao, registrarGravacaoJira,
+  listarSolicitacoesAcs, lerEstadoColetaAcs, gravarCargaAcs, registrarFalhaColetaAcs, pedirAtualizacaoAcs
 } = require('./supabase');
+const { normalizarCarga, normalizarErroColetor, situacaoColeta, deveColetar, conferirAssinatura } = require('./acs');
 const { podeGravarJira, lerCampos, validarPedido, gravarCampo } = require('./gravarJira');
 const {
   normalizarCampos, idDemanda, interpretarMes, interpretarListaMeses, mesesDisponiveis,
@@ -57,7 +59,14 @@ const SENHA_MINIMA = 8;
 // acento e quebra de linha passa de 10kb).
 const jsonPadrao = express.json({ limit: '10kb' });
 const jsonJira = express.json({ limit: '32kb' });
-app.use((req, res, next) => (req.path.startsWith('/api/jira/') ? jsonJira : jsonPadrao)(req, res, next));
+// Coletor do ACS: a lista de solicitações é grande (dezenas de kb), e o corpo
+// cru é guardado porque a assinatura do pedido é calculada sobre ele.
+const jsonColetor = express.json({ limit: '1mb', verify: (req, res, buf) => { req.corpoCru = buf; } });
+function leitorDeCorpo(caminho) {
+  if (caminho.startsWith('/api/acs/coletor/')) return jsonColetor;
+  return caminho.startsWith('/api/jira/') ? jsonJira : jsonPadrao;
+}
+app.use((req, res, next) => leitorDeCorpo(req.path)(req, res, next));
 app.use(cookieParser());
 
 app.use((req, res, next) => {
@@ -355,13 +364,98 @@ app.get('/dashboard', exigirSessaoPagina, (req, res) => {
   res.sendFile(path.join(PUBLIC_DIR, 'dashboard.html'));
 });
 
-/** Demandas e Pontos de Função: qualquer pessoa logada vê, só editor altera.
- * Duas rotas, uma página: /demandas só mostra (mesmo para editor, para poder
- * apresentar sem risco de mexer num valor), /demandas/editar é onde se
- * preenche. Cada gravação é por campo (PATCH) e carrega quem mexeu e quando. */
-app.get('/demandas', exigirSessaoPagina, (req, res) => {
-  res.sendFile(path.join(PUBLIC_DIR, 'demandas.html'));
+/** Demandas: as solicitações em andamento no ACS do BRB (acs.js). Só a equipe
+ * (Dimensa/Evertec) vê - a lista traz nome de gestor e dado interno do banco.
+ *
+ * O servidor não alcança o ACS (rede interna do BRB, login Windows): quem
+ * busca é o coletor (coletor/coletor-acs.ps1), que manda a lista para
+ * /api/acs/coletor/carga. A tela só lê o que está gravado. */
+app.get('/demandas', exigirSessaoPagina, exigirEquipePagina, (req, res) => {
+  res.sendFile(path.join(PUBLIC_DIR, 'demandas-acs.html'));
 });
+
+const MSG_SEM_TABELA_ACS = 'As demandas do ACS ainda não foram ativadas no banco (falta rodar supabase-acs.sql).';
+
+function coletaParaTela(estado, agora) {
+  return {
+    ultimaOk: estado.ultimaOk,
+    ...situacaoColeta(estado.ultimaOk, agora),
+    ultimaFalha: estado.ultimaFalha,
+    pedido: estado.pedido
+  };
+}
+
+app.get('/api/acs', exigirSessaoApi, exigirEditorApi, async (req, res) => {
+  const [lista, estado] = await Promise.all([listarSolicitacoesAcs(), lerEstadoColetaAcs()]);
+  if (lista.semTabela || estado.semTabela) return res.status(503).json({ erro: MSG_SEM_TABELA_ACS, semTabela: true });
+  if (!lista.ok || !estado.ok) return res.status(503).json({ erro: 'Não foi possível carregar as demandas agora.' });
+  res.json({ hoje: hojeBrasilia(), solicitacoes: lista.solicitacoes, coleta: coletaParaTela(estado, new Date()) });
+});
+
+// Botão "Atualizar": não busca nada na hora (o servidor não alcança o ACS),
+// só deixa o pedido para o coletor atender na próxima vez que perguntar.
+app.post('/api/acs/atualizar', exigirSessaoApi, exigirEditorApi, async (req, res) => {
+  const r = await pedirAtualizacaoAcs(req.usuario.email);
+  if (r.semTabela) return res.status(503).json({ erro: MSG_SEM_TABELA_ACS, semTabela: true });
+  if (!r.ok) return res.status(500).json({ erro: 'Não foi possível registrar o pedido de atualização.' });
+  if (!r.jaPedido) console.log(`[acs] ${req.usuario.email} pediu atualização`);
+  res.status(r.jaPedido ? 200 : 201).json({ pedido: r.pedido, jaPedido: r.jaPedido });
+});
+
+/* ---- coletor do ACS (não exige sessão - exige a assinatura do coletor) ----
+ * Não autentica por cookie, então não há CSRF: o navegador nunca monta estes
+ * cabeçalhos sozinho. Sem ACS_COLETOR_SEGREDO no ambiente, tudo responde 401. */
+function exigirColetor(req, res, next) {
+  const confere = conferirAssinatura({
+    segredo: process.env.ACS_COLETOR_SEGREDO,
+    timestamp: req.get('x-coletor-timestamp'),
+    assinatura: req.get('x-coletor-assinatura'),
+    metodo: req.method,
+    caminho: req.path,
+    corpo: req.corpoCru,
+    agora: Date.now()
+  });
+  if (!confere) return res.status(401).json({ erro: 'Não autorizado.' });
+  next();
+}
+
+// "Tenho que coletar agora?" A regra (8h de dia útil, ou pedido do botão) fica
+// no servidor: muda sem precisar mexer na máquina do coletor.
+app.get('/api/acs/coletor/tarefa', exigirColetor, async (req, res) => {
+  const estado = await lerEstadoColetaAcs();
+  if (!estado.ok) return res.status(503).json({ erro: estado.semTabela ? MSG_SEM_TABELA_ACS : 'Banco indisponível.' });
+  res.json(deveColetar({
+    agora: new Date(),
+    ultimaOk: estado.ultimaOk,
+    ultimaFalha: estado.ultimaFalha && estado.ultimaFalha.quando,
+    pedidoPendente: !!estado.pedido
+  }));
+});
+
+// Corpo: { solicitacoes: [...] } quando o ACS respondeu, ou { erro: "..." }
+// quando o coletor não conseguiu (a falha fica registrada e aparece na tela).
+app.post('/api/acs/coletor/carga', exigirColetor, async (req, res) => {
+  const falha = normalizarErroColetor(req.body);
+  if (falha) {
+    console.warn(`[acs] o coletor avisou que não conseguiu coletar: ${falha}`);
+    const r = await registrarFalhaColetaAcs(falha);
+    return res.status(r.ok ? 200 : 503).json({ ok: r.ok, registrado: 'falha' });
+  }
+  const n = normalizarCarga(req.body);
+  if (!n.ok) {
+    console.warn(`[acs] carga recusada: ${n.erro}`);
+    await registrarFalhaColetaAcs(n.erro);
+    return res.status(400).json({ erro: n.erro });
+  }
+  const r = await gravarCargaAcs(n.linhas);
+  if (!r.ok) return res.status(503).json({ erro: r.semTabela ? MSG_SEM_TABELA_ACS : 'Não foi possível gravar a carga.' });
+  console.log(`[acs] carga gravada: ${r.quantidade} solicitações em andamento`);
+  res.json({ ok: true, quantidade: r.quantidade });
+});
+
+/** Demandas e Pontos de Função (tela anterior): continua em /demandas/editar,
+ * só para editor. Expedições e Pesquisa ainda leem estes dados. Cada gravação
+ * é por campo (PATCH) e carrega quem mexeu e quando. */
 
 app.get('/demandas/editar', exigirSessaoPagina, exigirEditorPagina, (req, res) => {
   res.sendFile(path.join(PUBLIC_DIR, 'demandas.html'));
