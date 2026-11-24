@@ -34,7 +34,7 @@ const {
   COOKIE_NAME,
   SESSAO_DIAS,
   emailPermitido,
-  segredoConfere,
+  cronAutorizado,
   criarSessao,
   exigirSessaoPagina,
   exigirSessaoApi,
@@ -195,7 +195,8 @@ app.get('/login.html', (req, res) => {
 app.post('/auth/cadastro', limitarTentativas, async (req, res) => {
   const { email, senha } = req.body;
 
-  if (!email || !senha) {
+  // Só texto: o corpo é JSON e pode trazer objeto, lista ou número.
+  if (!email || !senha || typeof email !== 'string' || typeof senha !== 'string') {
     return res.status(400).json({ erro: 'Informe e-mail e senha.' });
   }
 
@@ -270,7 +271,7 @@ app.get('/ir/qualidade', exigirSessaoPagina, (req, res) => {
 app.post('/auth/entrar', limitarTentativas, async (req, res) => {
   const { email, senha } = req.body;
 
-  if (!email || !senha) {
+  if (!email || !senha || typeof email !== 'string' || typeof senha !== 'string') {
     return res.status(400).json({ erro: 'Informe e-mail e senha.' });
   }
 
@@ -307,7 +308,7 @@ app.post('/auth/logout', (req, res) => {
 // Authorization com o CRON_SECRET, que o navegador nunca envia sozinho.
 app.get('/api/cron-atualizar', async (req, res) => {
   const auth = req.headers.authorization || '';
-  if (!segredoConfere(auth, `Bearer ${process.env.CRON_SECRET}`)) {
+  if (!cronAutorizado(auth, process.env.CRON_SECRET)) {
     return res.status(401).json({ erro: 'Não autorizado.' });
   }
 
@@ -489,8 +490,10 @@ app.get('/api/demandas/historico', exigirSessaoApi, exigirEditorApi, async (req,
 
 /** ?meses=2026-09,2026-10 filtra; sem o parâmetro devolve todos os meses.
  * O resumo (por mês e consolidado) sai daqui, calculado numa função testada,
- * para a tela não reimplementar a regra do consolidado. */
-app.get('/api/demandas', exigirSessaoApi, async (req, res) => {
+ * para a tela não reimplementar a regra do consolidado.
+ * Só a equipe: a única tela que lê isto (/demandas/editar) já é só dela, e a
+ * resposta traz pontos de função (cobrança), observações e e-mails. */
+app.get('/api/demandas', exigirSessaoApi, exigirEditorApi, async (req, res) => {
   let meses = null;
   if (req.query.meses !== undefined) {
     const p = interpretarListaMeses(req.query.meses);

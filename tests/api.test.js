@@ -82,6 +82,24 @@ describe('portao de acesso — sem sessao ninguem entra', () => {
     assert.strictEqual(r.status, 401);
   });
 
+  // Bug (auditoria 2026-11-24): o cookie vale 7 dias e so a assinatura era
+  // conferida - tirar um dominio da lista de acesso nao tirava quem ja
+  // estava logado. Agora a lista e conferida a cada pedido.
+  test('sessao assinada de e-mail fora da lista de acesso nao entra', async () => {
+    for (const email of ['alguem@gmail.com', 'x@dominio-que-saiu.com.br', 'a@dimensa.com.br@invasor.com']) {
+      const cookie = `${COOKIE_NAME}=${criarSessao({ email })}`;
+      assert.strictEqual((await pedir('/api/dados', { headers: { Cookie: cookie } })).status, 401, email);
+      assert.strictEqual((await pedir('/api/eu', { headers: { Cookie: cookie } })).status, 401, email);
+      const pagina = await pedir('/', { headers: { Cookie: cookie } });
+      assert.strictEqual(pagina.headers.get('location'), '/login.html', email);
+    }
+    // sessao sem e-mail (ou com e-mail que nao e texto) tambem nao
+    for (const carga of [{}, { email: 123 }, { email: ['a@dimensa.com.br'] }]) {
+      const cookie = `${COOKIE_NAME}=${criarSessao(carga)}`;
+      assert.strictEqual((await pedir('/api/dados', { headers: { Cookie: cookie } })).status, 401);
+    }
+  });
+
   test('cookie de sessao forjado com outro segredo nao entra', async () => {
     const r = await pedir('/api/dados', { headers: { Cookie: `${COOKIE_NAME}=token.forjado.aqui` } });
     assert.strictEqual(r.status, 401);
@@ -215,8 +233,11 @@ describe('demandas — quem ve, quem edita', () => {
     assert.ok(!vazamento.test(JSON.stringify(await r.json())));
   });
 
-  // O guard compara o dominio inteiro. Tentar passar por Dimensa/Evertec com
-  // um e-mail parecido nao pode abrir nenhuma escrita nem o historico.
+  // Tentar passar por Dimensa/Evertec com um e-mail parecido nao pode abrir
+  // nenhuma escrita nem o historico. Esses e-mails nem estao na lista de
+  // acesso, entao a sessao deles ja e recusada na entrada (401, e a pagina
+  // manda para o login); o guard de dominio inteiro (souEditor) tem os
+  // proprios testes em unidade.test.js.
   test('e-mails parecidos com Dimensa/Evertec nao editam nem leem o historico', async () => {
     for (const email of ['x@naodimensa.com.br', 'x@sub.dimensa.com.br', 'x@dimensa.com.br.invasor.com', 'x@evertecinc.com', '@dimensa.com.br', 'a@b@dimensa.com.br']) {
       const cookie = `${COOKIE_NAME}=${criarSessao({ email })}`;
@@ -226,10 +247,23 @@ describe('demandas — quem ve, quem edita', () => {
         await enviarJson('DELETE', '/api/demandas/1', undefined, cookie),
         await pedir('/api/demandas/historico', { headers: { Cookie: cookie } })
       ];
-      respostas.forEach((r) => assert.strictEqual(r.status, 403, `${email} deveria levar 403, veio ${r.status}`));
+      respostas.forEach((r) => assert.strictEqual(r.status, 401, `${email} deveria levar 401, veio ${r.status}`));
       const editar = await pedir('/demandas/editar', { headers: { Cookie: cookie } });
-      assert.strictEqual(editar.headers.get('location'), '/demandas', `${email} nao pode abrir a edicao`);
+      assert.strictEqual(editar.headers.get('location'), '/login.html', `${email} nao pode abrir a edicao`);
     }
+  });
+
+  // Bug (auditoria 2026-11-24): a tela de pontos de funcao ficou so para a
+  // equipe, mas a API que ela le continuava aberta a qualquer logado - o BRB
+  // lia os dados de cobranca chamando a API direto.
+  test('BRB e TOTVS nao LEEM os pontos de funcao pela API; a equipe passa do guard', async () => {
+    const totvs = `${COOKIE_NAME}=${criarSessao({ email: 'fulano@totvs.com.br' })}`;
+    for (const cookie of [cookieLeitor(), totvs]) {
+      assert.strictEqual((await pedir('/api/demandas', { headers: { Cookie: cookie } })).status, 403);
+      assert.strictEqual((await pedir('/api/demandas?meses=2026-10', { headers: { Cookie: cookie } })).status, 403);
+    }
+    // com o banco fora do ar o guard passa e a falha vira 503 (nao 403)
+    assert.strictEqual((await pedir('/api/demandas', { headers: { Cookie: cookieEditor() } })).status, 503);
   });
 
   test('cookie adulterado ou de outra assinatura nao vale como sessao de editor', async () => {
@@ -276,13 +310,15 @@ describe('demandas — quem ve, quem edita', () => {
     }
   });
 
-  test('expedicoes: e-mails parecidos com Dimensa/Evertec tambem levam 403', async () => {
+  // Fora da lista de acesso: a sessao e recusada na entrada (ver o teste
+  // equivalente em Demandas).
+  test('expedicoes: e-mails parecidos com Dimensa/Evertec nao passam nem da sessao', async () => {
     for (const email of ['x@naodimensa.com.br', 'x@sub.dimensa.com.br', 'x@dimensa.com.br.invasor.com', 'x@evertecinc.com']) {
       const cookie = `${COOKIE_NAME}=${criarSessao({ email })}`;
       for (const [metodo, caminho, corpo] of ROTAS_EXPEDICAO) {
-        assert.strictEqual((await enviarJson(metodo, caminho, corpo, cookie)).status, 403, `${email} ${metodo} ${caminho}`);
+        assert.strictEqual((await enviarJson(metodo, caminho, corpo, cookie)).status, 401, `${email} ${metodo} ${caminho}`);
       }
-      assert.strictEqual((await pedir('/expedicoes', { headers: { Cookie: cookie } })).headers.get('location'), '/');
+      assert.strictEqual((await pedir('/expedicoes', { headers: { Cookie: cookie } })).headers.get('location'), '/login.html');
     }
   });
 
@@ -411,6 +447,15 @@ describe('cron — so o agendador dispara', () => {
     assert.strictEqual(r.status, 401);
   });
 
+  // "Bearer undefined" era o que o servidor esperava quando faltava a
+  // variavel CRON_SECRET (ver cronAutorizado em unidade.test.js).
+  test('"Bearer undefined" e "Bearer " nao passam', async () => {
+    for (const valor of ['Bearer undefined', 'Bearer ', 'Bearer null']) {
+      const r = await pedir('/api/cron-atualizar', { headers: { Authorization: valor } });
+      assert.strictEqual(r.status, 401, valor);
+    }
+  });
+
   test('cookie de usuario nao serve para o cron', async () => {
     const r = await pedir('/api/cron-atualizar', { headers: { Cookie: cookieValido() } });
     assert.strictEqual(r.status, 401);
@@ -449,6 +494,30 @@ describe('cadastro — barreira de dominio e senha', () => {
 
   test('recusa login sem campos', async () => {
     assert.strictEqual((await postarJson('/auth/entrar', {})).status, 400);
+  });
+
+  // Bug (auditoria 2026-11-24): e-mail que nao e texto (objeto, lista) fazia
+  // o servidor lancar dentro do handler e o PROCESSO caia - qualquer pessoa,
+  // sem login, derrubava o sistema com um pedido. Tem que ser um 400 comum, e
+  // o servidor tem que continuar respondendo depois.
+  test('e-mail ou senha que nao sao texto viram 400, sem derrubar o servidor', async () => {
+    const ruins = [
+      { email: { a: 1 }, senha: 'senhalonga123' },
+      { email: ['fulano@dimensa.com.br'], senha: 'senhalonga123' },
+      { email: 12345, senha: 'senhalonga123' },
+      { email: true, senha: 'senhalonga123' },
+      { email: 'fulano@dimensa.com.br', senha: { length: 99 } },
+      { email: 'fulano@dimensa.com.br', senha: 1234567890 }
+    ];
+    // IP proprio por pedido: sao 12 pedidos e o limite e 10 por IP - sem isto
+    // o teste bateria no limite (429) e gastaria a cota dos testes vizinhos.
+    let n = 0;
+    const ip = () => ({ 'x-forwarded-for': `203.0.113.${100 + n++}` });
+    for (const corpo of ruins) {
+      assert.strictEqual((await postarJson('/auth/cadastro', corpo, ip())).status, 400, 'cadastro ' + JSON.stringify(corpo));
+      assert.strictEqual((await postarJson('/auth/entrar', corpo, ip())).status, 400, 'entrar ' + JSON.stringify(corpo));
+    }
+    assert.strictEqual((await pedir('/login.html')).status, 200, 'o servidor continua de pe');
   });
 });
 

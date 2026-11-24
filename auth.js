@@ -31,10 +31,25 @@ const emailsAdmin = (process.env.ADMIN_EMAILS || '')
 /** Confere se o e-mail pode acessar. Chamada tanto no cadastro quanto no
  * login, de proposito - ninguem entra so por ter passado no cadastro. */
 function emailPermitido(email) {
+  // Só texto: o corpo do pedido é JSON e pode trazer objeto ou lista no lugar
+  // do e-mail. Sem esta linha, o .toLowerCase() abaixo lançava e derrubava o
+  // processo (rejeição não tratada num handler async do Express 4).
+  if (typeof email !== 'string') return false;
   const e = email.toLowerCase();
   if (emailsPermitidos.includes(e)) return true;
-  const dominio = e.split('@')[1] || '';
-  return dominiosPermitidos.includes(dominio);
+  // Domínio INTEIRO e um único "@", como em souEditor: com split('@')[1],
+  // "a@dimensa.com.br@invasor.com" passava.
+  const partes = e.split('@');
+  return partes.length === 2 && partes[0] !== '' && dominiosPermitidos.includes(partes[1]);
+}
+
+/** Segredo do cron (cabeçalho "Authorization: Bearer <CRON_SECRET>").
+ * Falha fechada: sem CRON_SECRET no ambiente (ou vazio) ninguém passa. Antes,
+ * a comparação era com o texto montado `Bearer ${process.env.CRON_SECRET}`,
+ * que sem a variável virava "Bearer undefined" - e esse valor era aceito. */
+function cronAutorizado(cabecalho, segredo) {
+  if (typeof segredo !== 'string' || segredo === '') return false;
+  return segredoConfere(cabecalho, `Bearer ${segredo}`);
 }
 
 function souAdmin(email) {
@@ -69,10 +84,18 @@ function lerSessao(token) {
   }
 }
 
-/** Middleware: bloqueia paginas HTML sem sessao valida, mandando pro /login. */
-function exigirSessaoPagina(req, res, next) {
+/** Sessão válida E e-mail ainda na lista de acesso. O cookie vale 7 dias: sem
+ * a segunda parte, tirar um domínio (ou um e-mail) da lista só fazia efeito
+ * quando o cookie de cada pessoa vencesse. */
+function usuarioDaSessao(req) {
   const token = req.cookies[COOKIE_NAME];
   const usuario = token && lerSessao(token);
+  return usuario && emailPermitido(usuario.email) ? usuario : null;
+}
+
+/** Middleware: bloqueia paginas HTML sem sessao valida, mandando pro /login. */
+function exigirSessaoPagina(req, res, next) {
+  const usuario = usuarioDaSessao(req);
   if (!usuario) return res.redirect('/login.html');
   req.usuario = usuario;
   next();
@@ -80,8 +103,7 @@ function exigirSessaoPagina(req, res, next) {
 
 /** Middleware: bloqueia chamadas de API sem sessao valida, com 401 json. */
 function exigirSessaoApi(req, res, next) {
-  const token = req.cookies[COOKIE_NAME];
-  const usuario = token && lerSessao(token);
+  const usuario = usuarioDaSessao(req);
   if (!usuario) return res.status(401).json({ erro: 'Sessão expirada ou inexistente. Faça login novamente.' });
   req.usuario = usuario;
   next();
@@ -164,6 +186,7 @@ module.exports = {
   SESSAO_DIAS,
   emailPermitido,
   segredoConfere,
+  cronAutorizado,
   criarSessao,
   lerSessao,
   exigirSessaoPagina,

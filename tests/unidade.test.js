@@ -14,7 +14,7 @@ const { test, describe } = require('node:test');
 const assert = require('node:assert');
 
 const {
-  emailPermitido, segredoConfere, criarSessao, lerSessao, souAdmin, exigirAdminApi, souEditor, exigirEditorApi
+  emailPermitido, segredoConfere, cronAutorizado, criarSessao, lerSessao, souAdmin, exigirAdminApi, souEditor, exigirEditorApi
 } = require('../auth');
 const {
   mapearColunas, montarColunas, montarMetricas, epicoDe, ehSubtarefa,
@@ -713,6 +713,53 @@ describe('segredoConfere — autenticacao do cron', () => {
 
   test('recusa prefixo correto mas incompleto', () => {
     assert.ok(!segredoConfere('Bearer abc', 'Bearer abc123'));
+  });
+});
+
+describe('cronAutorizado — o cron falha FECHADO sem o segredo', () => {
+  test('aceita so "Bearer <segredo>" exato', () => {
+    assert.ok(cronAutorizado('Bearer abc123', 'abc123'));
+    assert.ok(!cronAutorizado('Bearer errado', 'abc123'));
+    assert.ok(!cronAutorizado('abc123', 'abc123'));
+    assert.ok(!cronAutorizado('', 'abc123'));
+    assert.ok(!cronAutorizado(undefined, 'abc123'));
+  });
+
+  // Bug (auditoria 2026-11-24): sem CRON_SECRET no ambiente, o valor esperado
+  // virava o texto "Bearer undefined", e quem mandasse isso disparava a carga.
+  test('sem segredo configurado (ausente ou vazio) ninguem passa', () => {
+    for (const segredo of [undefined, null, '', 0, false]) {
+      assert.ok(!cronAutorizado('Bearer undefined', segredo));
+      assert.ok(!cronAutorizado('Bearer null', segredo));
+      assert.ok(!cronAutorizado('Bearer ', segredo));
+      assert.ok(!cronAutorizado('Bearer', segredo));
+      assert.ok(!cronAutorizado('', segredo));
+    }
+  });
+});
+
+describe('emailPermitido — entrada estranha nao passa nem derruba', () => {
+  // Bug (auditoria 2026-11-24): .toLowerCase() num valor que nao e texto
+  // lancava e derrubava o processo.
+  test('o que nao e texto devolve false, sem lancar', () => {
+    for (const v of [undefined, null, 123, true, {}, { a: 1 }, ['fulano@dimensa.com.br'], () => 'x']) {
+      assert.strictEqual(emailPermitido(v), false);
+    }
+  });
+
+  // Bug: com split('@')[1], o dominio lido era o do MEIO.
+  test('mais de um "@" ou sem nome antes do "@" nao passa', () => {
+    assert.ok(!emailPermitido('a@dimensa.com.br@invasor.com'));
+    assert.ok(!emailPermitido('a@b@dimensa.com.br'));
+    assert.ok(!emailPermitido('@dimensa.com.br'));
+    assert.ok(!emailPermitido('dimensa.com.br'));
+    assert.ok(!emailPermitido(''));
+  });
+
+  test('o caso normal continua passando, com maiusculas e "+"', () => {
+    assert.ok(emailPermitido('Fulano.Silva@DIMENSA.com.br'));
+    assert.ok(emailPermitido('fulano+teste@evertecinc.com.br'));
+    assert.ok(emailPermitido('cliente@brb.com.br'));
   });
 });
 
