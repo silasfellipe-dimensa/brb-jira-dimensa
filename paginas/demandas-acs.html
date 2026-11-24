@@ -60,18 +60,31 @@
   main { max-width: 1400px; margin: 0 auto; padding: 22px 28px 60px; }
   .painel { background: var(--bg-panel); border: 1px solid var(--line-soft); border-radius: 10px; padding: 16px 18px 18px; box-shadow: var(--shadow); }
 
-  /* Linha da coleta: quando foi a última atualização + botão Atualizar. */
-  .coleta { display: flex; align-items: center; justify-content: space-between; gap: 12px 20px; flex-wrap: wrap; margin-bottom: 14px; }
-  .coleta .quando { font-size: 0.85rem; color: var(--ink-dim); }
-  .coleta .quando b { color: var(--ink); }
+  /* Barra de filtros e botões: o mesmo padrão da tela de Expedições (rótulo +
+     select, com a contagem dentro da opção; botões empurrados para a direita). */
   .btn {
-    display: inline-flex; align-items: center; gap: 7px; font-size: 0.85rem; font-weight: 700;
-    border: 1px solid var(--ink); border-radius: 100px; padding: 8px 18px 8px 14px; background: var(--ink); color: var(--bg);
-    transition: transform .15s ease;
+    display: inline-flex; align-items: center; gap: 6px; font-size: 0.8rem; color: var(--ink-dim); text-decoration: none;
+    border: 1px solid var(--line); border-radius: 7px; padding: 7px 12px; background: var(--bg-panel);
   }
-  .btn:hover { transform: translateY(-1px); }
-  .btn:disabled { opacity: 0.6; cursor: default; transform: none; }
-  .btn svg { width: 15px; height: 15px; fill: none; stroke: var(--accent); stroke-width: 2.3; stroke-linecap: round; stroke-linejoin: round; }
+  .btn:hover { border-color: var(--accent); color: var(--accent); }
+  .btn .ico { width: 14px; height: 14px; flex-shrink: 0; }
+  .btn.destaque { border-color: var(--accent); color: var(--accent); font-weight: 700; }
+  .btn:disabled { opacity: 0.55; cursor: default; }
+  .barra { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 12px; }
+  .barra label { font-size: 0.78rem; font-weight: 700; color: var(--ink-dim); }
+  /* rótulo + campo andam juntos: quando a barra quebra de linha, quebra entre os pares */
+  .barra .par { display: inline-flex; align-items: center; gap: 8px; white-space: nowrap; }
+  .barra select, .barra input {
+    font: inherit; font-size: 0.85rem; color: var(--ink); background: var(--bg);
+    border: 1px solid var(--line); border-radius: 6px; padding: 7px 10px;
+  }
+  .barra select { min-width: 200px; }
+  .barra input { min-width: 240px; }
+  .barra .empurra { margin-left: auto; display: flex; gap: 8px; flex-wrap: wrap; }
+  select:focus, input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-soft); }
+  /* Hora dos dados, como a linha de situação das Expedições. */
+  .quando { margin: 0 0 14px; font-size: 0.74rem; color: var(--ink-faint); }
+  .quando b { color: var(--ink-dim); font-weight: 700; }
 
   .aviso { margin-bottom: 12px; padding: 10px 13px; border-left: 3px solid var(--warn); background: var(--warn-soft); border-radius: 0 6px 6px 0; font-size: 0.82rem; line-height: 1.5; }
   .aviso b { font-weight: 700; }
@@ -79,24 +92,43 @@
   .aviso.leve { background: var(--line-soft); }
   .aviso .detalhe { display: block; margin-top: 3px; color: var(--ink-dim); overflow-wrap: anywhere; }
 
-  .filtros { display: flex; align-items: center; gap: 10px 14px; flex-wrap: wrap; margin-bottom: 12px; }
-  .chips { display: flex; flex-wrap: wrap; gap: 7px; align-items: center; flex: 1 1 520px; }
-  .chip {
-    display: inline-flex; align-items: center; gap: 6px; font-size: 0.76rem; font-weight: 700;
-    padding: 5px 11px; border-radius: 100px; border: 1px solid var(--line); background: var(--bg); color: var(--ink-dim);
-  }
-  .chip:hover { border-color: var(--accent); }
-  .chip .n { font-weight: 400; color: var(--ink-faint); }
-  .chip[aria-pressed="true"] { background: var(--ink); border-color: var(--ink); color: var(--bg); }
-  .chip[aria-pressed="true"] .n { color: var(--bg); opacity: 0.75; }
-  input.busca {
-    flex: 0 1 300px; font: inherit; font-size: 0.85rem; color: var(--ink); background: var(--bg);
-    border: 1px solid var(--line); border-radius: 100px; padding: 8px 14px;
-  }
-  input.busca:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-soft); }
-
   .tabela-scroll { overflow-x: auto; border: 1px solid var(--line-soft); border-radius: 8px; }
-  table.grade { width: 100%; min-width: 1040px; border-collapse: collapse; font-size: 0.82rem; }
+  table.grade { width: 100%; min-width: 760px; border-collapse: collapse; font-size: 0.82rem; }
+  /* A linha inteira abre o detalhe da demanda. */
+  table.grade tbody tr { cursor: pointer; }
+  table.grade tbody tr:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+
+  /* Paginação: aparece quando a lista passa de 10. */
+  .paginacao { display: flex; align-items: center; justify-content: space-between; gap: 10px 18px; flex-wrap: wrap; margin-top: 12px; font-size: 0.78rem; color: var(--ink-dim); }
+  .paginacao .lado { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .paginacao label { font-weight: 700; }
+  .paginacao select { font: inherit; font-size: 0.8rem; color: var(--ink); background: var(--bg); border: 1px solid var(--line); border-radius: 6px; padding: 5px 8px; }
+  .paginacao .pag-atual { font-variant-numeric: tabular-nums; padding: 0 4px; }
+
+  /* Detalhe da demanda: mesma cara das caixas de diálogo do sistema (dialogo.js). */
+  dialog.detalhe {
+    border: 1px solid var(--line); border-radius: 16px; padding: 0; margin: auto; width: min(640px, calc(100vw - 32px));
+    background: var(--bg-panel); color: var(--ink); font-family: inherit; overflow: hidden;
+    box-shadow: 0 24px 60px rgba(0,0,0,.38), 0 2px 6px rgba(0,0,0,.2); animation: det-entra .16s ease-out;
+  }
+  dialog.detalhe::backdrop { background: rgba(15,17,24,.58); backdrop-filter: blur(3px); }
+  .det-topo { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; padding: 22px 24px 16px; border-bottom: 1px solid var(--line-soft); }
+  .det-rotulo { display: block; font-size: 0.68rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; color: var(--ink-faint); }
+  .det-topo h2 { margin: 3px 0 8px; font-size: 1.35rem; font-weight: 700; letter-spacing: -0.01em; font-variant-numeric: tabular-nums; }
+  .det-fechar { border: 0; background: none; width: 34px; height: 34px; border-radius: 50%; font-size: 1.4rem; line-height: 1; color: var(--ink-faint); }
+  .det-fechar:hover { background: var(--line-soft); color: var(--ink); }
+  .det-corpo { padding: 18px 24px 6px; max-height: min(62vh, 560px); overflow: auto; }
+  .det-resumo { margin: 0 0 18px; padding: 12px 14px; border-left: 4px solid var(--accent); border-radius: 0 10px 10px 0; background: var(--line-soft); font-size: 0.95rem; line-height: 1.5; overflow-wrap: anywhere; }
+  .det-grade { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px 24px; margin: 0 0 14px; }
+  .det-grade div { min-width: 0; }
+  .det-grade dt { font-size: 0.68rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.03em; color: var(--ink-faint); margin-bottom: 4px; }
+  .det-grade dd { margin: 0; font-size: 0.92rem; line-height: 1.4; overflow-wrap: anywhere; font-variant-numeric: tabular-nums; }
+  .det-grade .larga { grid-column: 1 / -1; }
+  .det-secao { margin: 6px 0 12px; padding-top: 14px; border-top: 1px solid var(--line-soft); font-size: 0.72rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; color: var(--ink-dim); }
+  .det-rodape { display: flex; justify-content: flex-end; padding: 14px 24px 20px; }
+  @keyframes det-entra { from { opacity: 0; transform: translateY(8px) scale(.97); } to { opacity: 1; transform: none; } }
+  @media (prefers-reduced-motion: reduce) { dialog.detalhe { animation: none; } }
+  @media (max-width: 520px) { .det-grade { grid-template-columns: 1fr; } }
   table.grade th {
     text-align: left; font-size: 0.66rem; text-transform: uppercase; letter-spacing: 0.03em; color: var(--ink-faint);
     font-weight: 700; padding: 0; border-bottom: 2px solid var(--accent); white-space: nowrap; background: var(--bg-panel);
@@ -128,7 +160,9 @@
   @media (max-width: 760px) {
     main { padding: 16px; }
     header.top { padding: 16px; }
-    input.busca { flex-basis: 100%; }
+    .barra select, .barra input { min-width: 0; flex: 1 1 160px; }
+    .barra .par { flex: 1 1 100%; }
+    .barra .empurra { margin-left: 0; }
   }
 </style>
 
@@ -144,29 +178,44 @@
 
 <main>
   <div class="painel">
-    <div class="coleta">
-      <span class="quando" id="quando" aria-live="polite">Carregando…</span>
-      <button class="btn" type="button" id="btnAtualizar" disabled>
-        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 3v6h-6"/></svg>Atualizar
-      </button>
+    <div class="barra" id="barra">
+      <span class="par"><label for="selStatus">Status</label><select id="selStatus"><option value="">Todas</option></select></span>
+      <span class="par"><label for="selGestor">Gestor de negócio</label><select id="selGestor"><option value="">Todos</option></select></span>
+      <span class="par"><label for="busca">Busca</label><input id="busca" type="search" maxlength="80" placeholder="Número ou resumo"></span>
+      <span class="empurra">
+        <button type="button" class="btn destaque" id="btnAtualizar" disabled title="Pede ao coletor uma nova leitura do ACS">
+          <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 3v6h-6"/></svg>Atualizar
+        </button>
+      </span>
     </div>
+    <p class="quando" id="quando" aria-live="polite">Carregando…</p>
     <div id="avisos" aria-live="polite"></div>
-    <div class="filtros" id="filtros" hidden>
-      <div class="chips" id="chips" role="group" aria-label="Filtrar por status"></div>
-      <input class="busca" id="busca" type="search" maxlength="80" placeholder="Filtrar por número, resumo ou gestor" aria-label="Filtrar por número, resumo ou gestor">
-    </div>
     <div id="lista"></div>
+    <div class="paginacao" id="paginacao" hidden></div>
     <p class="rodape-nota" id="rodape" hidden></p>
   </div>
 </main>
+
+<dialog class="detalhe" id="detalhe" aria-labelledby="detTitulo">
+  <div class="det-topo">
+    <div>
+      <span class="det-rotulo">Demanda no ACS</span>
+      <h2 id="detTitulo"></h2>
+      <span id="detStatus"></span>
+    </div>
+    <button type="button" class="det-fechar" data-fechar aria-label="Fechar">×</button>
+  </div>
+  <div class="det-corpo" id="detCorpo"></div>
+  <div class="det-rodape"><button type="button" class="btn" data-fechar>Fechar</button></div>
+</dialog>
 
 <script src="/menu.js"></script>
 <script>
   (function () {
     var elQuando = document.getElementById('quando');
     var elAvisos = document.getElementById('avisos');
-    var elFiltros = document.getElementById('filtros');
-    var elChips = document.getElementById('chips');
+    var selStatus = document.getElementById('selStatus');
+    var selGestor = document.getElementById('selGestor');
     var elBusca = document.getElementById('busca');
     var elLista = document.getElementById('lista');
     var elRodape = document.getElementById('rodape');
@@ -198,18 +247,27 @@
       { id: 'status', rotulo: 'Status' },
       { id: 'resumo', rotulo: 'Resumo' },
       { id: 'gestor', rotulo: 'Gestor de negócio' },
-      { id: 'dataSolicitacao', rotulo: 'Solicitada em' },
-      { id: 'previsaoInicio', rotulo: 'Previsão de início' },
-      { id: 'previsaoTermino', rotulo: 'Previsão de término' },
-      { id: 'dataImplantacao', rotulo: 'Implantação' },
-      { id: 'statusDesde', rotulo: 'Neste status' }
+      { id: 'dataSolicitacao', rotulo: 'Solicitada em' }
     ];
+    // O resto (previsões, implantação, tempo no status) aparece no detalhe,
+    // que abre ao clicar na linha.
+    var STATUS_INICIAL = 'X'; // Em execução
+    var POR_PAGINA = [10, 20, 30];
+    var elPaginacao = document.getElementById('paginacao');
+    var elDetalhe = document.getElementById('detalhe');
+    function porPaginaGuardado() {
+      try { var n = Number(localStorage.getItem('demandas.porPagina')); return POR_PAGINA.indexOf(n) >= 0 ? n : POR_PAGINA[0]; }
+      catch (e) { return POR_PAGINA[0]; }
+    }
 
     var estado = {
       hoje: null, solicitacoes: [], coleta: null,
-      filtroStatus: {},            // códigos ligados; vazio = todos
+      filtroStatus: '',            // código do status; vazio = todas
+      filtroGestor: '',            // nome do gestor; vazio = todos
       termo: '',
       ordem: { coluna: 'status', sentido: 1 },
+      pagina: 1,
+      porPagina: porPaginaGuardado(),
       pedindo: false
     };
     var acompanhamento = null;      // intervalo que espera o coletor atender o pedido
@@ -278,33 +336,46 @@
 
     // ---- filtros e tabela ----
 
-    function contagemPorStatus() {
+    function doGestor(s) { return !estado.filtroGestor || s.gestor === estado.filtroGestor; }
+    function daBusca(s) {
+      var termo = semAcento(estado.termo.trim());
+      return !termo || semAcento(s.numero + ' ' + s.resumo).indexOf(termo) >= 0;
+    }
+    function primeiraMaiuscula(t) { return t.charAt(0) + t.slice(1).toLowerCase(); }
+
+    /* Os dois selects, como em Expedições: a contagem fica na própria opção
+     * ("Em execução (17)") e respeita o gestor escolhido e a busca. */
+    function renderFiltros() {
+      var base = estado.solicitacoes.filter(function (s) { return doGestor(s) && daBusca(s); });
       var mapa = {};
       estado.solicitacoes.forEach(function (s) {
         if (!mapa[s.statusCodigo]) mapa[s.statusCodigo] = { codigo: s.statusCodigo, nome: s.status, n: 0 };
-        mapa[s.statusCodigo].n++;
       });
-      return Object.keys(mapa).map(function (k) { return mapa[k]; })
+      base.forEach(function (s) { mapa[s.statusCodigo].n++; });
+      var grupos = Object.keys(mapa).map(function (k) { return mapa[k]; })
         .sort(function (a, b) { return ordemStatus(a.codigo) - ordemStatus(b.codigo) || a.nome.localeCompare(b.nome); });
-    }
+      // status escolhido que sumiu da lista (a demanda mudou de status): volta para "Todas"
+      if (estado.filtroStatus && !mapa[estado.filtroStatus]) estado.filtroStatus = '';
+      selStatus.innerHTML = '<option value="">Todas (' + base.length + ')</option>' + grupos.map(function (g) {
+        return '<option value="' + esc(g.codigo) + '"' + (g.codigo === estado.filtroStatus ? ' selected' : '') + '>' +
+          esc(primeiraMaiuscula(g.nome)) + ' (' + g.n + ')</option>';
+      }).join('');
 
-    function renderChips() {
-      var algum = Object.keys(estado.filtroStatus).length > 0;
-      var h = '<button type="button" class="chip" data-status="" aria-pressed="' + (!algum) + '">Todas <span class="n">' + estado.solicitacoes.length + '</span></button>';
-      contagemPorStatus().forEach(function (g) {
-        h += '<button type="button" class="chip" data-status="' + esc(g.codigo) + '" aria-pressed="' + (!!estado.filtroStatus[g.codigo]) + '">' +
-          esc(g.nome.charAt(0) + g.nome.slice(1).toLowerCase()) + ' <span class="n">' + g.n + '</span></button>';
-      });
-      elChips.innerHTML = h;
+      var nomes = {};
+      estado.solicitacoes.forEach(function (s) { if (s.gestor) nomes[s.gestor] = true; });
+      if (estado.filtroGestor && !nomes[estado.filtroGestor]) estado.filtroGestor = '';
+      selGestor.innerHTML = '<option value="">Todos</option>' + Object.keys(nomes).sort(function (a, b) { return a.localeCompare(b); }).map(function (n) {
+        return '<option value="' + esc(n) + '"' + (n === estado.filtroGestor ? ' selected' : '') + '>' + esc(n) + '</option>';
+      }).join('');
+
+      var vazio = !estado.solicitacoes.length;
+      selStatus.disabled = vazio; selGestor.disabled = vazio; elBusca.disabled = vazio;
     }
 
     function visiveis() {
-      var algum = Object.keys(estado.filtroStatus).length > 0;
-      var termo = semAcento(estado.termo.trim());
       var lista = estado.solicitacoes.filter(function (s) {
-        if (algum && !estado.filtroStatus[s.statusCodigo]) return false;
-        if (!termo) return true;
-        return semAcento(s.numero + ' ' + s.resumo + ' ' + s.gestor + ' ' + s.status).indexOf(termo) >= 0;
+        if (estado.filtroStatus && s.statusCodigo !== estado.filtroStatus) return false;
+        return doGestor(s) && daBusca(s);
       });
       var col = estado.ordem.coluna;
       var sentido = estado.ordem.sentido;
@@ -345,20 +416,41 @@
       return '<td class="data">' + (d || '<span class="vazio-data">—</span>') + '</td>';
     }
 
+    /* Rodapé da lista: só aparece quando há mais de 10 demandas no filtro. */
+    function renderPaginacao(total, paginas, inicio, fim) {
+      if (total <= POR_PAGINA[0]) { elPaginacao.hidden = true; elPaginacao.innerHTML = ''; return; }
+      elPaginacao.hidden = false;
+      elPaginacao.innerHTML =
+        '<span class="lado"><span>Mostrando <b>' + (inicio + 1) + '–' + fim + '</b> de <b>' + total + '</b></span>' +
+          '<label for="selPorPagina">Por página</label><select id="selPorPagina">' + POR_PAGINA.map(function (n) {
+            return '<option value="' + n + '"' + (n === estado.porPagina ? ' selected' : '') + '>' + n + '</option>';
+          }).join('') + '</select></span>' +
+        '<span class="lado">' +
+          '<button type="button" class="btn" data-pagina="' + (estado.pagina - 1) + '"' + (estado.pagina <= 1 ? ' disabled' : '') + '>‹ Anterior</button>' +
+          '<span class="pag-atual">Página ' + estado.pagina + ' de ' + paginas + '</span>' +
+          '<button type="button" class="btn" data-pagina="' + (estado.pagina + 1) + '"' + (estado.pagina >= paginas ? ' disabled' : '') + '>Próxima ›</button></span>';
+    }
+
     function renderLista() {
+      renderFiltros();
       if (!estado.solicitacoes.length) {
-        elFiltros.hidden = true;
+        renderPaginacao(0);
         elLista.innerHTML = estado.coleta && estado.coleta.estado === 'nunca' ? ''
           : '<div class="vazio">Nenhuma demanda em andamento no ACS.</div>';
         return;
       }
-      elFiltros.hidden = false;
-      renderChips();
-      var lista = visiveis();
-      if (!lista.length) {
+      var todas = visiveis();
+      if (!todas.length) {
+        renderPaginacao(0);
         elLista.innerHTML = '<div class="vazio">Nenhuma demanda bate com o filtro.</div>';
         return;
       }
+      var paginas = Math.ceil(todas.length / estado.porPagina);
+      if (estado.pagina > paginas) estado.pagina = paginas;
+      if (estado.pagina < 1) estado.pagina = 1;
+      var inicio = (estado.pagina - 1) * estado.porPagina;
+      var lista = todas.slice(inicio, inicio + estado.porPagina);
+      renderPaginacao(todas.length, paginas, inicio, inicio + lista.length);
       var h = '<div class="tabela-scroll"><table class="grade"><thead><tr>';
       COLUNAS.forEach(function (c) {
         var marcada = estado.ordem.coluna === c.id;
@@ -367,12 +459,12 @@
       });
       h += '</tr></thead><tbody>';
       lista.forEach(function (s) {
-        h += '<tr><td class="numero">' + esc(s.numero) + '</td>' +
+        h += '<tr tabindex="0" data-numero="' + esc(s.numero) + '" title="Ver todos os dados da demanda ' + esc(s.numero) + '">' +
+          '<td class="numero">' + esc(s.numero) + '</td>' +
           '<td><span class="status ' + classeStatus(s.statusCodigo) + '">' + esc(s.status) + '</span></td>' +
           '<td class="resumo">' + esc(s.resumo) + '</td>' +
           '<td class="gestor">' + esc(s.gestor) + '</td>' +
-          celulaData(s.dataSolicitacao) + celulaData(s.previsaoInicio) + celulaData(s.previsaoTermino) + celulaData(s.dataImplantacao) +
-          '<td class="tempo">' + tempoNoStatus(s) + '</td></tr>';
+          celulaData(s.dataSolicitacao) + '</tr>';
       });
       h += '</tbody></table></div>';
       elLista.innerHTML = h;
@@ -380,22 +472,83 @@
 
     function render() { renderColeta(); renderLista(); }
 
-    elChips.addEventListener('click', function (e) {
-      var chip = e.target.closest('.chip');
-      if (!chip) return;
-      var codigo = chip.getAttribute('data-status');
-      if (!codigo) estado.filtroStatus = {};
-      else if (estado.filtroStatus[codigo]) delete estado.filtroStatus[codigo];
-      else estado.filtroStatus[codigo] = true;
-      renderLista();
+    // ---- detalhe da demanda (abre ao clicar na linha) ----
+
+    function campo(rotulo, valorHtml, larga) {
+      return '<div' + (larga ? ' class="larga"' : '') + '><dt>' + rotulo + '</dt><dd>' + (valorHtml || '<span class="vazio-data">Não informado</span>') + '</dd></div>';
+    }
+    function dataOuVazio(iso, vazio) {
+      var d = dataDia(iso);
+      return d || '<span class="vazio-data">' + vazio + '</span>';
+    }
+
+    function abrirDetalhe(numero) {
+      var s = null;
+      estado.solicitacoes.forEach(function (x) { if (String(x.numero) === String(numero)) s = x; });
+      if (!s) return;
+      document.getElementById('detTitulo').textContent = s.numero;
+      document.getElementById('detStatus').innerHTML = '<span class="status ' + classeStatus(s.statusCodigo) + '">' + esc(s.status) + '</span>';
+      document.getElementById('detCorpo').innerHTML =
+        '<p class="det-resumo">' + (esc(s.resumo) || 'Sem resumo.') + '</p>' +
+        '<dl class="det-grade">' +
+          campo('Gestor de negócio', esc(s.gestor)) +
+          campo('Sistema', esc(s.sistema)) +
+          campo('Solicitada em', dataOuVazio(s.dataSolicitacao, 'Não informado')) +
+          campo('Neste status', tempoNoStatus(s)) +
+        '</dl>' +
+        '<div class="det-secao">Prazos</div>' +
+        '<dl class="det-grade">' +
+          campo('Previsão de início', dataOuVazio(s.previsaoInicio, 'Ainda não definida')) +
+          campo('Previsão de término', dataOuVazio(s.previsaoTermino, 'Ainda não definida')) +
+          campo('Implantação', dataOuVazio(s.dataImplantacao, 'Ainda não definida')) +
+        '</dl>';
+      if (typeof elDetalhe.showModal === 'function') elDetalhe.showModal(); else elDetalhe.setAttribute('open', '');
+    }
+    function fecharDetalhe() {
+      if (typeof elDetalhe.close === 'function') elDetalhe.close(); else elDetalhe.removeAttribute('open');
+    }
+    elDetalhe.addEventListener('click', function (e) {
+      // botão Fechar, o X, ou clique no fundo escuro (fora da caixa)
+      if (e.target === elDetalhe || e.target.closest('[data-fechar]')) fecharDetalhe();
     });
-    elBusca.addEventListener('input', function () { estado.termo = elBusca.value; renderLista(); });
+
+    function filtrou() { estado.pagina = 1; renderLista(); }
+    selStatus.addEventListener('change', function () { estado.filtroStatus = selStatus.value; filtrou(); selStatus.focus(); });
+    selGestor.addEventListener('change', function () { estado.filtroGestor = selGestor.value; filtrou(); selGestor.focus(); });
+    elBusca.addEventListener('input', function () { estado.termo = elBusca.value; filtrou(); });
     elLista.addEventListener('click', function (e) {
       var b = e.target.closest('button[data-ordem]');
-      if (!b) return;
-      var col = b.getAttribute('data-ordem');
-      estado.ordem = { coluna: col, sentido: estado.ordem.coluna === col ? -estado.ordem.sentido : 1 };
+      if (b) {
+        var col = b.getAttribute('data-ordem');
+        estado.ordem = { coluna: col, sentido: estado.ordem.coluna === col ? -estado.ordem.sentido : 1 };
+        filtrou();
+        return;
+      }
+      var linha = e.target.closest('tr[data-numero]');
+      // selecionar texto para copiar (o número, o resumo) não abre o detalhe
+      if (linha && !String(window.getSelection ? window.getSelection() : '')) abrirDetalhe(linha.getAttribute('data-numero'));
+    });
+    elLista.addEventListener('keydown', function (e) {
+      if (e.key !== 'Enter' && e.key !== ' ') return;
+      var linha = e.target.closest && e.target.closest('tr[data-numero]');
+      if (!linha || e.target !== linha) return;
+      e.preventDefault();
+      abrirDetalhe(linha.getAttribute('data-numero'));
+    });
+    elPaginacao.addEventListener('click', function (e) {
+      var b = e.target.closest('button[data-pagina]');
+      if (!b || b.disabled) return;
+      estado.pagina = Number(b.getAttribute('data-pagina'));
       renderLista();
+    });
+    elPaginacao.addEventListener('change', function (e) {
+      if (e.target.id !== 'selPorPagina') return;
+      estado.porPagina = Number(e.target.value);
+      try { localStorage.setItem('demandas.porPagina', String(estado.porPagina)); } catch (erro) {}
+      estado.pagina = 1;
+      renderLista();
+      var sel = document.getElementById('selPorPagina');
+      if (sel) sel.focus();
     });
 
     // ---- servidor ----
@@ -427,7 +580,8 @@
         if (!x.ok) {
           if (silencioso) return; // falha passageira durante o acompanhamento: mantém o que está na tela
           elQuando.textContent = '';
-          elFiltros.hidden = true;
+          estado.solicitacoes = [];
+          renderFiltros();
           elLista.innerHTML = '';
           elAvisos.innerHTML = '<div class="aviso">' + esc((x.j && x.j.erro) || 'Não foi possível carregar as demandas agora.') + '</div>';
           return;
@@ -435,7 +589,19 @@
         estado.hoje = x.j.hoje;
         estado.solicitacoes = x.j.solicitacoes || [];
         estado.coleta = x.j.coleta;
+        var primeiraCarga = !estado.carregou && estado.solicitacoes.length > 0;
+        if (primeiraCarga) {
+          estado.carregou = true;
+          // A tela abre no que está sendo feito agora: "Em execução". Só na
+          // primeira carga - depois vale o que a pessoa escolher.
+          if (estado.solicitacoes.some(function (s) { return s.statusCodigo === STATUS_INICIAL; })) estado.filtroStatus = STATUS_INICIAL;
+        }
         render();
+        // /demandas?demanda=20260511005 já abre o detalhe daquela demanda
+        if (primeiraCarga) {
+          var pedida = new URLSearchParams(location.search).get('demanda');
+          if (pedida) { estado.filtroStatus = ''; renderLista(); abrirDetalhe(pedida); }
+        }
         if (estado.coleta && estado.coleta.pedido) acompanharPedido(); else pararAcompanhamento();
       }).catch(function () {
         if (!silencioso) elAvisos.innerHTML = '<div class="aviso">Sem conexão com o servidor. Recarregue a página para tentar de novo.</div>';
