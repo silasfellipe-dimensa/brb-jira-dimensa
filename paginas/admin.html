@@ -91,6 +91,17 @@
   }
   .btn-confirmar:hover { background: var(--accent); color: #fff; }
   .btn-confirmar:disabled { opacity: 0.6; cursor: default; }
+  .btn-senha {
+    font: inherit; font-size: 0.72rem; font-weight: 700; cursor: pointer;
+    border: 1px solid var(--line); color: var(--ink-dim); background: none;
+    border-radius: 6px; padding: 5px 10px; white-space: nowrap;
+  }
+  .btn-senha:hover { border-color: var(--accent); color: var(--accent); }
+  .btn-senha:disabled { opacity: 0.6; cursor: default; }
+  td.acoes { text-align: right; white-space: nowrap; }
+  td.acoes button + button { margin-left: 6px; }
+  .tag.link-de-senha { background: none; border: 1px solid var(--accent); color: var(--accent); }
+  .tag.senha-redefinida { background: rgba(255,108,12,0.15); color: var(--accent); }
 
   .vazio { padding: 22px; text-align: center; color: var(--ink-faint); font-size: 0.8rem; }
   .tabela-scroll { overflow-x: auto; }
@@ -128,8 +139,54 @@
     // Caixas de diálogo do sistema (/dialogo.js). Sem ele, cai no pop-up do navegador.
     var Dlg = window.Dialogo || {
       confirmar: function (o) { return Promise.resolve(window.confirm([o.titulo, o.destaque, o.mensagem].filter(Boolean).join('\n\n'))); },
-      avisar: function (o) { window.alert([o.titulo, o.mensagem].filter(Boolean).join('\n\n')); return Promise.resolve(); }
+      avisar: function (o) { window.alert([o.titulo, o.mensagem].filter(Boolean).join('\n\n')); return Promise.resolve(); },
+      texto: function (o) { return Promise.resolve(window.prompt([o.titulo, o.destaque, o.mensagem].filter(Boolean).join('\n\n'), (o.campo && o.campo.valor) || '')); }
     };
+
+  /* Link de senha: não há servidor de e-mail, então o "esqueci a senha" é o
+   * admin gerar o link aqui e entregar à pessoa (Teams). Quem tem o link
+   * define a senha da conta - a caixa lembra disso antes de gerar. */
+  function gerarLinkDeSenha(btn) {
+    var email = btn.getAttribute('data-email');
+    var pendente = btn.getAttribute('data-confirmado') !== '1';
+    Dlg.confirmar({
+      titulo: 'Gerar link para criar senha?', destaque: email,
+      mensagem: 'Quem abrir o link define a senha desta conta' + (pendente ? ' e a conta fica confirmada' : '') +
+        '. Entregue só à própria pessoa, por um canal em que você sabe com quem está falando (Teams). ' +
+        'O link vale 24 horas e um uso só; gerar outro cancela este. A senha atual continua valendo até a pessoa usar o link.',
+      rotuloConfirmar: 'Gerar link', tom: 'aviso'
+    }).then(function (sim) {
+      if (!sim) return;
+      var rotulo = btn.textContent;
+      btn.disabled = true;
+      btn.textContent = 'Gerando…';
+      var voltar = function () { btn.disabled = false; btn.textContent = rotulo; };
+      fetch('/api/admin/usuarios/' + encodeURIComponent(btn.getAttribute('data-id')) + '/link-senha', { method: 'POST' })
+        .then(function (r) { return r.json().then(function (corpo) { return { ok: r.ok, corpo: corpo }; }); })
+        .then(function (res) {
+          voltar();
+          if (!res.ok) { Dlg.avisar({ titulo: 'Não foi possível gerar o link', mensagem: res.corpo.erro || 'Tente de novo.' }); return; }
+          carregarAcessos();
+          var link = window.location.origin + res.corpo.caminho;
+          return Dlg.texto({
+            titulo: 'Link para criar a senha', destaque: email,
+            mensagem: 'Envie este link à pessoa. Ele não aparece de novo: se perder, gere outro. Vale até ' + dataHora(res.corpo.expiraEm) + ', um uso só.',
+            campo: { valor: link, rotulo: 'Link' },
+            rotuloConfirmar: 'Copiar link', rotuloCancelar: 'Fechar'
+          }).then(function (valor) {
+            if (valor === null || valor === undefined) return;
+            if (!navigator.clipboard || !navigator.clipboard.writeText) {
+              return Dlg.avisar({ titulo: 'Copie o link manualmente', mensagem: link });
+            }
+            return navigator.clipboard.writeText(link).then(
+              function () { return Dlg.avisar({ titulo: 'Link copiado', mensagem: 'Cole na conversa com ' + email + '.', tom: 'info' }); },
+              function () { return Dlg.avisar({ titulo: 'Copie o link manualmente', mensagem: link }); }
+            );
+          });
+        })
+        .catch(function () { voltar(); Dlg.avisar({ titulo: 'Sem conexão', mensagem: 'Falha ao conversar com o servidor. Tente de novo.' }); });
+    });
+  }
 
   function esc(s) {
     return String(s).replace(/[&<>"']/g, function (c) {
@@ -156,11 +213,17 @@
           h += '<tr><td>' + esc(u.email) + '</td><td>' + dataHora(u.criadoEm) + '</td><td>' +
             dataHora(u.ultimoLogin) + '</td><td>' +
             (u.confirmado ? '<span class="tag login">confirmado</span>' : '<span class="tag nao-confirmado">não confirmado</span>') +
-            '</td><td>' +
+            '</td><td class="acoes">' +
             (u.confirmado ? '' : '<button class="btn-confirmar" data-id="' + esc(u.id) + '" data-email="' + esc(u.email) + '">Confirmar manualmente</button>') +
+            '<button class="btn-senha" data-id="' + esc(u.id) + '" data-email="' + esc(u.email) + '" data-confirmado="' + (u.confirmado ? '1' : '0') + '"' +
+              ' title="Gera um link para a pessoa criar uma senha nova (esqueceu a senha, ou nunca conseguiu entrar)">Link de senha</button>' +
             '</td></tr>';
         });
         alvo.innerHTML = h + '</tbody></table>';
+
+        alvo.querySelectorAll('.btn-senha').forEach(function (btn) {
+          btn.addEventListener('click', function () { gerarLinkDeSenha(btn); });
+        });
 
         alvo.querySelectorAll('.btn-confirmar').forEach(function (btn) {
           btn.addEventListener('click', function () {

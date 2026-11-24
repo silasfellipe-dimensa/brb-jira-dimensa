@@ -1,0 +1,207 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<title>Criar senha — Kanban</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Lato:wght@400;600;700;900&display=swap');
+
+  :root {
+    --bg: #F5F5F5;
+    --bg-panel: #FFFFFF;
+    --ink: #1E212C;
+    --ink-dim: #4B5A68;
+    --ink-faint: #7C8894;
+    --line: #E5E6E7;
+    --accent: #FF6C0C;
+    --accent-soft: #FFE8D9;
+    --warn: #A8452E;
+    --warn-soft: #F6E9E5;
+    --ok: #0DD3AD;
+    --ok-soft: #E4FFFB;
+    --shadow: 0 1px 2px rgba(30,33,44,0.06), 0 1px 1px rgba(30,33,44,0.04);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #1E212C;
+      --bg-panel: #262B38;
+      --ink: #F5F5F5;
+      --ink-dim: #A7B0BC;
+      --ink-faint: #78838F;
+      --line: #333846;
+      --accent: #FF8A3D;
+      --accent-soft: #3A2A1C;
+      --warn: #E2725B;
+      --warn-soft: #3A241C;
+      --ok: #3EE8C4;
+      --ok-soft: #123832;
+      --shadow: 0 1px 3px rgba(0,0,0,0.35);
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--bg);
+    color: var(--ink);
+    font-family: Lato, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  }
+  .card {
+    width: min(360px, 90vw);
+    background: var(--bg-panel);
+    border: 1px solid var(--line);
+    border-radius: 14px;
+    box-shadow: var(--shadow);
+    padding: 32px 28px;
+  }
+  h1 { font-size: 1.25rem; margin: 0 0 6px; text-align: center; }
+  p.sub { color: var(--ink-dim); font-size: 0.875rem; margin: 0 0 22px; text-align: center; }
+
+  .abas {
+    display: flex;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    padding: 3px;
+    margin-bottom: 20px;
+  }
+  .abas button {
+    flex: 1;
+    padding: 7px 0;
+    border: none;
+    border-radius: 6px;
+    background: transparent;
+    color: var(--ink-dim);
+    font-family: inherit;
+    font-size: 0.82rem;
+    font-weight: 600;
+    cursor: pointer;
+  }
+  .abas button.ativa { background: var(--accent); color: #fff; }
+
+  label {
+    display: block;
+    font-size: 0.78rem;
+    color: var(--ink-dim);
+    margin: 14px 0 5px;
+  }
+  input[type="email"], input[type="password"] {
+    width: 100%;
+    padding: 9px 11px;
+    border-radius: 8px;
+    border: 1px solid var(--line);
+    background: var(--bg);
+    color: var(--ink);
+    font-size: 0.9rem;
+    outline: none;
+  }
+  input:focus { border-color: var(--accent); }
+
+  button.principal {
+    width: 100%;
+    margin-top: 20px;
+    padding: 10px 0;
+    border: none;
+    border-radius: 8px;
+    background: var(--accent);
+    color: #fff;
+    font-family: inherit;
+    font-size: 0.9rem;
+    font-weight: 600;
+    cursor: pointer;
+  }
+  button.principal:disabled { opacity: 0.6; cursor: default; }
+
+  .aviso {
+    margin-top: 16px;
+    padding: 10px 12px;
+    border-radius: 8px;
+    font-size: 0.82rem;
+    display: none;
+    text-align: left;
+  }
+  .aviso.erro { background: var(--warn-soft); border: 1px solid var(--warn); color: var(--warn); }
+  .aviso.ok { background: var(--ok-soft); border: 1px solid var(--ok); color: var(--ok); }
+  .obrig { color: var(--warn); font-weight: 700; margin-left: 2px; }
+
+</style>
+</head>
+<body>
+  <div class="card">
+    <h1>Criar nova senha</h1>
+    <p class="sub" id="sub">Escolha a senha que você vai usar para entrar no Kanban.</p>
+
+    <form id="formulario">
+      <label for="senha">Nova senha<span class="obrig">*</span></label>
+      <input type="password" id="senha" name="password" required autocomplete="new-password" minlength="8" maxlength="200">
+
+      <label for="senha2">Repita a senha<span class="obrig">*</span></label>
+      <input type="password" id="senha2" name="password-confirm" required autocomplete="new-password" minlength="8" maxlength="200">
+
+      <button class="principal" type="submit" id="botaoPrincipal">Salvar senha</button>
+    </form>
+
+    <div class="aviso" id="aviso"></div>
+  </div>
+
+  <script>
+    var aviso = document.getElementById('aviso');
+    var formulario = document.getElementById('formulario');
+    var botao = document.getElementById('botaoPrincipal');
+
+    function mostrarAviso(texto, tipo) {
+      aviso.textContent = texto;
+      aviso.className = 'aviso ' + tipo;
+      aviso.style.display = 'block';
+    }
+
+    /* O link traz o id da conta e o código no FRAGMENTO (#u=...&c=...), que o
+     * navegador não envia ao servidor: não fica em log de acesso. Lemos e
+     * tiramos da barra de endereço na hora, para não ficar no histórico nem
+     * ser copiado sem querer. Abrir a página não gasta o link: só o envio. */
+    var dados = new URLSearchParams(window.location.hash.substring(1));
+    var usuario = dados.get('u') || '';
+    var codigo = dados.get('c') || '';
+    try { history.replaceState(null, '', window.location.pathname); } catch (e) { /* segue */ }
+
+    if (!usuario || !codigo) {
+      formulario.style.display = 'none';
+      document.getElementById('sub').textContent = '';
+      mostrarAviso('Este endereço precisa ser aberto pelo link completo que você recebeu. Se o link já foi usado ou está incompleto, peça outro a quem enviou.', 'erro');
+    }
+
+    formulario.addEventListener('submit', function (ev) {
+      ev.preventDefault();
+      aviso.style.display = 'none';
+      var senha = document.getElementById('senha').value;
+      if (senha !== document.getElementById('senha2').value) { mostrarAviso('As duas senhas não são iguais.', 'erro'); return; }
+      if (senha.length < 8) { mostrarAviso('A senha precisa ter pelo menos 8 caracteres.', 'erro'); return; }
+      botao.disabled = true;
+      fetch('/auth/redefinir-senha', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ u: usuario, c: codigo, senha: senha })
+      })
+        .then(function (r) { return r.json().then(function (corpo) { return { ok: r.ok, corpo: corpo }; }); })
+        .then(function (res) {
+          if (!res.ok) { mostrarAviso(res.corpo.erro || 'Não foi possível salvar a senha.', 'erro'); botao.disabled = false; return; }
+          formulario.style.display = 'none';
+          document.getElementById('sub').textContent = '';
+          aviso.textContent = 'Senha criada. ';
+          var entrar = document.createElement('a');
+          entrar.href = '/login.html';
+          entrar.textContent = 'Entrar agora';
+          entrar.style.color = 'inherit';
+          entrar.style.fontWeight = '700';
+          aviso.appendChild(entrar);
+          aviso.className = 'aviso ok';
+          aviso.style.display = 'block';
+        })
+        .catch(function () { mostrarAviso('Falha ao conversar com o servidor. Tente de novo.', 'erro'); botao.disabled = false; });
+    });
+  </script>
+</body>
+</html>

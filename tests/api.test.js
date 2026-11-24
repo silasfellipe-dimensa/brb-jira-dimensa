@@ -7,6 +7,7 @@
 
 process.env.ALLOWED_DOMAINS = 'dimensa.com.br,totvs.com.br,brb.com.br,evertecinc.com.br';
 process.env.ALLOWED_EMAILS = '';
+process.env.ADMIN_EMAILS = 'chefe@dimensa.com.br';
 process.env.SESSION_SECRET = 'segredo-de-teste-nao-usado-em-producao';
 process.env.CRON_SECRET = 'cron-de-teste';
 process.env.SUPABASE_URL = 'http://127.0.0.1:1';
@@ -433,6 +434,76 @@ describe('demandas — quem ve, quem edita', () => {
       assert.ok(corpo.erro);
       assert.ok(!vazamento.test(JSON.stringify(corpo)));
     }
+  });
+});
+
+describe('link de senha — so o admin gera, so quem tem o codigo usa', () => {
+  const ID = '3f2b8c1e-5a47-4d0b-9e6a-1c2d3e4f5a6b';
+  const CODIGO = 'A'.repeat(43);
+  const vazamento = /127\.0\.0\.1|ECONNREFUSED|stack|supabase|postgres/i;
+  const cookieAdmin = () => `${COOKIE_NAME}=${criarSessao({ email: 'chefe@dimensa.com.br' })}`;
+  let n = 0;
+  const ip = () => ({ 'x-forwarded-for': `198.51.100.${10 + n++}` }); // fora do limite de tentativas dos vizinhos
+
+  // Bug: qualquer pessoa logada (ou ninguem) gerar link e tomar a conta de outra.
+  test('gerar: sem sessao 401; BRB e editor comum 403', async () => {
+    const rota = `/api/admin/usuarios/${ID}/link-senha`;
+    assert.strictEqual((await enviarJson('POST', rota)).status, 401);
+    for (const cookie of [cookieLeitor(), cookieEditor(), cookieValido()]) {
+      assert.strictEqual((await enviarJson('POST', rota, undefined, cookie)).status, 403);
+    }
+  });
+
+  test('gerar: admin passa do guard; id que nao e UUID da 400 antes de tocar no banco', async () => {
+    for (const id of ['1', 'abc', ID + '0', '..%2F' + ID]) {
+      assert.strictEqual((await enviarJson('POST', `/api/admin/usuarios/${id}/link-senha`, undefined, cookieAdmin())).status, 400, id);
+    }
+    // com o banco fora do ar o guard passa e a falha vira 503, sem detalhe interno
+    const r = await enviarJson('POST', `/api/admin/usuarios/${ID}/link-senha`, undefined, cookieAdmin());
+    assert.strictEqual(r.status, 503);
+    assert.ok(!vazamento.test(JSON.stringify(await r.json())));
+  });
+
+  test('a pagina de criar senha abre sem sessao e nao fica em cache', async () => {
+    const r = await pedir('/redefinir-senha.html');
+    assert.strictEqual(r.status, 200);
+    assert.strictEqual(r.headers.get('cache-control'), 'no-store');
+    assert.match(await r.text(), /Criar nova senha/);
+  });
+
+  test('usar: senha curta, ausente ou que nao e texto da 400', async () => {
+    for (const senha of [undefined, '', '1234567', 12345678, ['senhalonga123'], { length: 20 }, 'x'.repeat(201)]) {
+      const r = await postarJson('/auth/redefinir-senha', { u: ID, c: CODIGO, senha }, ip());
+      assert.strictEqual(r.status, 400, JSON.stringify(senha));
+    }
+  });
+
+  // Mesma mensagem para tudo que nao e um link valido: nao diz se a conta existe.
+  test('usar: id ou codigo malformado da 400 com a mensagem generica, antes de tocar no banco', async () => {
+    const ruins = [
+      { c: CODIGO }, { u: ID }, { u: 'abc', c: CODIGO }, { u: ID, c: 'curto' }, { u: ID, c: CODIGO + 'x' },
+      { u: { a: 1 }, c: CODIGO }, { u: ID, c: ['x'] }, { u: [ID], c: CODIGO }
+    ];
+    for (const corpo of ruins) {
+      const r = await postarJson('/auth/redefinir-senha', { ...corpo, senha: 'senhalonga123' }, ip());
+      assert.strictEqual(r.status, 400, JSON.stringify(corpo));
+      assert.match((await r.json()).erro, /Este link não vale mais/);
+    }
+  });
+
+  test('usar: banco fora do ar vira 503 sem detalhe interno, e o servidor segue de pe', async () => {
+    const r = await postarJson('/auth/redefinir-senha', { u: ID, c: CODIGO, senha: 'senhalonga123' }, ip());
+    assert.strictEqual(r.status, 503);
+    assert.ok(!vazamento.test(JSON.stringify(await r.json())));
+    assert.strictEqual((await pedir('/login.html')).status, 200);
+  });
+
+  // Bug: adivinhar o codigo por tentativa. Mesmo limite do login, por IP.
+  test('usar: tem limite de tentativas', async () => {
+    const fixo = { 'x-forwarded-for': '198.51.100.200' };
+    let ultimo;
+    for (let i = 0; i < 12; i++) ultimo = await postarJson('/auth/redefinir-senha', { u: ID, c: 'curto', senha: 'senhalonga123' }, fixo);
+    assert.strictEqual(ultimo.status, 429);
   });
 });
 

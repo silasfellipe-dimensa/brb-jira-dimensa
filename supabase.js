@@ -2,6 +2,7 @@ const { createClient } = require('@supabase/supabase-js');
 const { deLinha } = require('./demandas');
 const { ITENS_PADRAO, deLinhaExpedicao } = require('./expedicoes');
 const { deLinhaAcs, MAX_SOLICITACOES } = require('./acs');
+const { CHAVE_META, novoPedido, conferirPedido } = require('./senha');
 
 // Dois clientes, de proposito:
 //
@@ -588,6 +589,62 @@ async function confirmarUsuarioManualmente(userId) {
   }
 }
 
+/* ---- Link de senha (senha.js) ----
+ * O pedido (hash do código + validade) fica nos metadados da própria conta
+ * (app_metadata): só a service_role altera, e não precisa de tabela nova. */
+async function lerUsuarioAuth(userId) {
+  const { data, error } = await db().auth.admin.getUserById(userId);
+  if (error) {
+    if (error.status === 404 || /not found/i.test(error.message || '')) return null;
+    throw new Error(error.message);
+  }
+  return (data && data.user) || null;
+}
+
+/** Admin gera o link. Devolve o código UMA vez (não fica guardado em claro).
+ * Gerar de novo troca o pedido: o link anterior deixa de valer. */
+async function gerarPedidoDeSenha(userId) {
+  try {
+    const usuario = await lerUsuarioAuth(userId);
+    if (!usuario) return { ok: false, naoEncontrado: true };
+    const pedido = novoPedido(new Date());
+    const { error } = await db().auth.admin.updateUserById(userId, {
+      app_metadata: { ...(usuario.app_metadata || {}), [CHAVE_META]: pedido.guardar }
+    });
+    if (error) throw new Error(error.message);
+    return { ok: true, email: usuario.email, codigo: pedido.codigo, expira: pedido.guardar.expira, confirmado: !!usuario.email_confirmed_at };
+  } catch (erro) {
+    console.error('[supabase] falha ao gerar link de senha:', erro.message);
+    return { ok: false };
+  }
+}
+
+/** A pessoa usa o link: confere o código, grava a senha nova e apaga o pedido
+ * (um uso só). Também confirma o e-mail: quem recebeu o link foi quem o admin
+ * escolheu, por um canal em que sabe com quem fala - é uma prova de identidade
+ * melhor que a do cadastro, em que qualquer um digita o e-mail de outra pessoa. */
+async function trocarSenhaComCodigo(userId, codigo, senha) {
+  try {
+    const usuario = await lerUsuarioAuth(userId);
+    const meta = (usuario && usuario.app_metadata) || {};
+    const confere = usuario ? conferirPedido(meta[CHAVE_META], codigo, new Date()) : { ok: false, motivo: 'sem-pedido' };
+    if (!confere.ok) return { ok: false, invalido: true, motivo: confere.motivo };
+    const { error } = await db().auth.admin.updateUserById(userId, {
+      password: senha,
+      email_confirm: true,
+      app_metadata: { ...meta, [CHAVE_META]: null }
+    });
+    if (error) {
+      if (/password/i.test(error.message || '') && /weak|at least|should/i.test(error.message || '')) return { ok: false, senhaFraca: true };
+      throw new Error(error.message);
+    }
+    return { ok: true, email: usuario.email };
+  } catch (erro) {
+    console.error('[supabase] falha ao trocar a senha pelo link:', erro.message);
+    return { ok: false };
+  }
+}
+
 /** Pura: mapeia os campos do Supabase Auth e ordena por último acesso, mais
  * recente primeiro. Quem nunca entrou (só cadastrado, sem login) fica no
  * fim - sem essa checagem explícita, data nula viraria "maior" numa
@@ -1071,5 +1128,6 @@ module.exports = {
   gravarPlanejamento, limparPlanejamento, lerPlanejamentoSprint, lerCarryOverEntregue,
   listarPlanejamentoPorSprint, resumirPlanejamento, porSemanaPlanejamento, listarItensPlanejamento,
   classificarItensPlanejamento, listarItensCarryOver, montarItensCarryOver, contarCarryOverPorSprint,
-  registrarAcesso, registrarGravacaoJira, registrarVisitaDoDia, queimarPasse, listarAcessos, listarUsuarios, montarListaUsuarios, confirmarUsuarioManualmente
+  registrarAcesso, registrarGravacaoJira, registrarVisitaDoDia, queimarPasse, listarAcessos, listarUsuarios, montarListaUsuarios, confirmarUsuarioManualmente,
+  gerarPedidoDeSenha, trocarSenhaComCodigo
 };

@@ -10,6 +10,7 @@ const {
   gravarEntregas, lerEntregas, listarSprintsEntregas, listarMesesEntregas, gravarPlanejamento,
   lerPlanejamentoSprint, lerCarryOverEntregue, listarPlanejamentoPorSprint, listarItensPlanejamento,
   listarItensCarryOver, registrarAcesso, registrarVisitaDoDia, queimarPasse, listarAcessos, listarUsuarios, confirmarUsuarioManualmente,
+  gerarPedidoDeSenha, trocarSenhaComCodigo,
   listarDemandas, criarDemanda, atualizarDemanda, removerDemanda, listarHistoricoDemandas,
   lerExpedicao, listarChavesExpedicoes, listarExpedicoes, criarExpedicao, atualizarExpedicao, removerExpedicao,
   contarExpedicoesExcluidas, listarExpedicoesExcluidas, restaurarExpedicao,
@@ -30,6 +31,7 @@ const {
 const { criarCache, verificar, verificarVarias } = require('./checklistJira');
 const { normalizarTermo, pesquisar, MAX_TEXTO, MAX_TERMOS, limparTermo, extrairTermos, pesquisarAmplo } = require('./pesquisa');
 const { ssoAtivo, emitirPasse, lerPasse, caminhoSeguro, urlDeEntrada } = require('./sso');
+const { VALIDADE_HORAS: VALIDADE_LINK_SENHA_H, idUsuario, codigoValido, caminhoDoLink } = require('./senha');
 const {
   COOKIE_NAME,
   SESSAO_DIAS,
@@ -293,6 +295,42 @@ app.post('/auth/entrar', limitarTentativas, async (req, res) => {
     console.error(`Falha no login de ${email}:`, erro.message);
     res.status(401).json({ erro: erro.message });
   }
+});
+
+/* ---- link de senha (senha.js) ----
+ * Página pública: quem chega aqui ainda não tem senha que funcione. Ela só
+ * mostra o formulário; o código do link fica no fragmento da URL e só vai ao
+ * servidor no POST abaixo, junto com a senha nova. */
+app.get('/redefinir-senha.html', (req, res) => {
+  res.setHeader('Cache-Control', 'no-store');
+  res.sendFile(path.join(PUBLIC_DIR, 'redefinir-senha.html'));
+});
+
+const MSG_LINK_SENHA_INVALIDO = 'Este link não vale mais (já foi usado, venceu ou foi substituído por um mais novo). Peça outro a quem enviou.';
+
+// Corpo: { u: id do usuário, c: código do link, senha }. Mesma resposta para
+// link inexistente, vencido, já usado ou de outra conta: não diz qual foi.
+app.post('/auth/redefinir-senha', limitarTentativas, async (req, res) => {
+  const corpo = req.body || {};
+  const senha = corpo.senha;
+  if (typeof senha !== 'string' || senha.length < SENHA_MINIMA) {
+    return res.status(400).json({ erro: `A senha precisa ter pelo menos ${SENHA_MINIMA} caracteres.` });
+  }
+  if (senha.length > 200) return res.status(400).json({ erro: 'Senha longa demais.' });
+  const userId = idUsuario(corpo.u);
+  const codigo = codigoValido(corpo.c);
+  if (!userId || !codigo) return res.status(400).json({ erro: MSG_LINK_SENHA_INVALIDO });
+
+  const r = await trocarSenhaComCodigo(userId, codigo, senha);
+  if (r.invalido) {
+    console.warn(`[senha] link recusado (${r.motivo})`);
+    return res.status(400).json({ erro: MSG_LINK_SENHA_INVALIDO });
+  }
+  if (r.senhaFraca) return res.status(400).json({ erro: 'Essa senha é muito fraca ou curta. Escolha outra, com pelo menos 8 caracteres.' });
+  if (!r.ok) return res.status(503).json({ erro: 'Não foi possível trocar a senha agora. Tente de novo em instantes.' });
+  console.log(`[senha] ${r.email} definiu uma senha nova pelo link`);
+  await registrarAcesso(r.email, 'senha-redefinida');
+  res.json({ ok: true });
 });
 
 app.post('/auth/logout', (req, res) => {
@@ -895,6 +933,23 @@ app.post('/api/admin/usuarios/:id/confirmar', exigirSessaoApi, exigirAdminApi, a
   console.log(`[admin] ${req.usuario.email} confirmou manualmente: ${resultado.email}`);
   await registrarAcesso(resultado.email, 'confirmado-manualmente');
   res.json({ ok: true });
+});
+
+/** Gera o link para a pessoa criar uma senha nova (senha.js). Só admin. O
+ * código aparece UMA vez, nesta resposta; gerar de novo cancela o anterior.
+ * Fica no histórico de acessos quem teve link gerado, e no log quem gerou. */
+app.post('/api/admin/usuarios/:id/link-senha', exigirSessaoApi, exigirAdminApi, async (req, res) => {
+  const userId = idUsuario(req.params.id);
+  if (!userId) return res.status(400).json({ erro: 'Identificador inválido.' });
+  const r = await gerarPedidoDeSenha(userId);
+  if (r.naoEncontrado) return res.status(404).json({ erro: 'Usuário não encontrado.' });
+  if (!r.ok) return res.status(503).json({ erro: 'Não foi possível gerar o link agora.' });
+  console.log(`[admin] ${req.usuario.email} gerou link de senha para ${r.email}`);
+  await registrarAcesso(r.email, 'link-de-senha');
+  res.json({
+    email: r.email, caminho: caminhoDoLink(userId, r.codigo), expiraEm: r.expira,
+    validadeHoras: VALIDADE_LINK_SENHA_H, confirmado: r.confirmado
+  });
 });
 
 /** Métricas do sprint + série histórica para os gráficos de fluxo.
