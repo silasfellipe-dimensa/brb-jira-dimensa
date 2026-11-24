@@ -124,6 +124,7 @@
   .det-grade dt { font-size: 0.68rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.03em; color: var(--ink-faint); margin-bottom: 4px; }
   .det-grade dd { margin: 0; font-size: 0.92rem; line-height: 1.4; overflow-wrap: anywhere; font-variant-numeric: tabular-nums; }
   .det-grade .larga { grid-column: 1 / -1; }
+  .det-grade .det-resumo { margin: 0; }
   .det-secao { margin: 6px 0 12px; padding-top: 14px; border-top: 1px solid var(--line-soft); font-size: 0.72rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; color: var(--ink-dim); }
   .det-rodape { display: flex; justify-content: flex-end; padding: 14px 24px 20px; }
   @keyframes det-entra { from { opacity: 0; transform: translateY(8px) scale(.97); } to { opacity: 1; transform: none; } }
@@ -487,10 +488,15 @@
       estado.solicitacoes.forEach(function (x) { if (String(x.numero) === String(numero)) s = x; });
       if (!s) return;
       document.getElementById('detTitulo').textContent = s.numero;
-      document.getElementById('detStatus').innerHTML = '<span class="status ' + classeStatus(s.statusCodigo) + '">' + esc(s.status) + '</span>';
+      document.getElementById('detStatus').innerHTML = ''; // o status aparece como campo, logo abaixo
+      // Todos os campos que o ACS manda, cada um com o seu rótulo - inclusive
+      // os que já aparecem na lista. (A matrícula do gestor não é guardada.)
       document.getElementById('detCorpo').innerHTML =
-        '<p class="det-resumo">' + (esc(s.resumo) || 'Sem resumo.') + '</p>' +
         '<dl class="det-grade">' +
+          campo('Nº ACS', esc(s.numero)) +
+          campo('Status', '<span class="status ' + classeStatus(s.statusCodigo) + '">' + esc(s.status) + '</span>' +
+            (s.statusCodigo ? ' <span class="vazio-data">código ' + esc(s.statusCodigo) + '</span>' : '')) +
+          campo('Resumo', s.resumo ? '<div class="det-resumo">' + esc(s.resumo) + '</div>' : '', true) +
           campo('Gestor de negócio', esc(s.gestor)) +
           campo('Sistema', esc(s.sistema)) +
           campo('Solicitada em', dataOuVazio(s.dataSolicitacao, 'Não informado')) +
