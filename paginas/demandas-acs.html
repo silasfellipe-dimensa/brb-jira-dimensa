@@ -494,8 +494,7 @@
       document.getElementById('detCorpo').innerHTML =
         '<dl class="det-grade">' +
           campo('Nº ACS', esc(s.numero)) +
-          campo('Status', '<span class="status ' + classeStatus(s.statusCodigo) + '">' + esc(s.status) + '</span>' +
-            (s.statusCodigo ? ' <span class="vazio-data">código ' + esc(s.statusCodigo) + '</span>' : '')) +
+          campo('Status', '<span class="status ' + classeStatus(s.statusCodigo) + '">' + esc(s.status) + '</span>') +
           campo('Resumo', s.resumo ? '<div class="det-resumo">' + esc(s.resumo) + '</div>' : '', true) +
           campo('Gestor de negócio', esc(s.gestor)) +
           campo('Sistema', esc(s.sistema)) +
