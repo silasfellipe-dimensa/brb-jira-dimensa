@@ -25,6 +25,7 @@ const TELAS = {
   'expedicoes.html': 'expedicoes',
   'pesquisa.html': 'pesquisa',
   'dashboard.html': 'dashboard',
+  'evidencias.html': 'evidencias',
   'admin.html': ''
 };
 

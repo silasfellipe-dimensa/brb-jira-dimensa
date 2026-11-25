@@ -3,6 +3,7 @@ const { deLinha } = require('./demandas');
 const { ITENS_PADRAO, deLinhaExpedicao } = require('./expedicoes');
 const { deLinhaAcs, MAX_SOLICITACOES } = require('./acs');
 const { CHAVE_META, novoPedido, conferirPedido } = require('./senha');
+const { deLinhaEvidencia } = require('./evidencias');
 
 // Dois clientes, de proposito:
 //
@@ -1117,7 +1118,115 @@ async function pedirAtualizacaoAcs(email) {
   }
 }
 
+// ---- Evidências de teste (supabase-evidencias.sql) ----
+
+const BUCKET_EVIDENCIAS = 'evidencias';
+const COLUNAS_EVIDENCIA_LISTA = 'id,titulo,acs,jira,ambiente,versao,ciclo_chave,ciclo_nome,resultado,total_casos,total_imagens,arquivo_nome,criado_por,criado_em,atualizado_por,atualizado_em';
+
+function semTabelaEvidencias(error) {
+  return !!error && (error.code === '42P01' || error.code === 'PGRST205' || /does not exist|schema cache/i.test(error.message || ''));
+}
+
+/** Lista sem o relatório (o jsonb pesado só vem no detalhe). */
+async function listarEvidencias() {
+  try {
+    const { data, error } = await db().from('evidencias').select(COLUNAS_EVIDENCIA_LISTA)
+      .eq('removido', false).order('criado_em', { ascending: false }).limit(2000);
+    if (error) throw Object.assign(new Error(error.message), { semTabela: semTabelaEvidencias(error) });
+    return { ok: true, evidencias: (data || []).map((l) => deLinhaEvidencia(l, false)) };
+  } catch (erro) {
+    console.error('[supabase] falha ao listar evidencias:', erro.message);
+    return { ok: false, semTabela: !!erro.semTabela };
+  }
+}
+
+/** Detalhe com o relatório e a lista das imagens já enviadas. null = não existe (ou removida). */
+async function lerEvidencia(id) {
+  const { data, error } = await db().from('evidencias').select(COLUNAS_EVIDENCIA_LISTA + ',observacoes,dados')
+    .eq('id', id).eq('removido', false).maybeSingle();
+  if (error) throw Object.assign(new Error(error.message), { semTabela: semTabelaEvidencias(error) });
+  if (!data) return null;
+  const { data: imgs, error: erroImgs } = await db().from('evidencia_imagens').select('ref').eq('evidencia_id', id).limit(1000);
+  if (erroImgs) throw new Error(erroImgs.message);
+  return deLinhaEvidencia({ ...data, imagens_salvas: (imgs || []).map((i) => i.ref) }, true);
+}
+
+async function criarEvidencia(email, linha) {
+  try {
+    const { data, error } = await db().from('evidencias')
+      .insert({ ...linha, criado_por: email, atualizado_por: email }).select('id').single();
+    if (error) throw Object.assign(new Error(error.message), { semTabela: semTabelaEvidencias(error) });
+    return { ok: true, evidencia: await lerEvidencia(data.id) };
+  } catch (erro) {
+    console.error('[supabase] falha ao criar evidencia:', erro.message);
+    return { ok: false, semTabela: !!erro.semTabela };
+  }
+}
+
+async function atualizarEvidencia(id, registro, email) {
+  try {
+    const { data, error } = await db().from('evidencias')
+      .update({ ...registro, atualizado_por: email, atualizado_em: new Date().toISOString() })
+      .eq('id', id).eq('removido', false).select('id').maybeSingle();
+    if (error) throw new Error(error.message);
+    if (!data) return { ok: false, naoEncontrada: true };
+    return { ok: true, evidencia: await lerEvidencia(id) };
+  } catch (erro) {
+    console.error('[supabase] falha ao atualizar evidencia:', erro.message);
+    return { ok: false };
+  }
+}
+
+/** Exclusão lógica: os prints ficam no bucket (dá para voltar atrás pelo banco). */
+async function removerEvidencia(id, email) {
+  try {
+    const { data, error } = await db().from('evidencias')
+      .update({ removido: true, atualizado_por: email, atualizado_em: new Date().toISOString() })
+      .eq('id', id).eq('removido', false).select('id').maybeSingle();
+    if (error) throw new Error(error.message);
+    if (!data) return { ok: false, naoEncontrada: true };
+    return { ok: true };
+  } catch (erro) {
+    console.error('[supabase] falha ao remover evidencia:', erro.message);
+    return { ok: false };
+  }
+}
+
+/** Sobe o print para o bucket e registra. Reenviar a mesma ref substitui. */
+async function gravarImagemEvidencia(id, ref, buffer, tipo, ext, email) {
+  try {
+    const caminho = `${id}/${ref}.${ext}`;
+    const { error } = await db().storage.from(BUCKET_EVIDENCIAS).upload(caminho, buffer, { contentType: tipo, upsert: true });
+    if (error) throw new Error(error.message);
+    const { error: erroLinha } = await db().from('evidencia_imagens')
+      .upsert({ evidencia_id: id, ref, caminho, tipo, bytes: buffer.length, enviado_por: email, enviado_em: new Date().toISOString() });
+    if (erroLinha) throw new Error(erroLinha.message);
+    return { ok: true };
+  } catch (erro) {
+    console.error('[supabase] falha ao gravar imagem da evidencia:', erro.message);
+    return { ok: false };
+  }
+}
+
+/** -> { ok, buffer, tipo } | { ok:false, naoEncontrada } */
+async function lerImagemEvidencia(id, ref) {
+  try {
+    const { data: linha, error } = await db().from('evidencia_imagens').select('caminho,tipo')
+      .eq('evidencia_id', id).eq('ref', ref).maybeSingle();
+    if (error) throw new Error(error.message);
+    if (!linha) return { ok: false, naoEncontrada: true };
+    const { data, error: erroArq } = await db().storage.from(BUCKET_EVIDENCIAS).download(linha.caminho);
+    if (erroArq) throw new Error(erroArq.message);
+    return { ok: true, buffer: Buffer.from(await data.arrayBuffer()), tipo: linha.tipo };
+  } catch (erro) {
+    console.error('[supabase] falha ao ler imagem da evidencia:', erro.message);
+    return { ok: false };
+  }
+}
+
 module.exports = {
+  listarEvidencias, lerEvidencia, criarEvidencia, atualizarEvidencia, removerEvidencia,
+  gravarImagemEvidencia, lerImagemEvidencia,
   listarSolicitacoesAcs, lerEstadoColetaAcs, gravarCargaAcs, registrarFalhaColetaAcs, pedirAtualizacaoAcs,
   lerExpedicao, listarChavesExpedicoes, listarExpedicoes, criarExpedicao, atualizarExpedicao, removerExpedicao,
   contarExpedicoesExcluidas, listarExpedicoesExcluidas, restaurarExpedicao,

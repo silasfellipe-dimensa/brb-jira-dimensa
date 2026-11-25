@@ -15,7 +15,9 @@ const {
   lerExpedicao, listarChavesExpedicoes, listarExpedicoes, criarExpedicao, atualizarExpedicao, removerExpedicao,
   contarExpedicoesExcluidas, listarExpedicoesExcluidas, restaurarExpedicao,
   criarItemExpedicao, atualizarItemExpedicao, atualizarObservacaoItem, removerItemExpedicao, registrarGravacaoJira,
-  listarSolicitacoesAcs, lerEstadoColetaAcs, gravarCargaAcs, registrarFalhaColetaAcs, pedirAtualizacaoAcs
+  listarSolicitacoesAcs, lerEstadoColetaAcs, gravarCargaAcs, registrarFalhaColetaAcs, pedirAtualizacaoAcs,
+  listarEvidencias, lerEvidencia, criarEvidencia, atualizarEvidencia, removerEvidencia,
+  gravarImagemEvidencia, lerImagemEvidencia
 } = require('./supabase');
 const { normalizarCarga, normalizarErroColetor, situacaoColeta, deveColetar, conferirAssinatura } = require('./acs');
 const { podeGravarJira, lerCampos, validarPedido, gravarCampo } = require('./gravarJira');
@@ -29,6 +31,10 @@ const {
   normalizarMotivoExclusao
 } = require('./expedicoes');
 const { criarCache, verificar, verificarVarias } = require('./checklistJira');
+const {
+  MAX_BYTES_IMAGEM, normalizarCampos: normalizarCamposEvidencia, normalizarNovaEvidencia, normalizarJira,
+  idEvidencia, refImagem, tipoDaImagem, refsDoRelatorio, acsDoTitulo
+} = require('./evidencias');
 const { normalizarTermo, pesquisar, MAX_TEXTO, MAX_TERMOS, limparTermo, extrairTermos, pesquisarAmplo } = require('./pesquisa');
 const { ssoAtivo, emitirPasse, lerPasse, caminhoSeguro, urlDeEntrada } = require('./sso');
 const { VALIDADE_HORAS: VALIDADE_LINK_SENHA_H, idUsuario, codigoValido, caminhoDoLink } = require('./senha');
@@ -64,8 +70,15 @@ const jsonJira = express.json({ limit: '32kb' });
 // Coletor do ACS: a lista de solicitações é grande (dezenas de kb), e o corpo
 // cru é guardado porque a assinatura do pedido é calculada sobre ele.
 const jsonColetor = express.json({ limit: '1mb', verify: (req, res, buf) => { req.corpoCru = buf; } });
+// Evidências: o relatório lido do Zephyr vem em JSON (casos, scripts, resultados -
+// dezenas de kb, até 1 mb com centenas de casos) e cada print sobe sozinho, em
+// bytes, num pedido próprio (o corpo na Vercel tem teto de 4,5 MB).
+const jsonEvidencias = express.json({ limit: '1mb' });
+const bytesImagem = express.raw({ type: () => true, limit: MAX_BYTES_IMAGEM });
 function leitorDeCorpo(caminho) {
   if (caminho.startsWith('/api/acs/coletor/')) return jsonColetor;
+  if (/^\/api\/evidencias\/\d+\/imagens\//.test(caminho)) return bytesImagem;
+  if (caminho.startsWith('/api/evidencias')) return jsonEvidencias;
   return caminho.startsWith('/api/jira/') ? jsonJira : jsonPadrao;
 }
 app.use((req, res, next) => leitorDeCorpo(req.path)(req, res, next));
@@ -99,7 +112,7 @@ app.use((req, res, next) => {
   // Sem isto ele reaproveita a versão antiga e o deploy "não aparece" - o que
   // já custou vários hard refresh. no-cache não proíbe guardar, obriga a
   // revalidar: com o ETag do Express, resposta igual continua saindo 304.
-  if (req.path === '/' || req.path.endsWith('.html') || ['/dashboard', '/admin', '/demandas', '/demandas/editar', '/demandas/historico', '/expedicoes', '/pesquisa'].includes(req.path)) {
+  if (req.path === '/' || req.path.endsWith('.html') || ['/dashboard', '/admin', '/demandas', '/demandas/editar', '/demandas/historico', '/expedicoes', '/pesquisa', '/evidencias'].includes(req.path)) {
     res.setHeader('Cache-Control', 'no-cache');
   }
 
@@ -188,6 +201,17 @@ app.get('/menu.js', (req, res) => {
 app.get('/busca.js', (req, res) => {
   res.setHeader('Cache-Control', 'no-cache');
   res.type('application/javascript').sendFile(path.join(__dirname, 'static', 'busca.js'));
+});
+
+// Leitor do .mhtml do Zephyr (tela Evidências) e a logo do relatório. Públicos
+// como o menu: código e imagem, sem dado nenhum.
+app.get('/leitor-zephyr.js', (req, res) => {
+  res.setHeader('Cache-Control', 'no-cache');
+  res.type('application/javascript').sendFile(path.join(__dirname, 'static', 'leitor-zephyr.js'));
+});
+app.get('/logo-evertec.png', (req, res) => {
+  res.setHeader('Cache-Control', 'public, max-age=86400');
+  res.type('image/png').sendFile(path.join(__dirname, 'static', 'logo-evertec.png'));
 });
 
 app.get('/login.html', (req, res) => {
@@ -862,6 +886,115 @@ app.delete('/api/expedicoes/:id/itens/:itemId', exigirSessaoApi, exigirEditorApi
  * Jira (título, descrição, comentários) e a nossa base (Demandas, Expedições)
  * numa lista só. Só leitura. Controle interno, como Expedições: só
  * Dimensa/Evertec (o resultado inclui tasks de outros times e projetos). */
+/** Evidências de teste: relatório no layout Evertec a partir do relatório do
+ * Zephyr salvo como .mhtml (o navegador lê o arquivo - static/leitor-zephyr.js -
+ * e manda o relatório em JSON; os prints sobem um por pedido).
+ * Ver: todo mundo que entra no sistema (inclusive o BRB, que é o cliente).
+ * Criar, editar, excluir e mandar imagem: só a equipe (Dimensa/Evertec). */
+const MSG_SEM_TABELA_EVIDENCIAS = 'As evidências ainda não foram ativadas no banco (falta rodar supabase-evidencias.sql).';
+
+app.get('/evidencias', exigirSessaoPagina, (req, res) => {
+  res.sendFile(path.join(PUBLIC_DIR, 'evidencias.html'));
+});
+
+app.get('/api/evidencias', exigirSessaoApi, async (req, res) => {
+  const r = await listarEvidencias();
+  if (r.semTabela) return res.status(503).json({ erro: MSG_SEM_TABELA_EVIDENCIAS, semTabela: true });
+  if (!r.ok) return res.status(503).json({ erro: 'Não foi possível carregar as evidências agora.' });
+  res.json({ evidencias: r.evidencias, editor: souEditor(req.usuario.email) });
+});
+
+// Título da task do Jira -> ACS (o número vem no começo: "20260630006 - ...").
+// Antes de /:id, senão "jira" cairia como identificador.
+app.get('/api/evidencias/jira/:chave', exigirSessaoApi, exigirEditorApi, async (req, res) => {
+  const chave = normalizarJira(req.params.chave);
+  if (!chave) return res.status(400).json({ erro: 'Chave do Jira inválida (ex.: JDCBBRB-201).' });
+  try {
+    const issue = await chamarJira(`/rest/api/3/issue/${encodeURIComponent(chave)}?fields=summary`);
+    const titulo = (issue && issue.fields && issue.fields.summary) || '';
+    res.json({ chave, titulo, acs: acsDoTitulo(titulo) });
+  } catch (erro) {
+    if (/ 404/.test(erro.message)) return res.status(404).json({ erro: `Não achei a task ${chave} no Jira.` });
+    return erroGenerico(res, 502, erro, `consultar ${chave} no Jira`);
+  }
+});
+
+app.get('/api/evidencias/:id', exigirSessaoApi, async (req, res) => {
+  const id = idEvidencia(req.params.id);
+  if (!id) return res.status(400).json({ erro: 'Identificador inválido.' });
+  try {
+    const e = await lerEvidencia(id);
+    if (!e) return res.status(404).json({ erro: 'Evidência não encontrada (pode ter sido excluída).' });
+    res.json({ evidencia: e, editor: souEditor(req.usuario.email) });
+  } catch (erro) {
+    if (erro.semTabela) return res.status(503).json({ erro: MSG_SEM_TABELA_EVIDENCIAS, semTabela: true });
+    return erroGenerico(res, 503, erro, `ler evidência #${id}`);
+  }
+});
+
+app.get('/api/evidencias/:id/imagens/:ref', exigirSessaoApi, async (req, res) => {
+  const id = idEvidencia(req.params.id);
+  const ref = refImagem(req.params.ref);
+  if (!id || !ref) return res.status(400).json({ erro: 'Imagem inválida.' });
+  const r = await lerImagemEvidencia(id, ref);
+  if (r.naoEncontrada) return res.status(404).json({ erro: 'Imagem não encontrada.' });
+  if (!r.ok) return res.status(503).json({ erro: 'Não foi possível carregar a imagem agora.' });
+  // O print não muda depois de enviado (reenviar troca o arquivo, raro): pode
+  // ficar no navegador de quem está logado, nunca em cache compartilhado.
+  res.setHeader('Cache-Control', 'private, max-age=3600');
+  res.type(r.tipo).send(r.buffer);
+});
+
+app.post('/api/evidencias', exigirSessaoApi, exigirEditorApi, async (req, res) => {
+  const n = normalizarNovaEvidencia(req.body);
+  if (!n.ok) return res.status(400).json({ erro: n.erro });
+  const r = await criarEvidencia(req.usuario.email, n.linha);
+  if (r.semTabela) return res.status(503).json({ erro: MSG_SEM_TABELA_EVIDENCIAS, semTabela: true });
+  if (!r.ok) return res.status(500).json({ erro: 'Não foi possível salvar a evidência.' });
+  console.log(`[evidencias] ${req.usuario.email} criou #${r.evidencia.id} (${n.linha.ciclo_chave}, ${n.linha.total_casos} casos)`);
+  res.status(201).json({ evidencia: r.evidencia });
+});
+
+app.put('/api/evidencias/:id/imagens/:ref', exigirSessaoApi, exigirEditorApi, async (req, res) => {
+  const id = idEvidencia(req.params.id);
+  const ref = refImagem(req.params.ref);
+  if (!id || !ref) return res.status(400).json({ erro: 'Imagem inválida.' });
+  const buf = Buffer.isBuffer(req.body) ? req.body : null;
+  const tipo = tipoDaImagem(buf);
+  if (!tipo) return res.status(400).json({ erro: 'O arquivo não é uma imagem PNG, JPEG, GIF ou WebP.' });
+  let e;
+  try { e = await lerEvidencia(id); } catch (erro) { return erroGenerico(res, 503, erro, `ler evidência #${id}`); }
+  if (!e) return res.status(404).json({ erro: 'Evidência não encontrada.' });
+  // só a imagem que o relatório gravado pede: não vira depósito de arquivo
+  if (!refsDoRelatorio(e.dados).has(ref)) return res.status(400).json({ erro: 'Esta imagem não faz parte da evidência.' });
+  const r = await gravarImagemEvidencia(id, ref, buf, tipo.tipo, tipo.ext, req.usuario.email);
+  if (!r.ok) return res.status(500).json({ erro: 'Não foi possível guardar a imagem.' });
+  res.json({ ok: true, ref });
+});
+
+app.patch('/api/evidencias/:id', exigirSessaoApi, exigirEditorApi, async (req, res) => {
+  const id = idEvidencia(req.params.id);
+  if (!id) return res.status(400).json({ erro: 'Identificador inválido.' });
+  const n = normalizarCamposEvidencia(req.body, { exigirAlgum: true });
+  if (!n.ok) return res.status(400).json({ erro: n.erro });
+  if (n.registro.titulo === '') return res.status(400).json({ erro: 'O título não pode ficar vazio.' });
+  const r = await atualizarEvidencia(id, n.registro, req.usuario.email);
+  if (r.naoEncontrada) return res.status(404).json({ erro: 'Evidência não encontrada (pode ter sido excluída).' });
+  if (!r.ok) return res.status(500).json({ erro: 'Não foi possível salvar.' });
+  console.log(`[evidencias] ${req.usuario.email} alterou #${id}: ${Object.keys(n.registro).join(', ')}`);
+  res.json({ evidencia: r.evidencia });
+});
+
+app.delete('/api/evidencias/:id', exigirSessaoApi, exigirEditorApi, async (req, res) => {
+  const id = idEvidencia(req.params.id);
+  if (!id) return res.status(400).json({ erro: 'Identificador inválido.' });
+  const r = await removerEvidencia(id, req.usuario.email);
+  if (r.naoEncontrada) return res.status(404).json({ erro: 'Evidência não encontrada (pode já ter sido excluída).' });
+  if (!r.ok) return res.status(500).json({ erro: 'Não foi possível excluir.' });
+  console.log(`[evidencias] ${req.usuario.email} excluiu #${id}`);
+  res.json({ ok: true });
+});
+
 app.get('/pesquisa', exigirSessaoPagina, exigirEquipePagina, (req, res) => {
   res.sendFile(path.join(PUBLIC_DIR, 'pesquisa.html'));
 });

@@ -6,7 +6,7 @@
  *
  * data-menu é a tela atual, que fica de fora do menu. Vazio (Admin,
  * Histórico de demandas) = mostra todos. Ordem igual à do Portal: Kanban BRB,
- * Demandas, Expedições, Dashboard, Qualidade. Depois: Portal, quem está logado e
+ * Demandas, Expedições, Evidências, Dashboard, Qualidade. Depois: Portal, quem está logado e
  * Sair. A pesquisa de chamado não é item do menu: é o botão flutuante "Achar
  * chamado" (static/busca.js), que este arquivo carrega só para a equipe.
  *
@@ -56,6 +56,8 @@
       '<rect x="9.7" y="4" width="4.6" height="11" rx="1.2"></rect><rect x="16.4" y="4" width="4.6" height="14" rx="1.2"></rect></svg>',
     demandas: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"></path></svg>',
     expedicoes: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 11l3 3L22 4M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"></path></svg>',
+    evidencias: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14 3H6a2 2 0 00-2 2v14a2 2 0 002 2h12a2 2 0 002-2V9z"></path>' +
+      '<path d="M14 3v6h6"></path><path d="M8.5 15l2.5 2.5 4.5-5"></path></svg>',
     dashboard: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 19V10M10 19V5M16 19v-6M22 19H2"></path></svg>',
     qualidade: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 2.8l6.2 2.4v5.6c0 3.9-2.6 7.3-6.2 8.4-3.6-1.1-6.2-4.5-6.2-8.4V5.2z"></path>' +
       '<path d="M6.2 10.9l2 2 3.5-3.9"></path><path d="M17.8 9h3.4M17.8 13h3.4M17.8 17h3.4"></path></svg>',
@@ -70,6 +72,8 @@
     { id: 'kanban', rotulo: 'Kanban BRB', href: '/', dica: 'Quadro do sprint, espelhado do Jira' },
     { id: 'demandas', rotulo: 'Demandas', href: '/demandas', dica: 'Demandas em andamento no ACS do BRB', soEquipe: true },
     { id: 'expedicoes', rotulo: 'Expedições', href: '/expedicoes', dica: 'Checklist do time antes de comitar e de expedir', soEquipe: true },
+    // Todos veem (o BRB é o cliente da evidência); criar e editar é só da equipe.
+    { id: 'evidencias', rotulo: 'Evidências', href: '/evidencias', dica: 'Evidências de teste dos ciclos do Zephyr, no layout Evertec' },
     { id: 'dashboard', rotulo: 'Dashboard', href: '/dashboard', dica: 'Métricas e andamento do sprint' },
     // /ir/qualidade leva o passe do login único (sso.js); sem ele, o servidor
     // manda para o endereço puro e o Qualidade pede login, como antes.
