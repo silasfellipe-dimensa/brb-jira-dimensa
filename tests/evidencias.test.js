@@ -271,6 +271,44 @@ describe('evidencias.js: o servidor não confia no JSON do navegador', () => {
 
 // ---------- rotas ----------
 
+describe('task do Jira: busca enquanto digita e o que vem dela', () => {
+  test('chave inteira, só o número ou título; curto demais não busca', () => {
+    assert.deepStrictEqual(E.termoBuscaTask('jdcbbrb-0201'), { termo: 'jdcbbrb-0201', chave: 'JDCBBRB-201' });
+    assert.deepStrictEqual(E.termoBuscaTask('201'), { termo: '201', chave: 'JDCBBRB-201' });
+    assert.strictEqual(E.termoBuscaTask('20260630006').chave, '', 'ACS (11 dígitos) não vira chave');
+    assert.strictEqual(E.termoBuscaTask('simular taxa').chave, '');
+    assert.strictEqual(E.termoBuscaTask('a'), null);
+    assert.strictEqual(E.termoBuscaTask('  '), null);
+    assert.strictEqual(E.termoBuscaTask(undefined), null);
+  });
+
+  test('JQL: só no projeto do BRB, sem aspas nem operadores vindos do campo', () => {
+    const jql = E.jqlBuscaTask(E.termoBuscaTask('simular" OR project = X ~ (taxa)'));
+    assert.match(jql, /^project = JDCBBRB AND summary ~ "[^"]*\*" ORDER BY updated DESC$/);
+    assert.ok(!/[()~=]/.test(jql.split('"')[1]), 'nada de JQL dentro das aspas');
+    assert.match(E.jqlBuscaTask(E.termoBuscaTask('simul')), /summary ~ "simul\*"/);
+    assert.strictEqual(E.jqlBuscaTask(E.termoBuscaTask('--')), '', 'só pontuação não busca');
+  });
+
+  test('sugestões: a chave exata primeiro, depois as com ACS, sem repetir, no máximo 10', () => {
+    const i = (key, summary, tipo) => ({ key, fields: { summary, issuetype: { name: tipo || 'Epico' } } });
+    const achadas = [i('JDCBBRB-5', 'Codificação'), i('JDCBBRB-201', '20260630006 - Simular'), i('JDCBBRB-7', '20260101001 - Outra')];
+    const r = E.sugestoesTask(i('JDCBBRB-9', 'Exata'), achadas.concat([i('JDCBBRB-201', 'repetida')]));
+    assert.deepStrictEqual(r.map((t) => t.chave), ['JDCBBRB-9', 'JDCBBRB-201', 'JDCBBRB-7', 'JDCBBRB-5']);
+    assert.deepStrictEqual(r[1], { chave: 'JDCBBRB-201', titulo: '20260630006 - Simular', tipo: 'Epico', acs: '20260630006' });
+    const muitas = Array.from({ length: 15 }, (_, n) => i('JDCBBRB-' + (n + 1), 't'));
+    assert.strictEqual(E.sugestoesTask(null, muitas).length, E.MAX_SUGESTOES);
+    assert.deepStrictEqual(E.sugestoesTask(null, null), []);
+  });
+
+  test('versão: nomes das "Versões corrigidas", sem repetir, de uma ou várias issues', () => {
+    const v = (...nomes) => ({ fields: { fixVersions: nomes.map((name) => ({ name })) } });
+    assert.strictEqual(E.versoesDe([v('DJSBRB_6.4.1.0')]), 'DJSBRB_6.4.1.0');
+    assert.strictEqual(E.versoesDe([v('DJSCF_6.8.1.4'), v('DJSBRB_6.4.2.0', 'DJSCF_6.8.1.4'), {}]), 'DJSCF_6.8.1.4, DJSBRB_6.4.2.0');
+    assert.strictEqual(E.versoesDe([v(), null]), '');
+  });
+});
+
 describe('rotas de evidências: todos veem, só a equipe mexe', () => {
   const app = require('../server');
   const { criarSessao, COOKIE_NAME } = require('../auth');
@@ -303,6 +341,7 @@ describe('rotas de evidências: todos veem, só a equipe mexe', () => {
     assert.strictEqual((await pedir('/api/evidencias/1', { method: 'DELETE', headers: h })).status, 403);
     assert.strictEqual((await pedir('/api/evidencias/1/imagens/img1', { method: 'PUT', headers: { Cookie: h.Cookie, 'Content-Type': 'image/png' }, body: PNG })).status, 403);
     assert.strictEqual((await pedir('/api/evidencias/jira/PROJ-201', { headers: h })).status, 403);
+    assert.strictEqual((await pedir('/api/evidencias/jira?q=simular', { headers: h })).status, 403);
   });
 
   test('a equipe: pedido inválido é recusado antes do banco', async () => {

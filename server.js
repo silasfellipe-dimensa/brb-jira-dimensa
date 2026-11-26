@@ -20,7 +20,7 @@ const {
   gravarImagemEvidencia, lerImagemEvidencia
 } = require('./supabase');
 const { normalizarCarga, normalizarErroColetor, situacaoColeta, deveColetar, conferirAssinatura } = require('./acs');
-const { podeGravarJira, lerCampos, validarPedido, gravarCampo } = require('./gravarJira');
+const { podeGravarJira, lerCampos, validarPedido, gravarCampo, adfParaTexto } = require('./gravarJira');
 const {
   normalizarCampos, idDemanda, interpretarMes, interpretarListaMeses, mesesDisponiveis,
   filtrarPorMeses, resumirMeses
@@ -33,7 +33,8 @@ const {
 const { criarCache, verificar, verificarVarias } = require('./checklistJira');
 const {
   MAX_BYTES_IMAGEM, normalizarCampos: normalizarCamposEvidencia, normalizarNovaEvidencia, normalizarJira,
-  idEvidencia, refImagem, tipoDaImagem, refsDoRelatorio, acsDoTitulo
+  idEvidencia, refImagem, tipoDaImagem, refsDoRelatorio, acsDoTitulo,
+  termoBuscaTask, jqlBuscaTask, sugestoesTask, versoesDe, MAX_SUGESTOES
 } = require('./evidencias');
 const { normalizarTermo, pesquisar, MAX_TEXTO, MAX_TERMOS, limparTermo, extrairTermos, pesquisarAmplo } = require('./pesquisa');
 const { ssoAtivo, emitirPasse, lerPasse, caminhoSeguro, urlDeEntrada } = require('./sso');
@@ -904,15 +905,50 @@ app.get('/api/evidencias', exigirSessaoApi, async (req, res) => {
   res.json({ evidencias: r.evidencias, editor: souEditor(req.usuario.email) });
 });
 
-// Título da task do Jira -> ACS (o número vem no começo: "20260630006 - ...").
-// Antes de /:id, senão "jira" cairia como identificador.
+// Busca a task enquanto se digita: pela chave ("201" ou "JDCBBRB-201") e pelo
+// título, só no projeto do BRB. Antes de /:id, senão "jira" cairia como identificador.
+app.get('/api/evidencias/jira', exigirSessaoApi, exigirEditorApi, async (req, res) => {
+  const b = termoBuscaTask(req.query.q);
+  if (!b) return res.json({ tasks: [] });
+  const campos = 'summary,issuetype';
+  // chave que não existe dá 404 (e numa JQL derrubaria a busca toda): vai à parte
+  const exata = b.chave
+    ? chamarJira(`/rest/api/3/issue/${encodeURIComponent(b.chave)}?fields=${campos}`).catch(() => null)
+    : Promise.resolve(null);
+  const jql = jqlBuscaTask(b);
+  const porTitulo = jql
+    ? chamarJira('/rest/api/3/search/jql', { metodo: 'POST', corpo: { jql, fields: campos.split(','), maxResults: MAX_SUGESTOES } })
+      .then((r) => (r && r.issues) || [])
+    : Promise.resolve([]);
+  try {
+    const [e, lista] = await Promise.all([exata, porTitulo]);
+    res.json({ tasks: sugestoesTask(e, lista) });
+  } catch (erro) {
+    return erroGenerico(res, 502, erro, 'buscar task no Jira');
+  }
+});
+
+// Task do Jira -> o que dá para preencher: ACS (começo do título: "20260630006 - ..."),
+// versão ("Versões corrigidas"; no Épico costuma estar só nas filhas) e ambiente
+// (campo "Ambiente" da task, quase sempre vazio no projeto).
 app.get('/api/evidencias/jira/:chave', exigirSessaoApi, exigirEditorApi, async (req, res) => {
   const chave = normalizarJira(req.params.chave);
   if (!chave) return res.status(400).json({ erro: 'Chave do Jira inválida (ex.: JDCBBRB-201).' });
   try {
-    const issue = await chamarJira(`/rest/api/3/issue/${encodeURIComponent(chave)}?fields=summary`);
-    const titulo = (issue && issue.fields && issue.fields.summary) || '';
-    res.json({ chave, titulo, acs: acsDoTitulo(titulo) });
+    const issue = await chamarJira(`/rest/api/3/issue/${encodeURIComponent(chave)}?fields=summary,fixVersions,environment`);
+    const f = (issue && issue.fields) || {};
+    const titulo = f.summary || '';
+    let versao = versoesDe([issue]);
+    let origemVersao = versao ? 'task' : '';
+    if (!versao) {
+      const filhas = await chamarJira('/rest/api/3/search/jql', {
+        metodo: 'POST', corpo: { jql: `parent = ${chave}`, fields: ['fixVersions'], maxResults: 50 }
+      }).catch(() => null);
+      versao = versoesDe((filhas && filhas.issues) || []);
+      if (versao) origemVersao = 'filhas';
+    }
+    const ambiente = adfParaTexto(f.environment).texto.split('\n').map((l) => l.trim()).filter(Boolean)[0] || '';
+    res.json({ chave, titulo, acs: acsDoTitulo(titulo), versao, origemVersao, ambiente: ambiente.slice(0, 120) });
   } catch (erro) {
     if (/ 404/.test(erro.message)) return res.status(404).json({ erro: `Não achei a task ${chave} no Jira.` });
     return erroGenerico(res, 502, erro, `consultar ${chave} no Jira`);

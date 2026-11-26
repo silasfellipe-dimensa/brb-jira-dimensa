@@ -141,6 +141,16 @@
   .form .linha2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
   .form .com-botao { display: flex; gap: 6px; }
   .form .com-botao input { flex: 1; }
+  .form .com-botao { position: relative; }
+  .form .auto { flex: 1; display: flex; min-width: 0; }
+  /* a lista ocupa a largura do campo + botão (o painel lateral é estreito) */
+  .sugestoes { position: absolute; left: 0; right: 0; top: calc(100% + 3px); z-index: 30; margin: 0; padding: 4px; list-style: none; background: var(--bg-panel); border: 1px solid var(--line); border-radius: 8px; box-shadow: 0 8px 24px rgba(30,33,44,0.16); max-height: 320px; overflow: auto; }
+  .sugestoes li { padding: 7px 9px; border-radius: 6px; cursor: pointer; font-size: 0.78rem; line-height: 1.35; display: grid; grid-template-columns: auto 1fr; gap: 2px 8px; align-items: baseline; }
+  .sugestoes li b { font: 700 0.74rem ui-monospace, Consolas, monospace; color: var(--ink); white-space: nowrap; }
+  .sugestoes li .acs { justify-self: end; font-size: 0.68rem; font-weight: 700; color: var(--accent); white-space: nowrap; }
+  .sugestoes li .tt { grid-column: 1 / -1; color: var(--ink-dim); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+  .sugestoes li.ativo, .sugestoes li[data-i]:hover { background: var(--accent-soft); }
+  .sugestoes li.info { display: block; cursor: default; color: var(--ink-faint); }
   .lateral { position: sticky; top: 16px; display: grid; gap: 14px; }
   .lateral h3 { margin: 0 0 10px; font-size: 0.78rem; text-transform: uppercase; letter-spacing: .04em; color: var(--ink-dim); }
   .progresso { font-size: 0.82rem; color: var(--ink-dim); }
@@ -352,6 +362,7 @@
   </section>
 </main>
 
+<datalist id="ambientesSugeridos"></datalist>
 <dialog class="editar" id="dlgEditar" aria-labelledby="dlgEditarTitulo">
   <div class="ed-topo"><h2 id="dlgEditarTitulo">Editar dados da evidência</h2><button type="button" class="fechar-x" data-fechar aria-label="Fechar">×</button></div>
   <div class="ed-corpo"><div class="form" id="formEditar"></div><p class="progresso" id="progressoEditar" aria-live="polite"></p></div>
@@ -560,11 +571,13 @@
   function htmlForm(v, prefixo) {
     return '' +
       '<div><label for="' + prefixo + 'Titulo">Título</label><input id="' + prefixo + 'Titulo" maxlength="300" value="' + esc(v.titulo) + '"></div>' +
-      '<div><label for="' + prefixo + 'Jira">Task no Jira</label><div class="com-botao"><input id="' + prefixo + 'Jira" maxlength="40" placeholder="JDCBBRB-201" value="' + esc(v.jira) + '">' +
-        '<button type="button" class="btn" data-buscar-acs="' + prefixo + '" title="Busca o ACS no título da task">Buscar ACS</button></div>' +
+      '<div><label for="' + prefixo + 'Jira">Task no Jira</label><div class="com-botao"><div class="auto">' +
+        '<input id="' + prefixo + 'Jira" maxlength="80" autocomplete="off" placeholder="Chave, ACS ou parte do título" value="' + esc(v.jira) + '" role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="' + prefixo + 'JiraLista">' +
+        '<ul class="sugestoes" id="' + prefixo + 'JiraLista" role="listbox" hidden></ul></div>' +
+        '<button type="button" class="btn" data-puxar-jira="' + prefixo + '" title="Busca de novo na task e troca ACS, versão e ambiente pelo que está no Jira">Puxar do Jira</button></div>' +
         '<div class="dica" id="' + prefixo + 'JiraDica"></div></div>' +
       '<div><label for="' + prefixo + 'Acs">ACS</label><input id="' + prefixo + 'Acs" inputmode="numeric" maxlength="11" placeholder="11 dígitos" value="' + esc(v.acs) + '"></div>' +
-      '<div class="linha2"><div><label for="' + prefixo + 'Ambiente">Ambiente</label><input id="' + prefixo + 'Ambiente" maxlength="120" placeholder="ex.: Homologação" value="' + esc(v.ambiente) + '"></div>' +
+      '<div class="linha2"><div><label for="' + prefixo + 'Ambiente">Ambiente</label><input id="' + prefixo + 'Ambiente" maxlength="120" list="ambientesSugeridos" placeholder="ex.: Homologação" value="' + esc(v.ambiente) + '"></div>' +
         '<div><label for="' + prefixo + 'Versao">Versão / build</label><input id="' + prefixo + 'Versao" maxlength="120" placeholder="ex.: 6.3.1.0" value="' + esc(v.versao) + '"></div></div>' +
       '<div><label for="' + prefixo + 'Obs">Observações para o cliente</label><textarea id="' + prefixo + 'Obs" maxlength="8000" placeholder="Riscos, limitações, pontos de atenção…">' + esc(v.observacoes) + '</textarea></div>';
   }
@@ -585,26 +598,114 @@
     return '';
   }
 
-  /* Busca o título da task no Jira e tira o ACS do começo dele. `sobrescrever`
-   * = trocar o ACS mesmo se já houver um (clique no botão); automático só preenche vazio. */
-  function buscarAcs(prefixo, sobrescrever) {
-    var jira = $('#' + prefixo + 'Jira').value.trim().toUpperCase();
+  /* Põe no campo o que veio do Jira sem passar por cima do que a pessoa
+   * digitou: troca só o campo vazio ou o que o próprio Jira tinha preenchido
+   * (data-do-jira). `forcar` (botão "Puxar do Jira") troca tudo. */
+  function preencherDoJira(id, valor, forcar) {
+    var el = $('#' + id);
+    var atual = el.value.trim(), doJira = el.dataset.doJira || '';
+    var daPessoa = atual && atual !== doJira;
+    if (daPessoa && !forcar) return false;
+    if (!valor) { if (atual && !daPessoa) el.value = ''; el.dataset.doJira = ''; return false; }
+    el.dataset.doJira = valor;
+    if (atual === valor) return false;
+    el.value = valor;
+    return true;
+  }
+
+  /* Task escolhida -> título na dica; ACS (começo do título), versão
+   * ("Versões corrigidas" da task ou das subtarefas) e ambiente no formulário. */
+  function puxarDaTask(prefixo, forcar) {
+    var campo = $('#' + prefixo + 'Jira');
+    var jira = campo.value.trim().toUpperCase();
     var dica = $('#' + prefixo + 'JiraDica');
-    if (!/^[A-Z][A-Z0-9_]+-\d+$/.test(jira)) { dica.className = 'dica erro'; dica.textContent = 'Informe a task no formato JDCBBRB-201.'; return Promise.resolve(); }
+    if (!jira) { dica.className = 'dica'; dica.textContent = ''; campo.dataset.puxada = ''; return Promise.resolve(); }
+    if (!/^[A-Z][A-Z0-9_]+-\d+$/.test(jira)) { dica.className = 'dica erro'; dica.textContent = 'Escolha uma task da lista ou digite a chave (ex.: JDCBBRB-201).'; return Promise.resolve(); }
+    campo.value = jira;
+    campo.dataset.puxada = jira;
     dica.className = 'dica'; dica.textContent = 'Consultando o Jira…';
     return pedirJson('/api/evidencias/jira/' + encodeURIComponent(jira)).then(function (x) {
+      if (campo.value.trim().toUpperCase() !== jira) return; // trocou de task no meio
       if (!x.ok) { dica.className = 'dica erro'; dica.textContent = (x.j && x.j.erro) || 'Não consegui consultar o Jira.'; return; }
-      var campoAcs = $('#' + prefixo + 'Acs');
-      if (x.j.acs && (sobrescrever || !campoAcs.value.trim())) campoAcs.value = x.j.acs;
+      var veio = [];
+      if (preencherDoJira(prefixo + 'Acs', x.j.acs, forcar)) veio.push('ACS');
+      if (preencherDoJira(prefixo + 'Versao', x.j.versao, forcar)) veio.push(x.j.origemVersao === 'filhas' ? 'versão (das subtarefas)' : 'versão');
+      if (preencherDoJira(prefixo + 'Ambiente', x.j.ambiente, forcar)) veio.push('ambiente');
       dica.className = x.j.acs ? 'dica ok' : 'dica';
-      dica.textContent = x.j.titulo + (x.j.acs ? '' : ' (sem ACS no título)');
+      dica.textContent = x.j.titulo + (x.j.acs ? '' : ' (sem ACS no título)') + (veio.length ? ' · trouxe ' + veio.join(', ') : '');
       if (prefixo === 'n') atualizarPreviaNova();
     }).catch(function () { dica.className = 'dica erro'; dica.textContent = 'Sem conexão com o servidor.'; });
   }
   document.addEventListener('click', function (e) {
-    var b = e.target.closest && e.target.closest('[data-buscar-acs]');
-    if (b) buscarAcs(b.getAttribute('data-buscar-acs'), true);
+    var b = e.target.closest && e.target.closest('[data-puxar-jira]');
+    if (b) puxarDaTask(b.getAttribute('data-puxar-jira'), true);
   });
+
+  /* Lista que filtra enquanto digita (chave, ACS ou parte do título). */
+  function ligarBuscaTask(prefixo) {
+    var input = $('#' + prefixo + 'Jira'), lista = $('#' + prefixo + 'JiraLista');
+    var itens = [], ativo = -1, timer = null, seq = 0;
+    input.dataset.puxada = input.value.trim().toUpperCase();
+    function fechar() { seq++; clearTimeout(timer); lista.hidden = true; lista.innerHTML = ''; itens = []; ativo = -1; input.setAttribute('aria-expanded', 'false'); }
+    function info(t) { lista.hidden = false; input.setAttribute('aria-expanded', 'true'); lista.innerHTML = '<li class="info">' + esc(t) + '</li>'; }
+    function marcar(i) {
+      ativo = i;
+      $$('li[data-i]', lista).forEach(function (li, j) { li.classList.toggle('ativo', j === i); if (j === i) li.scrollIntoView({ block: 'nearest' }); });
+    }
+    function escolher(t) { input.value = t.chave; fechar(); puxarDaTask(prefixo, false); }
+    input.addEventListener('input', function () {
+      clearTimeout(timer);
+      var q = input.value.trim();
+      if (q.length < 2) { fechar(); return; }
+      timer = setTimeout(function () {
+        var meu = ++seq;
+        info('Buscando no Jira…');
+        pedirJson('/api/evidencias/jira?q=' + encodeURIComponent(q)).then(function (x) {
+          if (meu !== seq) return;
+          if (!x.ok) { info((x.j && x.j.erro) || 'Não consegui buscar no Jira.'); return; }
+          itens = x.j.tasks || [];
+          if (!itens.length) { info('Nenhuma task do JDCBBRB com esse texto.'); return; }
+          lista.innerHTML = itens.map(function (t, i) {
+            return '<li role="option" data-i="' + i + '"><b>' + esc(t.chave) + '</b>' + (t.acs ? '<span class="acs">ACS ' + esc(t.acs) + '</span>' : '<span></span>') +
+              '<span class="tt" title="' + esc(t.titulo) + '">' + esc(t.titulo) + (t.tipo ? ' · ' + esc(t.tipo) : '') + '</span></li>';
+          }).join('');
+          ativo = -1;
+        }).catch(function () { if (meu === seq) info('Sem conexão com o servidor.'); });
+      }, 280);
+    });
+    input.addEventListener('keydown', function (e) {
+      var aberta = !lista.hidden && itens.length;
+      if (e.key === 'Escape' && !lista.hidden) { e.preventDefault(); e.stopPropagation(); fechar(); return; }
+      if (!aberta) {
+        if (e.key === 'Enter') { e.preventDefault(); fechar(); puxarDaTask(prefixo, false); }
+        return;
+      }
+      if (e.key === 'ArrowDown') { e.preventDefault(); marcar(Math.min(ativo + 1, itens.length - 1)); }
+      else if (e.key === 'ArrowUp') { e.preventDefault(); marcar(Math.max(ativo - 1, 0)); }
+      else if (e.key === 'Enter') { e.preventDefault(); escolher(itens[ativo >= 0 ? ativo : 0]); }
+    });
+    // mousedown (não click): o clique chega antes do blur fechar a lista
+    lista.addEventListener('mousedown', function (e) {
+      var li = e.target.closest('li[data-i]');
+      e.preventDefault();
+      if (li) escolher(itens[Number(li.getAttribute('data-i'))]);
+    });
+    input.addEventListener('blur', function () {
+      fechar();
+      var v = input.value.trim().toUpperCase();
+      if (v !== (input.dataset.puxada || '') && (!v || /^[A-Z][A-Z0-9_]+-\d+$/.test(v))) puxarDaTask(prefixo, false);
+    });
+  }
+
+  /* Ambiente não existe no Zephyr nem (na prática) no Jira: sugere os já usados. */
+  function sugerirAmbientes() {
+    var vistos = ['Homologação'];
+    estado.evidencias.forEach(function (e) {
+      var a = (e.ambiente || '').trim();
+      if (a && !vistos.some(function (v) { return semAcento(v) === semAcento(a); })) vistos.push(a);
+    });
+    $('#ambientesSugeridos').innerHTML = vistos.map(function (a) { return '<option value="' + esc(a) + '">'; }).join('');
+  }
 
   // =================== lista ===================
 
@@ -726,13 +827,17 @@
     avisoPagina(repetidas.length ? '<b>Já existe evidência do ciclo ' + esc(rel.ciclo.chave) + '</b> (criada em ' + esc(dataHora(repetidas[0].criadoEm)) + '). ' +
       'Salvar de novo cria outra evidência; a anterior continua na lista.' : '', 'info');
     atualizarPreviaNova();
-    if (jira) buscarAcs('n', false);
+    sugerirAmbientes();
+    ligarBuscaTask('n');
+    if (jira) puxarDaTask('n', false);
   }
 
   function atualizarPreviaNova() {
     if (!estado.nova) return;
     var v = lerForm('n');
-    var ev = { titulo: v.titulo, acs: v.acs, jira: v.jira, ambiente: v.ambiente, versao: v.versao, observacoes: v.observacoes, dados: estado.nova.relatorio };
+    // enquanto se digita no campo da task (busca), a prévia fica com a última task de verdade
+    var jira = /^[A-Z][A-Z0-9_]+-\d+$/.test(v.jira) ? v.jira : ($('#nJira').dataset.puxada || '');
+    var ev = { titulo: v.titulo, acs: v.acs, jira: jira, ambiente: v.ambiente, versao: v.versao, observacoes: v.observacoes, dados: estado.nova.relatorio };
     var imgs = estado.nova.imagens;
     $('#folhaNova').innerHTML = htmlFolha(ev, function (ref) { return imgs[ref] ? 'data:' + imgs[ref].tipo + ';base64,' + imgs[ref].base64 : ''; });
     $('#conferenciaNova').innerHTML = htmlConferencia(conferencia(ev));
@@ -865,6 +970,8 @@
   $('#btnEditar').addEventListener('click', function () {
     var ev = estado.atual;
     $('#formEditar').innerHTML = htmlForm(ev, 'e');
+    sugerirAmbientes();
+    ligarBuscaTask('e');
     $('#progressoEditar').textContent = '';
     dlg.showModal();
   });

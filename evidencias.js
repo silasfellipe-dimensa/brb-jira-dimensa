@@ -236,8 +236,72 @@ function refsDoRelatorio(dados) {
   return refs;
 }
 
+// ---------- Task do Jira (busca enquanto digita e o que vem dela) ----------
+
+const PROJETO_JIRA = 'JDCBBRB';
+const MAX_SUGESTOES = 10;
+
+/** O que a pessoa digitou no campo da task -> o que buscar. Só letras, números,
+ * _ . - e espaço (o termo vai dentro de JQL). "201" e "JDCBBRB-201" viram a
+ * chave; o resto procura no título. null = curto demais para buscar. */
+function termoBuscaTask(q) {
+  const termo = String(q === undefined || q === null ? '' : q)
+    .replace(/[^\p{L}\p{N}_.\- ]+/gu, ' ').replace(/\s+/g, ' ').trim().slice(0, 60);
+  if (termo.length < 2) return null;
+  const k = /^([A-Za-z][A-Za-z0-9_]*)-(\d{1,7})$/.exec(termo);
+  if (k) return { termo, chave: k[1].toUpperCase() + '-' + Number(k[2]) };
+  if (/^\d{1,7}$/.test(termo)) return { termo, chave: PROJETO_JIRA + '-' + Number(termo) };
+  return { termo, chave: '' };
+}
+
+/** JQL do título. Só no projeto do BRB (a instância tem outros clientes). A
+ * última palavra vai com * para achar enquanto ainda se digita ("simul" -> simular). */
+function jqlBuscaTask(b) {
+  const palavras = b.termo.split(' ').filter((p) => p.replace(/[_.\-]/g, ''));
+  if (!palavras.length) return '';
+  const texto = palavras.join(' ') + '*';
+  return `project = ${PROJETO_JIRA} AND summary ~ "${texto}" ORDER BY updated DESC`;
+}
+
+/** Issue do Jira -> sugestão da lista. */
+function deTaskJira(i) {
+  const f = (i && i.fields) || {};
+  const titulo = String(f.summary || '').trim();
+  return { chave: i.key, titulo, tipo: (f.issuetype && f.issuetype.name) || '', acs: acsDoTitulo(titulo) };
+}
+
+/** Junta a chave exata (se existir) com as do título, sem repetir, as que têm
+ * ACS primeiro (é a task que a evidência procura), no máximo MAX_SUGESTOES. */
+function sugestoesTask(exata, achadas) {
+  const vistas = new Set();
+  const lista = [];
+  [exata].concat(achadas || []).forEach((i) => {
+    if (!i || !i.key || vistas.has(i.key)) return;
+    vistas.add(i.key);
+    lista.push(deTaskJira(i));
+  });
+  const ordem = lista.map((t, i) => ({ t, i, peso: (exata && t.chave === exata.key) ? 0 : t.acs ? 1 : 2 }));
+  ordem.sort((a, b) => a.peso - b.peso || a.i - b.i);
+  return ordem.slice(0, MAX_SUGESTOES).map((o) => o.t);
+}
+
+/** "Versões corrigidas" (fixVersions) de uma ou mais issues -> "DJSBRB_6.4.1.0, DJSCF_6.8.1.4".
+ * No projeto a versão costuma estar nas filhas do Épico, não nele. */
+function versoesDe(issues) {
+  const nomes = [];
+  (issues || []).forEach((i) => {
+    const vs = (i && i.fields && i.fields.fixVersions) || [];
+    vs.forEach((v) => {
+      const n = String((v && v.name) || '').trim();
+      if (n && nomes.indexOf(n) < 0) nomes.push(n);
+    });
+  });
+  return nomes.join(', ').slice(0, 120);
+}
+
 module.exports = {
-  MAX_BYTES_IMAGEM,
+  MAX_BYTES_IMAGEM, PROJETO_JIRA, MAX_SUGESTOES,
+  termoBuscaTask, jqlBuscaTask, deTaskJira, sugestoesTask, versoesDe,
   normalizarAcs, normalizarJira, normalizarRelatorio, normalizarCampos, normalizarNovaEvidencia,
   idEvidencia, refImagem, tipoDaImagem, deLinhaEvidencia, refsDoRelatorio,
   codigoStatus, resultadoGeral, acsDoTitulo
