@@ -6,7 +6,7 @@
  *
  * data-menu é a tela atual, que fica de fora do menu. Vazio (Admin,
  * Histórico de demandas) = mostra todos. Ordem igual à do Portal: Kanban BRB,
- * Demandas, Expedições, Evidências, Dashboard, Qualidade. Depois: Portal, quem está logado e
+ * Demandas, Produção PF, Expedições, Evidências, Dashboard, Qualidade. Depois: Portal, quem está logado e
  * Sair. A pesquisa de chamado não é item do menu: é o botão flutuante "Achar
  * chamado" (static/busca.js), que este arquivo carrega só para a equipe.
  *
@@ -55,6 +55,7 @@
     kanban: '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="4.6" height="16" rx="1.2"></rect>' +
       '<rect x="9.7" y="4" width="4.6" height="11" rx="1.2"></rect><rect x="16.4" y="4" width="4.6" height="14" rx="1.2"></rect></svg>',
     demandas: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"></path></svg>',
+    producao: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M21 12a9 9 0 11-9-9v9z"></path><path d="M15 3.5A9 9 0 0120.5 9H15z"></path></svg>',
     expedicoes: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 11l3 3L22 4M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"></path></svg>',
     evidencias: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14 3H6a2 2 0 00-2 2v14a2 2 0 002 2h12a2 2 0 002-2V9z"></path>' +
       '<path d="M14 3v6h6"></path><path d="M8.5 15l2.5 2.5 4.5-5"></path></svg>',
@@ -71,6 +72,7 @@
   var ITENS = [
     { id: 'kanban', rotulo: 'Kanban BRB', href: '/', dica: 'Quadro do sprint, espelhado do Jira' },
     { id: 'demandas', rotulo: 'Demandas', href: '/demandas', dica: 'Demandas em andamento no ACS do BRB', soEquipe: true },
+    { id: 'producao', rotulo: 'Produção PF', href: '/producao', dica: 'Pontos de função de demandas e sustentação, mês a mês (ACS)', soEquipe: true },
     { id: 'expedicoes', rotulo: 'Expedições', href: '/expedicoes', dica: 'Checklist do time antes de comitar e de expedir', soEquipe: true },
     // Todos veem (o BRB é o cliente da evidência); criar e editar é só da equipe.
     { id: 'evidencias', rotulo: 'Evidências', href: '/evidencias', dica: 'Evidências de teste dos ciclos do Zephyr, no layout Evertec' },

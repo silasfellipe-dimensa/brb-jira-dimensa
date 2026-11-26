@@ -17,9 +17,10 @@ const {
   criarItemExpedicao, atualizarItemExpedicao, atualizarObservacaoItem, removerItemExpedicao, registrarGravacaoJira,
   listarSolicitacoesAcs, lerEstadoColetaAcs, gravarCargaAcs, registrarFalhaColetaAcs, pedirAtualizacaoAcs,
   listarEvidencias, lerEvidencia, criarEvidencia, atualizarEvidencia, removerEvidencia,
-  gravarImagemEvidencia, lerImagemEvidencia
+  gravarImagemEvidencia, lerImagemEvidencia, gravarExtrasAcs, lerProducaoAcs
 } = require('./supabase');
-const { normalizarCarga, normalizarErroColetor, situacaoColeta, deveColetar, conferirAssinatura } = require('./acs');
+const { normalizarCarga, normalizarExtras, normalizarErroColetor, situacaoColeta, deveColetar, conferirAssinatura } = require('./acs');
+const { montarProducao } = require('./producao');
 const { podeGravarJira, lerCampos, validarPedido, gravarCampo, adfParaTexto } = require('./gravarJira');
 const {
   normalizarCampos, idDemanda, interpretarMes, interpretarListaMeses, mesesDisponiveis,
@@ -113,7 +114,7 @@ app.use((req, res, next) => {
   // Sem isto ele reaproveita a versão antiga e o deploy "não aparece" - o que
   // já custou vários hard refresh. no-cache não proíbe guardar, obriga a
   // revalidar: com o ETag do Express, resposta igual continua saindo 304.
-  if (req.path === '/' || req.path.endsWith('.html') || ['/dashboard', '/admin', '/demandas', '/demandas/editar', '/demandas/historico', '/expedicoes', '/pesquisa', '/evidencias'].includes(req.path)) {
+  if (req.path === '/' || req.path.endsWith('.html') || ['/dashboard', '/admin', '/demandas', '/demandas/editar', '/demandas/historico', '/expedicoes', '/pesquisa', '/evidencias', '/producao'].includes(req.path)) {
     res.setHeader('Cache-Control', 'no-cache');
   }
 
@@ -514,7 +515,36 @@ app.post('/api/acs/coletor/carga', exigirColetor, async (req, res) => {
   const r = await gravarCargaAcs(n.linhas);
   if (!r.ok) return res.status(503).json({ erro: r.semTabela ? MSG_SEM_TABELA_ACS : 'Não foi possível gravar a carga.' });
   console.log(`[acs] carga gravada: ${r.quantidade} solicitações em andamento`);
-  res.json({ ok: true, quantidade: r.quantidade });
+  // Extras (base da Produção PF): opcionais, não mudam a resposta da carga.
+  const extras = normalizarExtras(req.body);
+  for (const [nome, e] of Object.entries({ implantadas: extras.implantadas, sustentacoes: extras.sustentacoes })) {
+    if (e && e.descartadas) console.warn(`[acs] ${nome}: ${e.descartadas} item(ns) descartado(s) por formato inesperado`);
+  }
+  if ('contrato' in (req.body || {}) && !extras.contrato) console.warn('[acs] contrato descartado por formato inesperado');
+  const gravados = await gravarExtrasAcs(extras, new Set(n.linhas.map((l) => l.numero)));
+  if (Object.keys(gravados).length) console.log(`[acs] extras: ${JSON.stringify(gravados)}`);
+  res.json({ ok: true, quantidade: r.quantidade, extras: gravados });
+});
+
+/** Produção PF: PF de demandas (por fase aprovada) e de sustentação, mês a mês
+ * (regras em producao.js). Só a equipe, como Demandas. */
+app.get('/producao', exigirSessaoPagina, exigirEquipePagina, (req, res) => {
+  res.sendFile(path.join(PUBLIC_DIR, 'producao-pf.html'));
+});
+
+app.get('/api/producao', exigirSessaoApi, exigirEditorApi, async (req, res) => {
+  const [dados, estado] = await Promise.all([lerProducaoAcs(), lerEstadoColetaAcs()]);
+  if (dados.semTabela || estado.semTabela) {
+    return res.status(503).json({ erro: 'A Produção PF ainda não foi ativada no banco (falta rodar supabase-acs-producao.sql).', semTabela: true });
+  }
+  if (!dados.ok || !estado.ok) return res.status(503).json({ erro: 'Não foi possível carregar a produção agora.' });
+  const hoje = hojeBrasilia();
+  res.json({
+    hoje,
+    coleta: coletaParaTela(estado, new Date()),
+    contratoAtualizadoEm: dados.contrato ? dados.contrato.atualizadoEm : null,
+    ...montarProducao({ solicitacoes: dados.solicitacoes, sustentacoes: dados.sustentacoes, contrato: dados.contrato, hoje })
+  });
 });
 
 /** Demandas e Pontos de Função (tela anterior): continua em /demandas/editar,

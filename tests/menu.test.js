@@ -20,6 +20,7 @@ const PAGINAS = path.join(__dirname, '..', 'paginas');
 const TELAS = {
   'index.html': 'kanban',
   'demandas-acs.html': 'demandas',
+  'producao-pf.html': 'producao',
   'demandas.html': 'demandas',
   'demandas-historico.html': '',
   'expedicoes.html': 'expedicoes',

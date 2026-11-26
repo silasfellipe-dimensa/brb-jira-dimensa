@@ -1114,6 +1114,84 @@ async function gravarCargaAcs(linhas) {
   }
 }
 
+/** Extras da carga (base da tela Produção PF): implantadas, sustentação e
+ * contrato. Cada parte grava sozinha; falha numa (ou tabela ainda não criada -
+ * supabase-acs-producao.sql) fica no log e não derruba as outras nem a carga.
+ * `emAndamento` = números da lista principal, que não são sobrescritos aqui. */
+async function gravarExtrasAcs(extras, emAndamento) {
+  const agora = new Date().toISOString();
+  const feito = {};
+  const tentar = async (nome, fn) => {
+    try { feito[nome] = await fn(); } catch (erro) {
+      feito[nome] = false;
+      console.error(`[supabase] falha ao gravar ${nome} do ACS:`, erro.message);
+    }
+  };
+  if (extras.implantadas && extras.implantadas.linhas.length) {
+    await tentar('implantadas', async () => {
+      const lista = extras.implantadas.linhas.filter((l) => !emAndamento.has(l.numero)).map((l) => {
+        // Só o que a rota de implantadas traz: gestor e previsões ficam como estavam.
+        const r = {
+          numero: l.numero, sistema: l.sistema, status_codigo: l.status_codigo, status: l.status, resumo: l.resumo,
+          data_solicitacao: l.data_solicitacao, data_implantacao: l.data_implantacao, em_andamento: false
+        };
+        if (Array.isArray(l.fases)) Object.assign(r, { fases: l.fases, metricas: l.metricas, coordenacao: l.coordenacao, detalhe_em: agora });
+        return r;
+      });
+      for (const grupo of [lista.filter((r) => r.fases), lista.filter((r) => !r.fases)]) {
+        if (!grupo.length) continue;
+        const { error } = await db().from('acs_solicitacoes').upsert(grupo, { onConflict: 'numero' });
+        if (error) throw erroAcs(error);
+      }
+      return lista.length;
+    });
+  }
+  if (extras.sustentacoes && extras.sustentacoes.linhas.length) {
+    await tentar('sustentacoes', async () => {
+      const lista = extras.sustentacoes.linhas.map((l) => ({ ...l, ultima_coleta: agora }));
+      const { error } = await db().from('acs_sustentacoes').upsert(lista, { onConflict: 'numero' });
+      if (error) throw erroAcs(error);
+      return lista.length;
+    });
+  }
+  if (extras.contrato) {
+    await tentar('contrato', async () => {
+      const c = extras.contrato;
+      const { error } = await db().from('acs_contratos').upsert({
+        sq: c.sq, codigo: c.codigo, nome: c.nome, pesos: c.pesos, indicadores: c.indicadores, atualizado_em: agora
+      }, { onConflict: 'sq' });
+      if (error) throw erroAcs(error);
+      return 1;
+    });
+  }
+  return feito;
+}
+
+/** O que a tela Produção PF precisa: demandas com fases (em andamento e
+ * implantadas), chamados de sustentação finalizados no último ano e o
+ * contrato atualizado mais recentemente. */
+async function lerProducaoAcs() {
+  try {
+    const desde = new Date(Date.now() - 400 * 24 * 60 * 60 * 1000).toISOString();
+    const [sols, sust, contr] = await Promise.all([
+      db().from('acs_solicitacoes').select('numero,resumo,fases,metricas').not('fases', 'is', null).limit(MAX_SOLICITACOES * 2),
+      db().from('acs_sustentacoes').select('numero,situacao,finalizacao,quantidade,indicador,contrato').gte('finalizacao', desde).limit(20000),
+      db().from('acs_contratos').select('sq,codigo,nome,pesos,indicadores,atualizado_em').order('atualizado_em', { ascending: false }).limit(1)
+    ]);
+    for (const r of [sols, sust, contr]) if (r.error) throw erroAcs(r.error);
+    const c = (contr.data || [])[0] || null;
+    return {
+      ok: true,
+      solicitacoes: sols.data || [],
+      // numeric volta como texto em alguns casos: quantidade vira número aqui
+      sustentacoes: (sust.data || []).map((s) => ({ ...s, quantidade: s.quantidade === null ? null : Number(s.quantidade) })),
+      contrato: c ? { sq: c.sq, codigo: c.codigo, nome: c.nome, pesos: c.pesos, indicadores: c.indicadores || [], atualizadoEm: c.atualizado_em } : null
+    };
+  } catch (erro) {
+    return falhaAcs('ler a produção do ACS', erro);
+  }
+}
+
 /** Coleta que não deu certo (ACS fora do ar, login recusado, lista inválida).
  * O pedido do botão Atualizar também se fecha: a tela mostra a falha, e quem
  * quiser pede de novo - senão o coletor ficaria tentando sem parar. */
@@ -1256,6 +1334,7 @@ module.exports = {
   listarEvidencias, lerEvidencia, criarEvidencia, atualizarEvidencia, removerEvidencia,
   gravarImagemEvidencia, lerImagemEvidencia,
   listarSolicitacoesAcs, lerEstadoColetaAcs, gravarCargaAcs, registrarFalhaColetaAcs, pedirAtualizacaoAcs,
+  gravarExtrasAcs, lerProducaoAcs,
   lerExpedicao, listarChavesExpedicoes, listarExpedicoes, criarExpedicao, atualizarExpedicao, removerExpedicao,
   contarExpedicoesExcluidas, listarExpedicoesExcluidas, restaurarExpedicao,
   criarItemExpedicao, atualizarItemExpedicao, atualizarObservacaoItem, removerItemExpedicao,

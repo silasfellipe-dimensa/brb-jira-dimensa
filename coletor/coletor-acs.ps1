@@ -192,6 +192,8 @@ function Add-DetalheAcs($lista) {
           data_aprovacao = $_.data_aprovacao; nome_documento = $_.nome_documento }
       })
       $coord = if ($bloco.Count) { [string]$bloco[0].solicitacao.coordenacao } else { '' }
+      $nomeContrato = if ($bloco.Count) { [string]$bloco[0].solicitacao.contrato } else { '' }
+      if ($nomeContrato) { $script:Contratos[$nomeContrato] = 1 + [int]$script:Contratos[$nomeContrato] }
       $s | Add-Member -NotePropertyName FASES -NotePropertyValue $listaFases
       $s | Add-Member -NotePropertyName METRICAS -NotePropertyValue $listaMetr
       $s | Add-Member -NotePropertyName COORDENACAO -NotePropertyValue $coord
@@ -204,6 +206,50 @@ function Add-DetalheAcs($lista) {
   if ($falhas) { $msg += "; $falhas com erro no ACS" }
   if ($semTempo) { $msg += "; $semTempo ficaram para a proxima (tempo esgotado)" }
   Write-Registro "$msg."
+}
+
+# ---- extras: base da tela Producao PF (opcionais; falha aqui nao impede a carga) ----
+
+# Demandas ja implantadas no ultimo ano (para o historico mes a mes), com
+# fases e PF. A rota sem /EmAndamento devolve as implantadas.
+function Get-ImplantadasAcs {
+  $lista = @(Get-JsonAcs "/Solicitacoes/sistemas/$($script:Sigla)")
+  $limite = (Get-Date).AddDays(-400)
+  $recentes = @($lista | Where-Object {
+    $d = [string]$_.DT_IMPLANTACAO
+    $_ -and $d -match '^(\d{2})/(\d{2})/(\d{4})' -and (Get-Date -Year ([int]$Matches[3]) -Month ([int]$Matches[2]) -Day ([int]$Matches[1])) -ge $limite
+  } | Select-Object -Property SQ_SOLICITACAO, SISSIGLA, DT_IMPLANTACAO, DT_SOLICITACAO, DS_STATUS_SOLICITACAO, ST_SOLICITACAO, DS_RESUMO)
+  return ,$recentes
+}
+
+# Chamados de sustentacao, um mes por vez (a rota filtra pela abertura), dos
+# ultimos 13 meses. So numero, situacao, datas, quantidade, indicador e
+# contrato: descricao, solucao e nomes ficam aqui dentro.
+function Get-SustentacoesAcs {
+  $campos = 'SQ_SUSTENTACAO', 'NO_SISTEMA', 'TP_SITUACAO', 'DT_ABERTURA', 'DT_FINALIZACAO', 'NR_QUANTIDADE', 'SQ_SUSTENTACAO_INDICADOR', 'SQ_CONTRATO'
+  $todos = New-Object System.Collections.ArrayList
+  $inicio = (Get-Date -Day 1).Date
+  for ($i = 12; $i -ge 0; $i--) {
+    $mes = $inicio.AddMonths(-$i)
+    $fim = $mes.AddMonths(1).AddDays(-1)
+    $lote = @(Get-JsonAcs ("/Sustentacoes/{0}/{1}/{2}" -f $script:Sigla, $mes.ToString('yyyy-MM-dd'), $fim.ToString('yyyy-MM-dd')))
+    foreach ($c in $lote) { if ($c) { [void]$todos.Add(($c | Select-Object -Property $campos)) } }
+  }
+  return ,@($todos)
+}
+
+# Contrato das demandas (o nome vem das metricas): pesos das fases e a tabela
+# de PF por indicador de sustentacao.
+function Get-ContratoAcs {
+  $nome = $script:Contratos.GetEnumerator() | Sort-Object Value -Descending | Select-Object -First 1 -ExpandProperty Key
+  if (-not $nome) { return $null }
+  $c = @(Get-JsonAcs '/Faturamentos/contratos/vigentes') | Where-Object { $_ -and $_.NO_CONTRATO -eq $nome } | Select-Object -First 1
+  if (-not $c) { return $null }
+  $ind = @(Get-JsonAcs '/SustentacaoIndicador') | Where-Object { $_ -and [string]$_.CD_CONTRATO -eq [string]$c.CD_CONTRATO } |
+    Select-Object -Property SQ_SUSTENTACAO_INDICADOR, NR_PF, DS_ATIVIDADE
+  $saida = $c | Select-Object -Property SQ_CONTRATO, CD_CONTRATO, NO_CONTRATO, VL_F1, VL_F2, VL_F3, VL_F4, VL_F5, VL_F6, VL_F7
+  $saida | Add-Member -NotePropertyName INDICADORES -NotePropertyValue @($ind)
+  return $saida
 }
 
 function Send-Falha([string]$motivo) {
@@ -227,6 +273,8 @@ try {
   $script:AcsUrl = [string]$config.acsUrl
   # Raiz do servico (http://.../ACSservice), para as consultas de fases e PF.
   $script:AcsBase = if ($script:AcsUrl -match '^(https?://.+?)/Solicitacoes/') { $Matches[1] } else { $null }
+  $script:Sigla = if ($script:AcsUrl -match '/sistemas/([A-Za-z0-9]+)/') { $Matches[1] } else { $null }
+  $script:Contratos = @{}
   # O servidor so por HTTPS (http so para teste na propria maquina).
   if ($script:AppUrl -notmatch '^https://' -and $script:AppUrl -notmatch '^http://(127\.0\.0\.1|localhost)(:\d+)?$') {
     throw 'appUrl precisa comecar com https://'
@@ -266,8 +314,28 @@ try {
 
 try { Add-DetalheAcs $lista } catch { Write-Registro "Fases e PF nao foram buscados: $($_.Exception.Message)" }
 
+# Extras da Producao PF. Cada um e independente: se falhar, a carga vai sem ele.
+$extras = ''
+if ($script:AcsBase -and $script:Sigla) {
+  try {
+    $impl = Get-ImplantadasAcs
+    Add-DetalheAcs $impl
+    $extras += ',"implantadas":' + (ConvertTo-Json -InputObject @($impl) -Depth 5 -Compress)
+  } catch { Write-Registro "Implantadas nao foram buscadas: $($_.Exception.Message)" }
+  try {
+    $sust = Get-SustentacoesAcs
+    $extras += ',"sustentacoes":' + (ConvertTo-Json -InputObject @($sust) -Depth 3 -Compress)
+    Write-Registro "Sustentacao: $($sust.Count) chamados dos ultimos 13 meses."
+  } catch { Write-Registro "Sustentacao nao foi buscada: $($_.Exception.Message)" }
+  try {
+    $contrato = Get-ContratoAcs
+    if ($contrato) { $extras += ',"contrato":' + (ConvertTo-Json -InputObject $contrato -Depth 4 -Compress) }
+    else { Write-Registro 'Contrato nao encontrado entre os vigentes.' }
+  } catch { Write-Registro "Contrato nao foi buscado: $($_.Exception.Message)" }
+}
+
 try {
-  $corpo = '{"solicitacoes":' + (ConvertTo-Json -InputObject @($lista) -Depth 5 -Compress) + '}'
+  $corpo = '{"solicitacoes":' + (ConvertTo-Json -InputObject @($lista) -Depth 5 -Compress) + $extras + '}'
   $r = Invoke-Servidor 'POST' '/api/acs/coletor/carga' $corpo
   if ($r.Status -eq 200) {
     Write-Registro "Carga enviada: $($lista.Count) solicitacoes."

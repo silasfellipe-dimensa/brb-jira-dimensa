@@ -1,0 +1,447 @@
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Produção PF · Kanban BRB</title>
+
+<style>
+  :root {
+    color-scheme: light dark;
+    --bg: #F5F5F5;
+    --bg-panel: #FFFFFF;
+    --ink: #1E212C;
+    --ink-dim: #4B5A68;
+    --ink-faint: #7C8894;
+    --line: #E5E6E7;
+    --line-soft: #EFEFEF;
+    --accent: #FF6C0C;
+    --accent-soft: #FFE8D9;
+    --warn: #B83A22;
+    --warn-soft: #FBE3DD;
+    --info: #3C6FD8;
+    --info-soft: #E2EAFB;
+    --shadow: 0 1px 2px rgba(30,33,44,0.06), 0 1px 1px rgba(30,33,44,0.04);
+    /* Séries dos gráficos (paleta validada: claro e escuro, daltonismo). */
+    --s-demandas: #2a78d6;
+    --s-sust: #eb6834;
+    --s-acreditar: #9ec5f4;
+    --grade: #ECECEC;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #1E212C;
+      --bg-panel: #262B38;
+      --ink: #F5F5F5;
+      --ink-dim: #A7B0BC;
+      --ink-faint: #78838F;
+      --line: #333846;
+      --line-soft: #2A2E3A;
+      --accent: #FF8A3D;
+      --accent-soft: #3A2A1C;
+      --warn: #F08A72;
+      --warn-soft: #3F2320;
+      --info: #8FB0F5;
+      --info-soft: #222D45;
+      --shadow: 0 1px 3px rgba(0,0,0,0.35);
+      --s-demandas: #3987e5;
+      --s-sust: #d95926;
+      --s-acreditar: #1c5cab;
+      --grade: #323745;
+    }
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--ink);
+    font-family: Lato, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  button { font: inherit; color: inherit; cursor: pointer; }
+  a { color: inherit; }
+
+  header.top { background: var(--bg); border-bottom: 1px solid var(--line); padding: 22px 28px; }
+  .top-row { display: flex; align-items: center; justify-content: space-between; gap: 24px; flex-wrap: wrap; max-width: 1400px; margin: 0 auto; }
+  .titles h1 { margin: 0; font-size: 1.5rem; font-weight: 700; letter-spacing: -0.01em; }
+  .titles p { margin: 3px 0 0; font-size: 0.8rem; color: var(--ink-faint); }
+
+  main { max-width: 1400px; margin: 0 auto; padding: 22px 28px 60px; }
+  .painel { background: var(--bg-panel); border: 1px solid var(--line-soft); border-radius: 10px; padding: 16px 18px 18px; box-shadow: var(--shadow); }
+  .painel + .painel, .cartoes + .painel { margin-top: 16px; }
+  .painel h2 { margin: 0 0 4px; font-size: 0.78rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; color: var(--ink-dim); }
+  .painel .sub { margin: 0 0 14px; font-size: 0.74rem; color: var(--ink-faint); }
+
+  .barra { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 14px; }
+  .barra label { font-size: 0.78rem; font-weight: 700; color: var(--ink-dim); }
+  .barra select {
+    font: inherit; font-size: 0.85rem; color: var(--ink); background: var(--bg-panel);
+    border: 1px solid var(--line); border-radius: 6px; padding: 7px 10px; min-width: 170px;
+  }
+  select:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-soft); }
+  .quando { font-size: 0.74rem; color: var(--ink-faint); }
+  .quando b { color: var(--ink-dim); }
+
+  .aviso { margin-bottom: 12px; padding: 10px 13px; border-left: 3px solid var(--warn); background: var(--warn-soft); border-radius: 0 6px 6px 0; font-size: 0.82rem; line-height: 1.5; }
+  .aviso.info { border-left-color: var(--info); background: var(--info-soft); }
+
+  .cartoes { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr); gap: 16px; }
+  .cartoes .painel { margin-top: 0; }
+  @media (max-width: 900px) { .cartoes { grid-template-columns: 1fr; } }
+
+  /* Número do mês + divisão Demandas / Sustentação */
+  .heroi { font-size: 3rem; font-weight: 700; letter-spacing: -0.02em; line-height: 1; font-variant-numeric: tabular-nums; }
+  .heroi small { font-size: 1rem; font-weight: 700; color: var(--ink-dim); margin-left: 4px; }
+  .divisao { display: flex; gap: 2px; height: 14px; margin: 18px 0 10px; }
+  .divisao span { display: block; height: 100%; min-width: 0; }
+  .divisao span:first-child { border-radius: 4px 0 0 4px; }
+  .divisao span:last-child { border-radius: 0 4px 4px 0; }
+  .divisao span:only-child { border-radius: 4px; }
+  .divisao.vazia { background: var(--line-soft); border-radius: 4px; }
+  .legenda { display: flex; flex-wrap: wrap; gap: 6px 18px; font-size: 0.8rem; color: var(--ink-dim); }
+  .legenda b { color: var(--ink); font-variant-numeric: tabular-nums; }
+  .chave { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 6px; vertical-align: -1px; }
+
+  /* Barras por fase */
+  .fase-linha { display: grid; grid-template-columns: 250px minmax(0, 1fr) 150px; gap: 12px; align-items: center; padding: 7px 0; }
+  .fase-linha + .fase-linha { border-top: 1px solid var(--line-soft); }
+  .fase-rot { font-size: 0.8rem; color: var(--ink-dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .fase-rot b { color: var(--ink); }
+  .trilho { display: flex; gap: 2px; height: 12px; background: var(--line-soft); border-radius: 4px; overflow: hidden; }
+  .trilho span { display: block; height: 100%; }
+  .fase-val { font-size: 0.8rem; text-align: right; font-variant-numeric: tabular-nums; color: var(--ink-dim); }
+  .fase-val b { color: var(--ink); }
+  @media (max-width: 600px) { .fase-linha { grid-template-columns: 1fr; gap: 4px; } .fase-val { text-align: left; } }
+
+  /* Gráfico mês a mês */
+  .grafico { position: relative; }
+  .grafico svg { display: block; width: 100%; height: auto; overflow: visible; }
+  .grafico .col { cursor: pointer; }
+  .grafico .col:focus { outline: none; }
+  .grafico .col:focus .alvo, .grafico .col:hover .alvo { fill: var(--line-soft); }
+  .grafico .col.sel .alvo { fill: var(--accent-soft); }
+  .dica {
+    position: absolute; pointer-events: none; background: var(--bg-panel); border: 1px solid var(--line);
+    border-radius: 8px; padding: 8px 10px; font-size: 0.76rem; line-height: 1.5; box-shadow: 0 6px 18px rgba(0,0,0,.14);
+    white-space: nowrap; transform: translate(-50%, -100%); z-index: 2;
+  }
+  .dica b { font-variant-numeric: tabular-nums; }
+
+  /* Tabelas de conferência */
+  details { margin-top: 12px; border: 1px solid var(--line-soft); border-radius: 8px; }
+  details summary { cursor: pointer; padding: 10px 12px; font-size: 0.82rem; font-weight: 700; color: var(--ink-dim); }
+  details summary span { font-weight: 400; color: var(--ink-faint); }
+  .tabela-scroll { overflow-x: auto; }
+  table.grade { width: 100%; min-width: 720px; border-collapse: collapse; font-size: 0.8rem; }
+  table.grade th { text-align: left; font-size: 0.64rem; text-transform: uppercase; letter-spacing: 0.03em; color: var(--ink-faint); font-weight: 700; padding: 8px 10px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+  table.grade td { padding: 8px 10px; border-top: 1px solid var(--line-soft); vertical-align: top; font-variant-numeric: tabular-nums; }
+  table.grade td.n, table.grade th.n { text-align: right; white-space: nowrap; }
+  table.grade td.resumo { min-width: 260px; }
+  table.grade tfoot td { font-weight: 700; border-top: 2px solid var(--line); }
+  .vazio-tab { padding: 12px; font-size: 0.8rem; color: var(--ink-faint); }
+  .regras { margin: 14px 2px 0; font-size: 0.74rem; color: var(--ink-faint); line-height: 1.6; }
+  .regras b { color: var(--ink-dim); }
+
+  @media (max-width: 760px) { main { padding: 16px; } header.top { padding: 16px; } }
+</style>
+
+<header class="top">
+  <div class="top-row">
+    <div class="titles">
+      <h1>Produção PF</h1>
+      <p>Pontos de função de demandas e de sustentação · sistema TTB · dados do ACS do BRB</p>
+    </div>
+    <nav data-menu="producao"></nav>
+  </div>
+</header>
+
+<main>
+  <div class="barra">
+    <label for="selMes">Mês</label><select id="selMes" disabled></select>
+    <span class="quando" id="quando" aria-live="polite">Carregando…</span>
+  </div>
+  <div id="avisos" aria-live="polite"></div>
+
+  <div class="cartoes">
+    <section class="painel" aria-labelledby="tProducao">
+      <h2 id="tProducao">Produção do mês</h2>
+      <p class="sub" id="subProducao">PF creditado no mês</p>
+      <div id="producao"></div>
+    </section>
+    <section class="painel" aria-labelledby="tFases">
+      <h2 id="tFases">PF de demandas por fase</h2>
+      <p class="sub" id="subFases"></p>
+      <div id="fases"></div>
+    </section>
+  </div>
+
+  <section class="painel" aria-labelledby="tEvolucao">
+    <h2 id="tEvolucao">Evolução mês a mês</h2>
+    <p class="sub">PF creditado em cada mês. Clique numa coluna para ver o mês.</p>
+    <div class="legenda" style="margin-bottom:8px">
+      <span><span class="chave" style="background:var(--s-demandas)"></span>Demandas</span>
+      <span><span class="chave" style="background:var(--s-sust)"></span>Sustentação</span>
+    </div>
+    <div class="grafico" id="evolucao"></div>
+  </section>
+
+  <section class="painel" aria-labelledby="tConferir">
+    <h2 id="tConferir">Para conferir</h2>
+    <p class="sub">Cada número acima sai destas linhas.</p>
+    <div id="conferir"></div>
+    <p class="regras" id="regras"></p>
+  </section>
+</main>
+
+<script src="/menu.js"></script>
+<script>
+  (function () {
+    var elQuando = document.getElementById('quando');
+    var elAvisos = document.getElementById('avisos');
+    var selMes = document.getElementById('selMes');
+    var MESES = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'];
+    var MESES_LONGOS = ['janeiro', 'fevereiro', 'março', 'abril', 'maio', 'junho', 'julho', 'agosto', 'setembro', 'outubro', 'novembro', 'dezembro'];
+    var dados = null;
+    var mesSel = '';
+
+    function esc(s) {
+      return String(s === null || s === undefined ? '' : s).replace(/[&<>"']/g, function (c) {
+        return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+      });
+    }
+    function pf(n) { return Number(n || 0).toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 2 }); }
+    function pct(p) { return Math.round(p * 100) + '%'; }
+    function mesCurto(m) { var p = m.split('-'); return MESES[+p[1] - 1] + '/' + p[0].slice(2); }
+    function mesLongo(m) { var p = m.split('-'); return MESES_LONGOS[+p[1] - 1] + ' de ' + p[0]; }
+    function dia(instante) {
+      var d = instante ? new Date(instante) : null;
+      return d && !isNaN(d) ? d.toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' }) : '—';
+    }
+    function dataHora(instante) {
+      var d = new Date(instante);
+      if (isNaN(d)) return '';
+      return d.toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo', day: '2-digit', month: '2-digit' }) + ' às ' +
+        d.toLocaleTimeString('pt-BR', { timeZone: 'America/Sao_Paulo', hour: '2-digit', minute: '2-digit' });
+    }
+    function doMes(lista) { return lista.filter(function (x) { return x.mes === mesSel; }); }
+    function soma(lista, campo) { return lista.reduce(function (t, x) { return t + (x[campo] || 0); }, 0); }
+    function fasesPagas() {
+      var p = (dados.contrato && dados.contrato.pesos) || {};
+      return Object.keys(p).filter(function (f) { return p[f] > 0; }).sort();
+    }
+
+    // ---- produção do mês: número + divisão ----
+    function renderProducao() {
+      var m = dados.meses.filter(function (x) { return x.mes === mesSel; })[0] || { demandas: 0, sustentacao: 0, total: 0 };
+      document.getElementById('subProducao').textContent = 'PF creditado em ' + mesLongo(mesSel) + (mesSel === dados.mesAtual ? ' (até hoje)' : '');
+      var h = '<div class="heroi">' + pf(m.total) + '<small>PF</small></div>';
+      if (m.total > 0) {
+        h += '<div class="divisao" role="img" aria-label="Demandas ' + pf(m.demandas) + ' PF, sustentação ' + pf(m.sustentacao) + ' PF">';
+        if (m.demandas > 0) h += '<span style="flex:' + m.demandas + ';background:var(--s-demandas)"></span>';
+        if (m.sustentacao > 0) h += '<span style="flex:' + m.sustentacao + ';background:var(--s-sust)"></span>';
+        h += '</div>';
+      } else {
+        h += '<div class="divisao vazia"></div>';
+      }
+      h += '<div class="legenda"><span><span class="chave" style="background:var(--s-demandas)"></span>Demandas <b>' + pf(m.demandas) + '</b></span>' +
+        '<span><span class="chave" style="background:var(--s-sust)"></span>Sustentação <b>' + pf(m.sustentacao) + '</b></span></div>';
+      document.getElementById('producao').innerHTML = h;
+    }
+
+    // ---- PF de demandas por fase: creditado + a creditar ----
+    function renderFases() {
+      var atual = mesSel === dados.mesAtual;
+      var pesos = (dados.contrato && dados.contrato.pesos) || {};
+      var fases = fasesPagas();
+      document.getElementById('subFases').textContent = 'Creditado em ' + mesLongo(mesSel) +
+        (atual ? ', e o que aguarda aprovação (entra quando a fase for aprovada)' : '');
+      if (!fases.length) {
+        document.getElementById('fases').innerHTML = '<p class="vazio-tab">Os pesos das fases ainda não vieram do contrato no ACS.</p>';
+        return;
+      }
+      var linhas = fases.map(function (f) {
+        var cred = soma(doMes(dados.creditos).filter(function (c) { return c.fase === f; }), 'credito');
+        var pend = atual ? soma(dados.aCreditar.filter(function (c) { return c.fase === f; }), 'credito') : 0;
+        var nome = (dados.creditos.concat(dados.aCreditar).filter(function (c) { return c.fase === f; })[0] || {}).faseNome || '';
+        return { fase: f, nome: nome, peso: pesos[f], cred: cred, pend: pend };
+      });
+      var max = Math.max.apply(null, linhas.map(function (l) { return l.cred + l.pend; }).concat([0.0001]));
+      var totCred = 0, totPend = 0;
+      var h = '';
+      linhas.forEach(function (l) {
+        totCred += l.cred; totPend += l.pend;
+        h += '<div class="fase-linha"><span class="fase-rot" title="' + esc(l.fase + ' · ' + l.nome) + '"><b>' + esc(l.fase) + '</b> ' + esc(l.nome) + ' · ' + pct(l.peso) + '</span>' +
+          '<span class="trilho" role="img" aria-label="' + esc(l.fase) + ': ' + pf(l.cred) + ' PF creditado' + (atual ? ', ' + pf(l.pend) + ' PF a creditar' : '') + '">' +
+            (l.cred > 0 ? '<span style="width:' + (l.cred / max * 100) + '%;background:var(--s-demandas)"></span>' : '') +
+            (l.pend > 0 ? '<span style="width:' + (l.pend / max * 100) + '%;background:var(--s-acreditar)"></span>' : '') +
+          '</span><span class="fase-val"><b>' + pf(l.cred) + '</b>' + (atual && l.pend > 0 ? ' · +' + pf(l.pend) + ' a creditar' : '') + '</span></div>';
+      });
+      h += '<div class="legenda" style="margin-top:12px"><span><span class="chave" style="background:var(--s-demandas)"></span>Creditado <b>' + pf(totCred) + ' PF</b></span>' +
+        (atual ? '<span><span class="chave" style="background:var(--s-acreditar)"></span>A creditar <b>' + pf(totPend) + ' PF</b></span>' : '') + '</div>';
+      document.getElementById('fases').innerHTML = h;
+    }
+
+    // ---- evolução: colunas empilhadas por mês ----
+    function renderEvolucao() {
+      var meses = dados.meses;
+      var L = 960, A = 260, mE = 40, mD = 8, mT = 22, mB = 26;
+      var largura = L - mE - mD, altura = A - mT - mB;
+      var maxV = Math.max.apply(null, meses.map(function (m) { return m.total; }).concat([1]));
+      var passo = [1, 2, 5, 10, 20, 25, 50, 100].filter(function (p) { return maxV / p <= 5; })[0] || 100;
+      var topo = Math.ceil(maxV / passo) * passo;
+      var y = function (v) { return mT + altura - (v / topo) * altura; };
+      var faixa = largura / meses.length;
+      var larguraCol = Math.min(44, faixa * 0.56);
+      var s = '<svg viewBox="0 0 ' + L + ' ' + A + '" role="img" aria-label="PF creditado por mês, demandas e sustentação">';
+      for (var v = 0; v <= topo + 0.0001; v += passo) {
+        s += '<line x1="' + mE + '" x2="' + (L - mD) + '" y1="' + y(v) + '" y2="' + y(v) + '" stroke="var(--grade)" stroke-width="1"/>' +
+          '<text x="' + (mE - 8) + '" y="' + (y(v) + 4) + '" text-anchor="end" font-size="11" fill="var(--ink-faint)">' + v + '</text>';
+      }
+      meses.forEach(function (m, i) {
+        var cx = mE + faixa * i + faixa / 2, x = cx - larguraCol / 2;
+        var yD = y(m.demandas), yS = y(m.demandas + m.sustentacao);
+        var gap = m.demandas > 0 && m.sustentacao > 0 ? 2 : 0;
+        s += '<g class="col' + (m.mes === mesSel ? ' sel' : '') + '" tabindex="0" data-mes="' + m.mes + '" role="button" aria-label="' +
+          esc(mesLongo(m.mes) + ': ' + pf(m.total) + ' PF (demandas ' + pf(m.demandas) + ', sustentação ' + pf(m.sustentacao) + ')') + '">' +
+          '<rect class="alvo" x="' + (mE + faixa * i + 2) + '" y="' + mT + '" width="' + (faixa - 4) + '" height="' + altura + '" rx="6" fill="transparent"/>';
+        if (m.demandas > 0) s += barra(x, yD, larguraCol, y(0) - yD, 'var(--s-demandas)', m.sustentacao <= 0);
+        if (m.sustentacao > 0) s += barra(x, yS, larguraCol, yD - yS - gap, 'var(--s-sust)', true);
+        if (m.total > 0) s += '<text x="' + cx + '" y="' + (yS - 6) + '" text-anchor="middle" font-size="11" font-weight="700" fill="var(--ink-dim)">' + pf(m.total) + '</text>';
+        s += '<text x="' + cx + '" y="' + (A - 6) + '" text-anchor="middle" font-size="11" fill="var(--ink-faint)"' +
+          (m.mes === mesSel ? ' font-weight="700"' : '') + '>' + mesCurto(m.mes) + '</text></g>';
+      });
+      s += '<line x1="' + mE + '" x2="' + (L - mD) + '" y1="' + y(0) + '" y2="' + y(0) + '" stroke="var(--line)" stroke-width="1"/></svg>';
+      document.getElementById('evolucao').innerHTML = s + '<div class="dica" id="dica" hidden></div>';
+    }
+    /* Coluna com cantos de cima arredondados só quando é o topo da pilha. */
+    function barra(x, y0, w, h, cor, topo) {
+      if (h <= 0) return '';
+      var r = topo ? Math.min(4, h, w / 2) : 0;
+      return '<path d="M' + x + ',' + (y0 + h) + ' V' + (y0 + r) + (r ? ' Q' + x + ',' + y0 + ' ' + (x + r) + ',' + y0 : '') +
+        ' H' + (x + w - r) + (r ? ' Q' + (x + w) + ',' + y0 + ' ' + (x + w) + ',' + (y0 + r) : '') + ' V' + (y0 + h) + ' Z" fill="' + cor + '"/>';
+    }
+
+    // ---- tabelas para conferir ----
+    function renderConferir() {
+      var atual = mesSel === dados.mesAtual;
+      var cred = doMes(dados.creditos);
+      var sust = doMes(dados.sustentacoes);
+      var h = '';
+      h += '<details open><summary>Demandas creditadas em ' + esc(mesLongo(mesSel)) + ' <span>(' + cred.length + (cred.length === 1 ? ' fase aprovada' : ' fases aprovadas') + ' · ' + pf(soma(cred, 'credito')) + ' PF)</span></summary>';
+      h += cred.length ? '<div class="tabela-scroll"><table class="grade"><thead><tr><th>Nº ACS</th><th>Resumo</th><th>Fase</th><th>Aprovada em</th><th class="n">PF da demanda</th><th class="n">Peso</th><th class="n">Creditado</th></tr></thead><tbody>' +
+        cred.map(function (c) {
+          return '<tr><td><a href="/demandas?demanda=' + esc(c.numero) + '">' + esc(c.numero) + '</a></td><td class="resumo">' + esc(c.resumo) + '</td>' +
+            '<td>' + esc(c.fase) + ' · ' + esc(c.faseNome) + '</td><td>' + dia(c.aprovadaEm) + '</td>' +
+            '<td class="n">' + pf(c.pfDemanda) + (c.pfSituacao === 'A' ? '' : ' <span title="Contagem ainda não aprovada">*</span>') + '</td>' +
+            '<td class="n">' + pct(c.peso) + '</td><td class="n"><b>' + pf(c.credito) + '</b></td></tr>';
+        }).join('') + '</tbody><tfoot><tr><td colspan="6">Total</td><td class="n">' + pf(soma(cred, 'credito')) + '</td></tr></tfoot></table></div>'
+        : '<p class="vazio-tab">Nenhuma fase de demanda aprovada neste mês.</p>';
+      h += '</details>';
+
+      if (atual) {
+        var pend = dados.aCreditar;
+        h += '<details><summary>A creditar: fases aguardando aprovação <span>(' + pend.length + ' · ' + pf(soma(pend, 'credito')) + ' PF)</span></summary>';
+        h += pend.length ? '<div class="tabela-scroll"><table class="grade"><thead><tr><th>Nº ACS</th><th>Resumo</th><th>Fase</th><th>Pedida em</th><th class="n">PF da demanda</th><th class="n">Peso</th><th class="n">A creditar</th></tr></thead><tbody>' +
+          pend.map(function (c) {
+            return '<tr><td><a href="/demandas?demanda=' + esc(c.numero) + '">' + esc(c.numero) + '</a></td><td class="resumo">' + esc(c.resumo) + '</td>' +
+              '<td>' + esc(c.fase) + ' · ' + esc(c.faseNome) + '</td><td>' + dia(c.pedidaEm) + '</td>' +
+              '<td class="n">' + pf(c.pfDemanda) + (c.pfSituacao === 'A' ? '' : ' <span title="Contagem ainda não aprovada">*</span>') + '</td>' +
+              '<td class="n">' + pct(c.peso) + '</td><td class="n"><b>' + pf(c.credito) + '</b></td></tr>';
+          }).join('') + '</tbody></table></div>' : '<p class="vazio-tab">Nenhuma fase aguardando aprovação.</p>';
+        h += '</details>';
+      }
+
+      h += '<details><summary>Sustentação finalizada em ' + esc(mesLongo(mesSel)) + ' <span>(' + sust.length + (sust.length === 1 ? ' chamado' : ' chamados') + ' · ' + pf(soma(sust, 'pf')) + ' PF)</span></summary>';
+      h += sust.length ? '<div class="tabela-scroll"><table class="grade"><thead><tr><th>Chamado</th><th>Indicador</th><th>Finalizado em</th><th class="n">Quantidade</th><th class="n">PF por unidade</th><th class="n">PF</th></tr></thead><tbody>' +
+        sust.map(function (c) {
+          return '<tr><td>' + esc(c.numero) + '</td><td class="resumo">' + esc(c.atividade || ('Indicador ' + (c.indicador || '—'))) + '</td><td>' + dia(c.finalizadoEm) + '</td>' +
+            '<td class="n">' + esc(c.quantidade) + '</td><td class="n">' + (c.pfUnitario === null ? '—' : pf(c.pfUnitario)) + '</td><td class="n"><b>' + pf(c.pf) + '</b></td></tr>';
+        }).join('') + '</tbody><tfoot><tr><td colspan="5">Total</td><td class="n">' + pf(soma(sust, 'pf')) + '</td></tr></tfoot></table></div>'
+        : '<p class="vazio-tab">Nenhum chamado de sustentação finalizado neste mês.</p>';
+      h += '</details>';
+      document.getElementById('conferir').innerHTML = h;
+    }
+
+    function renderRegras() {
+      var c = dados.contrato;
+      var pesos = fasesPagas().map(function (f) { return f + ' ' + pct(c.pesos[f]); }).join(', ');
+      document.getElementById('regras').innerHTML =
+        '<b>Como é a conta.</b> Demandas: o PF da demanda é pago por fase, nos pesos do contrato' + (c ? ' ' + esc(c.nome) + ' (' + esc(pesos) + ')' : '') +
+        '. Cada pedaço conta no mês em que a fase foi aprovada no ACS, com o PF da contagem que vale hoje ' +
+        '(a aprovada mais recente; * = contagem ainda aguardando aprovação). ' +
+        'Sustentação: cada chamado vale quantidade × PF do indicador no contrato e conta no mês em que foi finalizado (situação Atendida ou Finalizada). ' +
+        (dados.semContagem ? dados.semContagem + (dados.semContagem === 1 ? ' demanda tem' : ' demandas têm') + ' fase paga mas ainda sem contagem de PF e fica de fora. ' : '') +
+        'Os dados vêm do ACS na coleta diária (8h) ou quando alguém clica em Atualizar na tela <a href="/demandas">Demandas</a>.';
+    }
+
+    function render() {
+      renderProducao(); renderFases(); renderEvolucao(); renderConferir(); renderRegras();
+    }
+    function escolherMes(m) {
+      if (!m || m === mesSel) return;
+      mesSel = m;
+      selMes.value = m;
+      render();
+    }
+
+    // ---- interação: dica ao passar o mouse, clique/Enter escolhe o mês ----
+    var elEvol = document.getElementById('evolucao');
+    function mostrarDica(g) {
+      var dica = document.getElementById('dica');
+      var m = dados.meses.filter(function (x) { return x.mes === g.getAttribute('data-mes'); })[0];
+      if (!m || !dica) return;
+      var caixa = g.getBoundingClientRect(), base = elEvol.getBoundingClientRect();
+      dica.innerHTML = '<b>' + esc(mesLongo(m.mes)) + '</b><br>' +
+        '<span class="chave" style="background:var(--s-demandas)"></span>Demandas <b>' + pf(m.demandas) + '</b><br>' +
+        '<span class="chave" style="background:var(--s-sust)"></span>Sustentação <b>' + pf(m.sustentacao) + '</b><br>Total <b>' + pf(m.total) + ' PF</b>';
+      dica.style.left = (caixa.left - base.left + caixa.width / 2) + 'px';
+      dica.style.top = (caixa.top - base.top + 8) + 'px';
+      dica.hidden = false;
+    }
+    function esconderDica() { var d = document.getElementById('dica'); if (d) d.hidden = true; }
+    elEvol.addEventListener('mouseover', function (e) { var g = e.target.closest && e.target.closest('g.col'); if (g) mostrarDica(g); });
+    elEvol.addEventListener('mouseleave', esconderDica);
+    elEvol.addEventListener('focusin', function (e) { var g = e.target.closest && e.target.closest('g.col'); if (g) mostrarDica(g); });
+    elEvol.addEventListener('focusout', esconderDica);
+    elEvol.addEventListener('click', function (e) { var g = e.target.closest && e.target.closest('g.col'); if (g) escolherMes(g.getAttribute('data-mes')); });
+    elEvol.addEventListener('keydown', function (e) {
+      if (e.key !== 'Enter' && e.key !== ' ') return;
+      var g = e.target.closest && e.target.closest('g.col');
+      if (!g) return;
+      e.preventDefault();
+      var m = g.getAttribute('data-mes');
+      escolherMes(m);
+      var de = document.querySelector('#evolucao g.col[data-mes="' + m + '"]');
+      if (de) de.focus();
+    });
+    selMes.addEventListener('change', function () { escolherMes(selMes.value); });
+
+    fetch('/api/producao', { cache: 'no-store' }).then(function (r) {
+      if (r.status === 401) { window.location.href = '/login.html'; return null; }
+      return r.json().then(function (j) { return { ok: r.ok, j: j }; });
+    }).then(function (x) {
+      if (!x) return;
+      if (!x.ok) {
+        elQuando.textContent = '';
+        elAvisos.innerHTML = '<div class="aviso">' + esc((x.j && x.j.erro) || 'Não foi possível carregar a produção agora.') + '</div>';
+        return;
+      }
+      dados = x.j;
+      mesSel = dados.mesAtual;
+      // Meses vazios antes do primeiro com produção não entram (mínimo de 6 no gráfico).
+      var primeiro = 0;
+      while (primeiro < dados.meses.length - 6 && dados.meses[primeiro].total <= 0) primeiro++;
+      dados.meses = dados.meses.slice(primeiro);
+      selMes.innerHTML = dados.meses.slice().reverse().map(function (m) {
+        return '<option value="' + m.mes + '">' + esc(mesLongo(m.mes).replace(/^./, function (c) { return c.toUpperCase(); })) + '</option>';
+      }).join('');
+      selMes.value = mesSel;
+      selMes.disabled = false;
+      var c = dados.coleta || {};
+      elQuando.innerHTML = c.ultimaOk ? 'Dados do ACS de <b>' + esc(dataHora(c.ultimaOk)) + '</b>' : 'Ainda sem dados do ACS';
+      var avisos = '';
+      if (c.estado === 'atrasada') avisos += '<div class="aviso"><b>Sem atualização há mais de 1 dia útil.</b> Os números podem estar desatualizados: vale conferir a máquina do coletor.</div>';
+      if (!dados.contrato) avisos += '<div class="aviso info"><b>O contrato ainda não veio do ACS.</b> Sem os pesos das fases e a tabela de indicadores, o PF fica zerado. Ele chega na próxima coleta.</div>';
+      elAvisos.innerHTML = avisos;
+      render();
+    }).catch(function () {
+      elAvisos.innerHTML = '<div class="aviso">Sem conexão com o servidor. Recarregue a página para tentar de novo.</div>';
+    });
+  })();
+</script>

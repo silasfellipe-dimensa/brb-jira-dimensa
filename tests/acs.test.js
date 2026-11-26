@@ -442,3 +442,57 @@ describe('normalizarSolicitacao com detalhe (FASES, METRICAS, COORDENACAO)', () 
     assert.strictEqual(s.detalheEm, null);
   });
 });
+
+// ---- extras da carga (base da Produção PF) ----
+
+const { normalizarSustentacoes, normalizarContrato, normalizarExtras, normalizarImplantadas } = require('../acs');
+
+describe('extras da carga — implantadas, sustentação, contrato', () => {
+  test('data com hora (como a rota de implantadas manda) vale o dia', () => {
+    assert.strictEqual(interpretarDataBr('29/10/2026 00:00:00'), '2026-10-29');
+  });
+
+  test('implantadas: itens tortos ficam de fora, os bons entram', () => {
+    const r = normalizarImplantadas([
+      { SQ_SOLICITACAO: 20990101001, SISSIGLA: 'TTB', ST_SOLICITACAO: 'I', DS_STATUS_SOLICITACAO: 'IMPLANTADA', DS_RESUMO: 'x', DT_IMPLANTACAO: '01/08/2026 00:00:00', DT_SOLICITACAO: '01/05/2026 10:00:00' },
+      { SQ_SOLICITACAO: 'torto' }
+    ]);
+    assert.strictEqual(r.linhas.length, 1);
+    assert.strictEqual(r.descartadas, 1);
+    assert.strictEqual(r.linhas[0].data_implantacao, '2026-08-01');
+  });
+
+  // Bug que isto pega: descrição do chamado (detalhe de produção do banco)
+  // ou nome de técnico indo parar no Supabase.
+  test('sustentação: só os campos da conta; descrição e nomes ficam de fora', () => {
+    const r = normalizarSustentacoes([{
+      SQ_SUSTENTACAO: 2099110001, NO_SISTEMA: 'TTB', TP_SITUACAO: 5, DT_ABERTURA: '24/11/2026 10:17:32',
+      DT_FINALIZACAO: '26/11/2026 14:17:39', NR_QUANTIDADE: 3, SQ_SUSTENTACAO_INDICADOR: 129, SQ_CONTRATO: 15,
+      DS_DESCRICAO: 'segredo de producao', NO_TECNICO: 'FULANO', NR_MATRICULA_TECNICO: 1234
+    }]);
+    assert.deepStrictEqual(r.linhas, [{
+      numero: 2099110001, sistema: 'TTB', situacao: 5, abertura: '2026-11-24T10:17:32-03:00',
+      finalizacao: '2026-11-26T14:17:39-03:00', quantidade: 3, indicador: 129, contrato: 15
+    }]);
+  });
+
+  test('sustentação: chamado torto é descartado sem derrubar os outros', () => {
+    const r = normalizarSustentacoes([{ SQ_SUSTENTACAO: 'x' }, { SQ_SUSTENTACAO: 1, DT_ABERTURA: '99/99/2026' }, { SQ_SUSTENTACAO: 2, NR_QUANTIDADE: null }]);
+    assert.strictEqual(r.linhas.length, 1);
+    assert.strictEqual(r.descartadas, 2);
+  });
+
+  test('contrato: pesos F1..F7 e indicadores; peso fora de 0..1 recusa o contrato', () => {
+    const base = { SQ_CONTRATO: 15, CD_CONTRATO: '398', NO_CONTRATO: 'Teste', VL_F1: 0, VL_F2: 0, VL_F3: 0, VL_F4: 0.3, VL_F5: 0.4, VL_F6: 0.2, VL_F7: 0.1,
+      INDICADORES: [{ SQ_SUSTENTACAO_INDICADOR: 129, NR_PF: 2, DS_ATIVIDADE: 'SS07' }, { SQ_SUSTENTACAO_INDICADOR: 'x', NR_PF: 1 }] };
+    const c = normalizarContrato(base);
+    assert.strictEqual(c.pesos.F5, 0.4);
+    assert.deepStrictEqual(c.indicadores, [{ id: 129, pf: 2, atividade: 'SS07' }]);
+    assert.strictEqual(normalizarContrato({ ...base, VL_F4: 30 }), null);
+    assert.strictEqual(normalizarContrato(null), null);
+  });
+
+  test('carga sem extras: tudo null (coletor antigo continua valendo)', () => {
+    assert.deepStrictEqual(normalizarExtras({ solicitacoes: [] }), { implantadas: null, sustentacoes: null, contrato: null });
+  });
+});

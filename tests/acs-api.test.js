@@ -203,3 +203,47 @@ describe('coletor do ACS — só entra pedido assinado', () => {
     }
   });
 });
+
+describe('tela Produção PF — só a equipe vê', () => {
+  test('sem sessão: página vai para o login, API responde 401', async () => {
+    const pagina = await pedir('/producao');
+    assert.strictEqual(pagina.status, 302);
+    assert.strictEqual(pagina.headers.get('location'), '/login.html');
+    assert.strictEqual((await pedir('/api/producao')).status, 401);
+  });
+
+  test('BRB e TOTVS: página volta para o board e a API responde 403', async () => {
+    for (const email of DE_FORA) {
+      const c = { Cookie: cookie(email) };
+      const pagina = await pedir('/producao', { headers: c });
+      assert.strictEqual(pagina.status, 302, email);
+      assert.strictEqual(pagina.headers.get('location'), '/', email);
+      assert.strictEqual((await pedir('/api/producao', { headers: c })).status, 403, email);
+    }
+  });
+
+  test('Dimensa e Evertec abrem a página; com o banco fora do ar a API dá 503 sem vazar detalhe', async () => {
+    for (const email of EQUIPE) {
+      const c = { Cookie: cookie(email) };
+      const r = await pedir('/producao', { headers: c });
+      assert.strictEqual(r.status, 200, email);
+      assert.ok((await r.text()).includes('/api/producao'));
+      const api = await pedir('/api/producao', { headers: c });
+      assert.strictEqual(api.status, 503);
+      assert.ok(!vazamento.test(JSON.stringify(await api.json())));
+    }
+  });
+
+  test('a tela não usa pop-up do navegador e escapa o texto que vem do ACS', () => {
+    const html = fs.readFileSync(path.join(__dirname, '..', 'paginas', 'producao-pf.html'), 'utf8');
+    assert.deepStrictEqual(html.match(/(^|[^.\w])(confirm|alert|prompt)\(/g) || [], []);
+    for (const campo of ['c.resumo', 'c.numero', 'c.atividade', 'c.faseNome']) assert.ok(html.includes(`esc(${campo}`), `${campo} sem esc()`);
+  });
+
+  test('carga com extras assinada passa do portão (e para só no banco)', async () => {
+    const r = await comoColetor('POST', '/api/acs/coletor/carga', {
+      solicitacoes: [solicitacao(1)], implantadas: [], sustentacoes: [{ SQ_SUSTENTACAO: 'torto' }], contrato: { lixo: true }
+    });
+    assert.strictEqual(r.status, 503);
+  });
+});

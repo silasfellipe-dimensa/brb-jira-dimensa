@@ -41,7 +41,8 @@ function texto(valor, max) {
 function interpretarDataBr(valor) {
   const t = texto(valor, 30);
   if (!t || /^-+$/.test(t)) return null;
-  const m = /^(\d{2})\/(\d{2})\/(\d{4})$/.exec(t);
+  // Algumas rotas mandam a data com a hora ("29/10/2026 00:00:00"): vale o dia.
+  const m = /^(\d{2})\/(\d{2})\/(\d{4})(?: \d{2}:\d{2}(?::\d{2})?)?$/.exec(t);
   if (!m) return undefined;
   const dia = Number(m[1]);
   const mes = Number(m[2]);
@@ -235,6 +236,93 @@ function normalizarCarga(corpo) {
   return { ok: true, linhas: [...porNumero.values()] };
 }
 
+// ---- extras da carga: base da tela "Produção PF" ----
+// Vêm junto da lista principal, mas são opcionais e independentes: um extra
+// torto é descartado (com aviso no log) sem recusar a carga.
+
+const MAX_IMPLANTADAS = 500;
+const MAX_SUSTENTACOES = 5000;
+const MAX_INDICADORES = 500;
+
+/** Demandas já implantadas (rota /Solicitacoes/sistemas/{sigla}), com fases e
+ * PF: o histórico dos meses anteriores. Itens tortos ficam de fora. */
+function normalizarImplantadas(lista) {
+  if (!Array.isArray(lista)) return { linhas: [], descartadas: 0 };
+  const linhas = [];
+  let descartadas = 0;
+  for (const bruta of lista.slice(0, MAX_IMPLANTADAS)) {
+    const n = normalizarSolicitacao(bruta);
+    if (n.ok) linhas.push(n.linha); else descartadas++;
+  }
+  return { linhas, descartadas: descartadas + Math.max(0, lista.length - MAX_IMPLANTADAS) };
+}
+
+/** Chamados de sustentação (rota /Sustentacoes/{sigla}/{inicio}/{fim}). Só o
+ * que a conta de PF precisa: descrição, solução e nomes NÃO entram. */
+function normalizarSustentacoes(lista) {
+  if (!Array.isArray(lista)) return { linhas: [], descartadas: 0 };
+  const porNumero = new Map();
+  let descartadas = 0;
+  for (const c of lista.slice(0, MAX_SUSTENTACOES)) {
+    const numero = Number(c && c.SQ_SUSTENTACAO);
+    const abertura = interpretarDataHoraBr(c && c.DT_ABERTURA);
+    const finalizacao = interpretarDataHoraBr(c && c.DT_FINALIZACAO);
+    const quantidade = c && c.NR_QUANTIDADE !== null && c.NR_QUANTIDADE !== undefined ? Number(c.NR_QUANTIDADE) : null;
+    const indicador = c && c.SQ_SUSTENTACAO_INDICADOR !== null && c.SQ_SUSTENTACAO_INDICADOR !== undefined ? Number(c.SQ_SUSTENTACAO_INDICADOR) : null;
+    if (!Number.isSafeInteger(numero) || numero <= 0 || abertura === undefined || finalizacao === undefined ||
+      (quantidade !== null && (!Number.isFinite(quantidade) || quantidade < 0 || quantidade > 1000)) ||
+      (indicador !== null && !Number.isSafeInteger(indicador))) {
+      descartadas++;
+      continue;
+    }
+    porNumero.set(numero, {
+      numero,
+      sistema: texto(c.NO_SISTEMA, LIMITE.sistema),
+      situacao: Number.isFinite(Number(c.TP_SITUACAO)) ? Number(c.TP_SITUACAO) : null,
+      abertura,
+      finalizacao,
+      quantidade,
+      indicador,
+      contrato: Number.isSafeInteger(Number(c.SQ_CONTRATO)) ? Number(c.SQ_CONTRATO) : null
+    });
+  }
+  return { linhas: [...porNumero.values()], descartadas: descartadas + Math.max(0, lista.length - MAX_SUSTENTACOES) };
+}
+
+/** Contrato (rota /Faturamentos/contratos/codigo/{cd}) e os indicadores de
+ * sustentação dele (/SustentacaoIndicador): quanto cada fase paga do PF da
+ * demanda e quanto vale cada tipo de chamado. Torto devolve null. */
+function normalizarContrato(c) {
+  if (!c || typeof c !== 'object') return null;
+  const sq = Number(c.SQ_CONTRATO);
+  const codigo = texto(c.CD_CONTRATO, 20);
+  if (!Number.isSafeInteger(sq) || !codigo) return null;
+  const pesos = {};
+  for (let i = 1; i <= 7; i++) {
+    const p = Number(c[`VL_F${i}`]);
+    if (!Number.isFinite(p) || p < 0 || p > 1) return null;
+    pesos[`F${i}`] = p;
+  }
+  const indicadores = [];
+  for (const i of Array.isArray(c.INDICADORES) ? c.INDICADORES.slice(0, MAX_INDICADORES) : []) {
+    const id = Number(i && i.SQ_SUSTENTACAO_INDICADOR);
+    const pf = Number(i && i.NR_PF);
+    if (!Number.isSafeInteger(id) || !Number.isFinite(pf) || pf < 0 || pf > 1000) continue;
+    indicadores.push({ id, pf, atividade: texto(i.DS_ATIVIDADE, 200) });
+  }
+  return { sq, codigo, nome: texto(c.NO_CONTRATO, 120), pesos, indicadores };
+}
+
+/** Os extras do corpo da carga, já limpos. */
+function normalizarExtras(corpo) {
+  const c = corpo || {};
+  return {
+    implantadas: 'implantadas' in c ? normalizarImplantadas(c.implantadas) : null,
+    sustentacoes: 'sustentacoes' in c ? normalizarSustentacoes(c.sustentacoes) : null,
+    contrato: 'contrato' in c ? normalizarContrato(c.contrato) : null
+  };
+}
+
 /** Motivo da falha informado pelo coletor ({ erro: "..." }), limpo e curto. */
 function normalizarErroColetor(corpo) {
   if (!corpo || typeof corpo.erro !== 'string') return null;
@@ -359,6 +447,7 @@ module.exports = {
   NOMES_FASE,
   interpretarDataBr, interpretarDataHoraBr, normalizarFases, normalizarMetricas, faseAtual, pfAtual,
   normalizarSolicitacao, normalizarCarga, normalizarErroColetor, deLinhaAcs,
+  normalizarImplantadas, normalizarSustentacoes, normalizarContrato, normalizarExtras,
   emBrasilia, horasUteisEntre, situacaoColeta, deveColetar,
   assinar, conferirAssinatura
 };
