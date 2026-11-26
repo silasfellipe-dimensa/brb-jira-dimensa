@@ -1,4 +1,5 @@
 const { createClient } = require('@supabase/supabase-js');
+const { criarFetchComNovaTentativa } = require('./supabaseFetch');
 const { deLinha } = require('./demandas');
 const { ITENS_PADRAO, deLinhaExpedicao } = require('./expedicoes');
 const { deLinhaAcs, MAX_SOLICITACOES } = require('./acs');
@@ -14,7 +15,10 @@ const { deLinhaEvidencia } = require('./evidencias');
 // - dbClient usa a service_role, que ignora RLS. E a unica forma de tocar
 //   na tabela snapshot, que agora nega tudo para a chave publica. Essa
 //   chave NUNCA pode ir para o navegador nem para o repositorio.
-const authClient = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_ANON_KEY);
+// Os dois usam um fetch que repete o pedido quando o Supabase recusa por
+// diferença de relógio dele ("JWT issued at future") - ver supabaseFetch.js.
+const fetchSupabase = criarFetchComNovaTentativa();
+const authClient = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_ANON_KEY, { global: { fetch: fetchSupabase } });
 
 // Criado sob demanda, nao na importacao: se a chave ainda nao estiver
 // configurada, so as rotas de dados falham (com mensagem clara), em vez
@@ -28,7 +32,7 @@ function db() {
     _dbClient = createClient(
       process.env.SUPABASE_URL,
       process.env.SUPABASE_SERVICE_ROLE_KEY,
-      { auth: { persistSession: false, autoRefreshToken: false } }
+      { auth: { persistSession: false, autoRefreshToken: false }, global: { fetch: fetchSupabase } }
     );
   }
   return _dbClient;
