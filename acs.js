@@ -14,7 +14,7 @@ const HORA_MS = 60 * 60 * 1000;
 const DIA_MS = 24 * HORA_MS;
 
 const MAX_SOLICITACOES = 2000;
-const LIMITE = { sistema: 20, statusCodigo: 4, status: 80, resumo: 500, gestor: 120, erro: 500 };
+const LIMITE = { sistema: 20, statusCodigo: 4, status: 80, resumo: 500, gestor: 120, coordenacao: 20, erro: 500 };
 
 // A coleta é diária, às 8h. Passou de 1 dia útil (24h, sem contar sábado e
 // domingo) sem coleta boa, a tela avisa. A folga de 1h evita alarme falso
@@ -51,6 +51,127 @@ function interpretarDataBr(valor) {
   return `${m[3]}-${m[2]}-${m[1]}`;
 }
 
+/** "dd/mm/aaaa hh:mm:ss" (data e hora de Brasília, como o ACS manda nas fases
+ * e nas métricas) -> "aaaa-mm-ddThh:mm:ss-03:00". Vazio ou "-" vira null; o
+ * resto que não for data e hora válidas devolve undefined. */
+function interpretarDataHoraBr(valor) {
+  const t = texto(valor, 30);
+  if (!t || /^-+$/.test(t)) return null;
+  const m = /^(\d{2}\/\d{2}\/\d{4})(?: (\d{2}):(\d{2})(?::(\d{2}))?)?$/.exec(t);
+  if (!m) return undefined;
+  const dia = interpretarDataBr(m[1]);
+  if (!dia) return undefined;
+  const [h, min, s] = [m[2] || '00', m[3] || '00', m[4] || '00'];
+  if (Number(h) > 23 || Number(min) > 59 || Number(s) > 59) return undefined;
+  return `${dia}T${h}:${min}:${s}-03:00`;
+}
+
+// Nomes do ciclo de vida no ACS (rota /Fases/CicloDeVida). Cada linha do
+// histórico de fases é um pedido de APROVAÇÃO daquela fase: "F5 aprovada" quer
+// dizer que a construção terminou (e a demanda segue para teste/homologação).
+const NOMES_FASE = {
+  F1: 'Definição do Sistema',
+  F2: 'Especificação de Requisitos',
+  F3: 'Modelo Lógico',
+  F4: 'Projeto Detalhado',
+  F5: 'Construção',
+  F6: 'Integração e Homologação',
+  F7: 'Implantação'
+};
+// Situação da fase (DS_SITUACAO_FASE) e da contagem de PF (st_aprovacao).
+const SITUACOES = { A: 'aprovada', E: 'aguardando aprovação', R: 'rejeitada' };
+const SITUACOES_PF = { A: 'Aprovado', E: 'Aguardando aprovação', R: 'Rejeitado' };
+const MAX_FASES = 30;
+const MAX_METRICAS = 50;
+const MAX_PF = 100000;
+
+/** FASES que o coletor manda junto de cada solicitação (vêm de
+ * /Solicitacoes/{n}/fases) -> [{ fase, situacao, inclusao, validacao, rejeicao }],
+ * da mais antiga para a mais nova. Inválido devolve null (o detalhe é
+ * descartado, a solicitação não). */
+function normalizarFases(lista) {
+  if (!Array.isArray(lista) || lista.length > MAX_FASES) return null;
+  const fases = [];
+  for (const f of lista) {
+    if (!f || typeof f !== 'object') return null;
+    const fase = texto(f.CD_FASE, 4).toUpperCase();
+    if (!/^[A-Z0-9]{1,4}$/.test(fase)) return null;
+    const item = { fase, situacao: texto(f.DS_SITUACAO_FASE, 2).toUpperCase() };
+    for (const [origem, campo] of [['DT_INCLUSAO_FASE', 'inclusao'], ['DT_VALIDACAO_FASE', 'validacao'], ['DT_REJEICAO_FASE', 'rejeicao']]) {
+      const d = interpretarDataHoraBr(f[origem]);
+      if (d === undefined) return null;
+      item[campo] = d;
+    }
+    fases.push(item);
+  }
+  // Ordena pela inclusão (sem data por último, mantendo a ordem do ACS).
+  return fases.map((f, i) => ({ f, i }))
+    .sort((a, b) => ((a.f.inclusao || '￿').localeCompare(b.f.inclusao || '￿')) || a.i - b.i)
+    .map((x) => x.f);
+}
+
+/** METRICAS (de /Metricas/todos?sq_solicitacao=n): cada contagem de PF com a
+ * situação da aprovação. Quem aprovou (nome) não é guardado. Repetidas (o ACS
+ * devolve a mesma contagem várias vezes) viram uma só. */
+function normalizarMetricas(lista) {
+  if (!Array.isArray(lista) || lista.length > MAX_METRICAS * 4) return null;
+  const vistas = new Set();
+  const metricas = [];
+  for (const m of lista) {
+    if (!m || typeof m !== 'object') return null;
+    const pf = Number(m.contagem);
+    if (!Number.isFinite(pf) || pf < 0 || pf > MAX_PF) return null;
+    const data = interpretarDataHoraBr(m.data_aprovacao);
+    if (data === undefined) return null;
+    const item = {
+      pf: Math.round(pf * 100) / 100,
+      tipo: texto(m.tipo_contagem, 4).toUpperCase(),
+      situacao: texto(m.st_aprovacao, 2).toUpperCase(),
+      data,
+      documento: texto(m.nome_documento, 150)
+    };
+    const chave = JSON.stringify(item);
+    if (vistas.has(chave)) continue;
+    vistas.add(chave);
+    metricas.push(item);
+  }
+  return metricas.slice(0, MAX_METRICAS);
+}
+
+/** A fase em que a demanda está: a última do histórico (a mesma que o ACS
+ * devolve em /Solicitacoes/{n}/UltimaFase). */
+function faseAtual(fases) {
+  if (!Array.isArray(fases) || !fases.length) return null;
+  const f = fases[fases.length - 1];
+  return {
+    codigo: f.fase,
+    nome: NOMES_FASE[f.fase] || '',
+    situacao: f.situacao,
+    situacaoTexto: SITUACOES[f.situacao] || '',
+    desde: f.inclusao || null,
+    validada: f.validacao || null
+  };
+}
+
+/** O PF que vale para a demanda: a contagem decidida (aprovada ou rejeitada)
+ * mais recente; sem nenhuma decidida, a que aguarda aprovação. Se, além da
+ * decidida, há uma nova aguardando com outro valor, ela vem em `novaContagem`. */
+function pfAtual(metricas) {
+  if (!Array.isArray(metricas) || !metricas.length) return null;
+  const decididas = metricas.filter((m) => m.data && (m.situacao === 'A' || m.situacao === 'R'))
+    .sort((a, b) => b.data.localeCompare(a.data));
+  const aguardando = metricas.filter((m) => m.situacao === 'E');
+  const escolhida = decididas[0] || aguardando[aguardando.length - 1] || metricas[metricas.length - 1];
+  const nova = decididas[0] ? aguardando.find((m) => m.pf !== escolhida.pf) : null;
+  return {
+    valor: escolhida.pf,
+    situacao: escolhida.situacao,
+    situacaoTexto: SITUACOES_PF[escolhida.situacao] || '',
+    data: escolhida.data || null,
+    novaContagem: nova ? nova.pf : null
+  };
+}
+
 const CAMPOS_DATA = {
   DT_SOLICITACAO: 'data_solicitacao',
   DT_PREVISAO_INICIO: 'previsao_inicio',
@@ -79,6 +200,18 @@ function normalizarSolicitacao(bruta) {
     const data = interpretarDataBr(bruta[origem]);
     if (data === undefined) return { ok: false, erro: `solicitação ${numero}: ${origem} não é uma data dd/mm/aaaa` };
     linha[coluna] = data;
+  }
+  // Detalhe (fases, PF e coordenação): o coletor só manda quando conseguiu
+  // buscar. Sem ele, ou com ele torto, a solicitação entra assim mesmo e o
+  // banco mantém o detalhe da coleta anterior (ver gravarCargaAcs).
+  if ('FASES' in bruta || 'METRICAS' in bruta) {
+    const fases = normalizarFases(bruta.FASES);
+    const metricas = normalizarMetricas(bruta.METRICAS);
+    if (fases && metricas) {
+      linha.fases = fases;
+      linha.metricas = metricas;
+      linha.coordenacao = texto(bruta.COORDENACAO, LIMITE.coordenacao);
+    }
   }
   return { ok: true, linha };
 }
@@ -124,7 +257,14 @@ function deLinhaAcs(l) {
     statusDesde: l.status_desde || null,
     // Na primeira vez que vemos a solicitação não sabemos desde quando ela
     // está naquele status: "desde" é só o dia em que começamos a olhar.
-    statusDesdeAproximado: !!l.status_desde && l.status_desde === l.primeira_coleta
+    statusDesdeAproximado: !!l.status_desde && l.status_desde === l.primeira_coleta,
+    coordenacao: l.coordenacao || '',
+    fase: faseAtual(l.fases),
+    fases: Array.isArray(l.fases) ? l.fases.map((f) => ({ ...f, nome: NOMES_FASE[f.fase] || '' })) : [],
+    pf: pfAtual(l.metricas),
+    metricas: Array.isArray(l.metricas) ? l.metricas : [],
+    // null = o coletor ainda não trouxe fases/PF desta demanda
+    detalheEm: l.detalhe_em || null
   };
 }
 
@@ -216,7 +356,9 @@ function conferirAssinatura({ segredo, timestamp, assinatura, metodo, caminho, c
 
 module.exports = {
   MAX_SOLICITACOES, LIMITE_HORAS_UTEIS, HORA_COLETA_DIARIA, ESPERA_APOS_FALHA_MS, JANELA_ASSINATURA_MS, SEGREDO_MINIMO,
-  interpretarDataBr, normalizarSolicitacao, normalizarCarga, normalizarErroColetor, deLinhaAcs,
+  NOMES_FASE,
+  interpretarDataBr, interpretarDataHoraBr, normalizarFases, normalizarMetricas, faseAtual, pfAtual,
+  normalizarSolicitacao, normalizarCarga, normalizarErroColetor, deLinhaAcs,
   emBrasilia, horasUteisEntre, situacaoColeta, deveColetar,
   assinar, conferirAssinatura
 };

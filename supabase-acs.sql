@@ -115,5 +115,13 @@ create trigger acs_historico_trg
   before insert or update on public.acs_solicitacoes
   for each row execute function public.acs_registrar_historico();
 
+-- Fases e pontos de funcao (o mesmo que supabase-acs-fases.sql, para quem
+-- esta instalando do zero).
+alter table public.acs_solicitacoes
+  add column if not exists fases jsonb,
+  add column if not exists metricas jsonb,
+  add column if not exists coordenacao text,
+  add column if not exists detalhe_em timestamptz;
+
 -- Confirma o resultado: a listagem abaixo deve vir VAZIA (nenhuma politica).
 select tablename, policyname from pg_policies where tablename like 'acs_%';

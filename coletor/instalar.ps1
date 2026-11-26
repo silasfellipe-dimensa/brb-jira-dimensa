@@ -94,7 +94,7 @@ $argumentos = '--headless powershell.exe -NoProfile -NonInteractive -File "' + $
 $acao = New-ScheduledTaskAction -Execute 'conhost.exe' -Argument $argumentos
 $gatilho = New-ScheduledTaskTrigger -Once -At (Get-Date).Date -RepetitionInterval (New-TimeSpan -Minutes $IntervaloMinutos)
 $ajustes = New-ScheduledTaskSettingsSet -MultipleInstances IgnoreNew -StartWhenAvailable `
-  -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -ExecutionTimeLimit (New-TimeSpan -Minutes 5)
+  -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -ExecutionTimeLimit (New-TimeSpan -Minutes 10)
 $quem = New-ScheduledTaskPrincipal -UserId "$env:USERDOMAIN\$env:USERNAME" -LogonType Interactive -RunLevel Limited
 Register-ScheduledTask -TaskName $NomeTarefa -Action $acao -Trigger $gatilho -Settings $ajustes -Principal $quem -Force `
   -Description 'Busca as solicitacoes em andamento no ACS e envia para o app brb-jira-dimensa.' | Out-Null

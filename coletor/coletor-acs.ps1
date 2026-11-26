@@ -3,8 +3,9 @@
 
   O que faz, a cada execucao:
     1. pergunta ao servidor (o app na nuvem) se e hora de coletar;
-    2. se for, busca no ACS as solicitacoes em andamento (login Windows do
-       usuario que esta rodando, sem senha guardada em lugar nenhum);
+    2. se for, busca no ACS as solicitacoes em andamento e, de cada uma, as
+       fases e os pontos de funcao (login Windows do usuario que esta rodando,
+       sem senha guardada em lugar nenhum; so rotas de consulta);
     3. manda a lista para o servidor - ou o motivo da falha, que aparece na tela.
 
   Seguranca:
@@ -33,6 +34,10 @@ $ArquivoConfig = Join-Path $PastaDados 'coletor.json'
 $ArquivoSegredo = Join-Path $PastaDados 'coletor-segredo.dpapi'
 $ArquivoLog = Join-Path $PastaDados 'coletor.log'
 $TempoLimiteMs = 60000
+$TempoLimiteDetalheMs = 20000
+# Fases e PF sao 2 consultas por demanda (~1-2s cada par). Passou disto, as
+# que faltam ficam para a proxima coleta - a lista em si nunca deixa de ir.
+$OrcamentoDetalheSeg = 240
 $CamposAcs = 'SQ_SOLICITACAO', 'SISSIGLA', 'DS_STATUS_SOLICITACAO', 'ST_SOLICITACAO', 'DS_RESUMO',
   'DT_IMPLANTACAO', 'DT_SOLICITACAO', 'DT_PREVISAO_INICIO', 'DT_PREVISAO_TERMINO', 'NO_GESTOR_NEGOCIO'
 
@@ -135,6 +140,72 @@ function Get-SolicitacoesAcs {
   return @($lista | Select-Object -Property $CamposAcs)
 }
 
+# GET de leitura no ACS (mesma conexao direta, com login Windows). 404 vira
+# $null; com -Vazio400, um 400 de mensagem vazia tambem (e assim que a rota de
+# fases responde para demanda que ainda nao pediu aprovacao de nenhuma fase).
+# Outro erro lanca.
+function Get-JsonAcs([string]$caminho, [switch]$Vazio400) {
+  $pedido = [System.Net.HttpWebRequest]::Create($script:AcsBase + $caminho)
+  $pedido.Method = 'GET'
+  $pedido.Timeout = $TempoLimiteDetalheMs
+  $pedido.ReadWriteTimeout = $TempoLimiteDetalheMs
+  $pedido.Accept = '*/*'
+  $pedido.Proxy = New-Object System.Net.WebProxy
+  $pedido.UseDefaultCredentials = $true
+  try {
+    $resposta = $pedido.GetResponse()
+  } catch [System.Net.WebException] {
+    $erro = $_.Exception.Response
+    if (-not $erro) { throw }
+    $codigo = [int]$erro.StatusCode
+    $texto = Read-Resposta $erro
+    if ($codigo -eq 404) { return $null }
+    if ($Vazio400 -and $codigo -eq 400 -and $texto -match '^\s*\{\s*"Message"\s*:\s*""\s*\}\s*$') { return $null }
+    throw "ACS respondeu HTTP $codigo em $caminho"
+  }
+  return (ConvertFrom-Json -InputObject (Read-Resposta $resposta))
+}
+
+# Fases (F1..F7) e contagens de PF de cada demanda, so com rotas de consulta:
+#   /Solicitacoes/{n}/fases          historico das fases
+#   /Metricas/todos?sq_solicitacao=n contagens de PF e a aprovacao de cada uma
+# Ficam de fora matricula e nome de quem cadastrou/aprovou. Se uma demanda
+# falhar, ela vai sem detalhe (o servidor mantem o da coleta anterior); se o
+# tempo acabar, as que faltam tambem.
+function Add-DetalheAcs($lista) {
+  if (-not $script:AcsBase) { Write-Registro 'acsUrl fora do formato .../Solicitacoes/...: fases e PF nao serao buscados.'; return }
+  $relogio = [System.Diagnostics.Stopwatch]::StartNew()
+  $falhas = 0; $semTempo = 0
+  foreach ($s in $lista) {
+    if ($relogio.Elapsed.TotalSeconds -gt $OrcamentoDetalheSeg) { $semTempo++; continue }
+    $n = [string][int64]$s.SQ_SOLICITACAO
+    try {
+      $fases = Get-JsonAcs "/Solicitacoes/$n/fases" -Vazio400
+      $metr = Get-JsonAcs "/Metricas/todos?sq_solicitacao=$n"
+      $listaFases = @(@($fases) | Where-Object { $_ } | ForEach-Object {
+        [pscustomobject]@{ CD_FASE = $_.CD_FASE; DS_SITUACAO_FASE = $_.DS_SITUACAO_FASE; DT_INCLUSAO_FASE = $_.DT_INCLUSAO_FASE;
+          DT_VALIDACAO_FASE = $_.DT_VALIDACAO_FASE; DT_REJEICAO_FASE = $_.DT_REJEICAO_FASE }
+      })
+      $bloco = @(@($metr) | Where-Object { $_ -and $_.solicitacao -and ([string][int64]$_.solicitacao.nr_solicitacao) -eq $n })
+      $listaMetr = @($bloco | ForEach-Object { @($_.metrica) } | Where-Object { $_ } | ForEach-Object {
+        [pscustomobject]@{ contagem = $_.contagem; tipo_contagem = $_.tipo_contagem; st_aprovacao = $_.st_aprovacao;
+          data_aprovacao = $_.data_aprovacao; nome_documento = $_.nome_documento }
+      })
+      $coord = if ($bloco.Count) { [string]$bloco[0].solicitacao.coordenacao } else { '' }
+      $s | Add-Member -NotePropertyName FASES -NotePropertyValue $listaFases
+      $s | Add-Member -NotePropertyName METRICAS -NotePropertyValue $listaMetr
+      $s | Add-Member -NotePropertyName COORDENACAO -NotePropertyValue $coord
+    } catch {
+      $falhas++
+      if ($falhas -le 3) { Write-Registro "Fases/PF da $n nao vieram: $($_.Exception.Message)" }
+    }
+  }
+  $msg = "Fases e PF: $($lista.Count - $falhas - $semTempo) de $($lista.Count) demandas em $([int]$relogio.Elapsed.TotalSeconds)s"
+  if ($falhas) { $msg += "; $falhas com erro no ACS" }
+  if ($semTempo) { $msg += "; $semTempo ficaram para a proxima (tempo esgotado)" }
+  Write-Registro "$msg."
+}
+
 function Send-Falha([string]$motivo) {
   try {
     $corpo = ConvertTo-Json -InputObject @{ erro = $motivo } -Compress
@@ -154,6 +225,8 @@ try {
   $config = Get-Content -Path $ArquivoConfig -Raw | ConvertFrom-Json
   $script:AppUrl = ([string]$config.appUrl).TrimEnd('/')
   $script:AcsUrl = [string]$config.acsUrl
+  # Raiz do servico (http://.../ACSservice), para as consultas de fases e PF.
+  $script:AcsBase = if ($script:AcsUrl -match '^(https?://.+?)/Solicitacoes/') { $Matches[1] } else { $null }
   # O servidor so por HTTPS (http so para teste na propria maquina).
   if ($script:AppUrl -notmatch '^https://' -and $script:AppUrl -notmatch '^http://(127\.0\.0\.1|localhost)(:\d+)?$') {
     throw 'appUrl precisa comecar com https://'
@@ -191,8 +264,10 @@ try {
   exit 1
 }
 
+try { Add-DetalheAcs $lista } catch { Write-Registro "Fases e PF nao foram buscados: $($_.Exception.Message)" }
+
 try {
-  $corpo = '{"solicitacoes":' + (ConvertTo-Json -InputObject @($lista) -Depth 3 -Compress) + '}'
+  $corpo = '{"solicitacoes":' + (ConvertTo-Json -InputObject @($lista) -Depth 5 -Compress) + '}'
   $r = Invoke-Servidor 'POST' '/api/acs/coletor/carga' $corpo
   if ($r.Status -eq 200) {
     Write-Registro "Carga enviada: $($lista.Count) solicitacoes."

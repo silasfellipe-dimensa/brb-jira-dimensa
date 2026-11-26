@@ -1016,6 +1016,9 @@ async function removerItemExpedicao(expedicaoId, itemId, email) {
  * do Postgres fica só no log. semTabela = o script SQL ainda não foi rodado. */
 const COLUNAS_ACS = 'numero,sistema,status_codigo,status,resumo,gestor,data_solicitacao,previsao_inicio,' +
   'previsao_termino,data_implantacao,status_desde,primeira_coleta';
+// Fases, PF e coordenação (supabase-acs-fases.sql). Enquanto o script não for
+// rodado, as colunas não existem: a tela e a carga seguem só com o básico.
+const COLUNAS_DETALHE_ACS = ['fases', 'metricas', 'coordenacao', 'detalhe_em'];
 
 function falhaAcs(contexto, erro) {
   console.error(`[supabase] falha ao ${contexto}:`, erro.message);
@@ -1024,11 +1027,18 @@ function falhaAcs(contexto, erro) {
 function erroAcs(error) {
   return Object.assign(new Error(error.message), { semTabela: !!semTabelaExpedicoes(error) });
 }
+/** A coluna pedida não existe (o script de fases ainda não foi rodado). */
+function semColunaDetalhe(error) {
+  return !!error && (error.code === '42703' || error.code === 'PGRST204' ||
+    /column .* does not exist|could not find the '.*' column/i.test(error.message || ''));
+}
 
 async function listarSolicitacoesAcs() {
   try {
-    const { data, error } = await db().from('acs_solicitacoes').select(COLUNAS_ACS)
+    const consultar = (colunas) => db().from('acs_solicitacoes').select(colunas)
       .eq('em_andamento', true).order('numero', { ascending: false }).limit(MAX_SOLICITACOES);
+    let { data, error } = await consultar(`${COLUNAS_ACS},${COLUNAS_DETALHE_ACS.join(',')}`);
+    if (semColunaDetalhe(error)) ({ data, error } = await consultar(COLUNAS_ACS));
     if (error) throw erroAcs(error);
     return { ok: true, solicitacoes: (data || []).map(deLinhaAcs) };
   } catch (erro) {
@@ -1071,8 +1081,26 @@ async function fecharPedidosAcs(agora) {
 async function gravarCargaAcs(linhas) {
   try {
     const agora = new Date().toISOString();
-    const gravar = await db().from('acs_solicitacoes')
-      .upsert(linhas.map((l) => ({ ...l, em_andamento: true, ultima_coleta: agora })), { onConflict: 'numero' });
+    const upsert = (lista) => (lista.length
+      ? db().from('acs_solicitacoes').upsert(lista, { onConflict: 'numero' })
+      : Promise.resolve({ error: null }));
+    const base = (l) => {
+      const r = { ...l, em_andamento: true, ultima_coleta: agora };
+      for (const c of COLUNAS_DETALHE_ACS) delete r[c];
+      return r;
+    };
+    // Duas levas: quem veio com detalhe grava o detalhe; quem veio sem (o
+    // coletor não conseguiu buscar) grava só o básico e MANTÉM o detalhe da
+    // coleta anterior - num upsert único, a coluna ausente viraria null.
+    const comDetalhe = linhas.filter((l) => Array.isArray(l.fases));
+    const semDetalhe = linhas.filter((l) => !Array.isArray(l.fases)).map(base);
+    let gravar = await upsert(comDetalhe.map((l) => ({ ...l, em_andamento: true, ultima_coleta: agora, detalhe_em: agora })));
+    if (semColunaDetalhe(gravar.error)) {
+      console.warn('[supabase] colunas de fases/PF do ACS ainda não existem (falta supabase-acs-fases.sql); gravando só o básico');
+      gravar = await upsert(comDetalhe.map(base));
+    }
+    if (gravar.error) throw erroAcs(gravar.error);
+    gravar = await upsert(semDetalhe);
     if (gravar.error) throw erroAcs(gravar.error);
     const sairam = await db().from('acs_solicitacoes')
       .update({ em_andamento: false }).eq('em_andamento', true).lt('ultima_coleta', agora);

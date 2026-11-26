@@ -78,8 +78,8 @@
     font: inherit; font-size: 0.85rem; color: var(--ink); background: var(--bg);
     border: 1px solid var(--line); border-radius: 6px; padding: 7px 10px;
   }
-  .barra select { min-width: 200px; }
-  .barra input { min-width: 240px; }
+  .barra select { min-width: 170px; }
+  .barra input { min-width: 200px; }
   .barra .empurra { margin-left: auto; display: flex; gap: 8px; flex-wrap: wrap; }
   select:focus, input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-soft); }
   /* Hora dos dados, como a linha de situação das Expedições. */
@@ -93,7 +93,7 @@
   .aviso .detalhe { display: block; margin-top: 3px; color: var(--ink-dim); overflow-wrap: anywhere; }
 
   .tabela-scroll { overflow-x: auto; border: 1px solid var(--line-soft); border-radius: 8px; }
-  table.grade { width: 100%; min-width: 760px; border-collapse: collapse; font-size: 0.82rem; }
+  table.grade { width: 100%; min-width: 960px; border-collapse: collapse; font-size: 0.82rem; }
   /* A linha inteira abre o detalhe da demanda. */
   table.grade tbody tr { cursor: pointer; }
   table.grade tbody tr:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
@@ -107,7 +107,7 @@
 
   /* Detalhe da demanda: mesma cara das caixas de diálogo do sistema (dialogo.js). */
   dialog.detalhe {
-    border: 1px solid var(--line); border-radius: 16px; padding: 0; margin: auto; width: min(640px, calc(100vw - 32px));
+    border: 1px solid var(--line); border-radius: 16px; padding: 0; margin: auto; width: min(720px, calc(100vw - 32px));
     background: var(--bg-panel); color: var(--ink); font-family: inherit; overflow: hidden;
     box-shadow: 0 24px 60px rgba(0,0,0,.38), 0 2px 6px rgba(0,0,0,.2); animation: det-entra .16s ease-out;
   }
@@ -154,6 +154,28 @@
   .status.homologacao { background: var(--accent-soft); color: var(--accent); }
   .status.feita { background: var(--ok-soft); color: var(--ok); }
 
+  /* Fase (F1..F7) e PF: o código em destaque, o nome/situação logo abaixo. */
+  td.fase, td.pf { white-space: nowrap; }
+  td.pf { text-align: right; font-variant-numeric: tabular-nums; }
+  .fase-cod { display: inline-block; min-width: 26px; text-align: center; font-size: 0.72rem; font-weight: 700; padding: 2px 6px; border-radius: 4px; background: var(--line-soft); color: var(--ink); font-variant-numeric: tabular-nums; }
+  .fase-nome { display: block; margin-top: 3px; font-size: 0.72rem; color: var(--ink-dim); }
+  .pf-valor { font-weight: 700; }
+  .sit { display: block; margin-top: 3px; font-size: 0.68rem; font-weight: 700; color: var(--ink-faint); }
+  .sit.A { color: var(--ok); }
+  .sit.E { color: var(--accent); }
+  .sit.R { color: var(--warn); }
+  .soma-pf { margin: -6px 0 14px; font-size: 0.74rem; color: var(--ink-faint); }
+  .soma-pf b { color: var(--ink-dim); }
+
+  /* Linha do tempo das fases, no detalhe. */
+  table.fases { width: 100%; border-collapse: collapse; font-size: 0.82rem; margin-bottom: 14px; }
+  table.fases th { text-align: left; font-size: 0.64rem; text-transform: uppercase; letter-spacing: 0.03em; color: var(--ink-faint); font-weight: 700; padding: 0 8px 6px; border-bottom: 1px solid var(--line); }
+  table.fases td { padding: 7px 8px; border-bottom: 1px solid var(--line-soft); vertical-align: top; font-variant-numeric: tabular-nums; }
+  table.fases tr.futura td { color: var(--ink-faint); }
+  table.fases tr.atual td { background: var(--accent-soft); }
+  table.fases td .sit { display: inline; margin: 0; }
+  .det-nota { margin: -6px 0 14px; font-size: 0.74rem; color: var(--ink-faint); line-height: 1.5; }
+
   .vazio { padding: 26px; border: 1px dashed var(--line); border-radius: 10px; text-align: center; color: var(--ink-dim); font-size: 0.88rem; line-height: 1.55; }
   .rodape-nota { margin: 12px 2px 0; font-size: 0.74rem; color: var(--ink-faint); line-height: 1.5; }
   .rodape-nota a { color: var(--ink-dim); }
@@ -181,6 +203,7 @@
   <div class="painel">
     <div class="barra" id="barra">
       <span class="par"><label for="selStatus">Status</label><select id="selStatus"><option value="">Todas</option></select></span>
+      <span class="par"><label for="selFase">Fase</label><select id="selFase"><option value="">Todas</option></select></span>
       <span class="par"><label for="selGestor">Gestor de negócio</label><select id="selGestor"><option value="">Todos</option></select></span>
       <span class="par"><label for="busca">Busca</label><input id="busca" type="search" maxlength="80" placeholder="Número ou resumo"></span>
       <span class="empurra">
@@ -191,6 +214,7 @@
     </div>
     <p class="quando" id="quando" aria-live="polite">Carregando…</p>
     <div id="avisos" aria-live="polite"></div>
+    <p class="soma-pf" id="somaPf" hidden></p>
     <div id="lista"></div>
     <div class="paginacao" id="paginacao" hidden></div>
     <p class="rodape-nota" id="rodape" hidden></p>
@@ -217,6 +241,8 @@
     var elAvisos = document.getElementById('avisos');
     var selStatus = document.getElementById('selStatus');
     var selGestor = document.getElementById('selGestor');
+    var selFase = document.getElementById('selFase');
+    var elSomaPf = document.getElementById('somaPf');
     var elBusca = document.getElementById('busca');
     var elLista = document.getElementById('lista');
     var elRodape = document.getElementById('rodape');
@@ -243,9 +269,32 @@
       return i < STATUS.length ? STATUS[i].classe : '';
     }
 
+    // Ciclo de vida do ACS. Cada fase é um pedido de aprovação: "F5 aprovada"
+    // = construção terminada, a demanda segue para teste e homologação.
+    var FASES = [
+      { codigo: 'F1', nome: 'Definição do Sistema' },
+      { codigo: 'F2', nome: 'Especificação de Requisitos' },
+      { codigo: 'F3', nome: 'Modelo Lógico' },
+      { codigo: 'F4', nome: 'Projeto Detalhado' },
+      { codigo: 'F5', nome: 'Construção' },
+      { codigo: 'F6', nome: 'Integração e Homologação' },
+      { codigo: 'F7', nome: 'Implantação' }
+    ];
+    var SEM_FASE = '-'; // valor do filtro para "ainda sem fase"
+    function ordemFase(codigo) {
+      for (var i = 0; i < FASES.length; i++) if (FASES[i].codigo === codigo) return i;
+      return FASES.length;
+    }
+    var SIT_FASE = { A: 'aprovada', E: 'aguardando aprovação', R: 'rejeitada' };
+    var SIT_PF = { A: 'Aprovado', E: 'Aguardando aprovação', R: 'Rejeitado' };
+    var TIPO_PF = { D: 'Detalhada', E: 'Estimada', I: 'Indicativa' };
+    function numeroPf(n) { return Number(n).toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 2 }); }
+
     var COLUNAS = [
       { id: 'numero', rotulo: 'Nº ACS' },
       { id: 'status', rotulo: 'Status' },
+      { id: 'fase', rotulo: 'Fase' },
+      { id: 'pf', rotulo: 'PF' },
       { id: 'resumo', rotulo: 'Resumo' },
       { id: 'gestor', rotulo: 'Gestor de negócio' },
       { id: 'dataSolicitacao', rotulo: 'Solicitada em' }
@@ -265,6 +314,7 @@
       hoje: null, solicitacoes: [], coleta: null,
       filtroStatus: '',            // código do status; vazio = todas
       filtroGestor: '',            // nome do gestor; vazio = todos
+      filtroFase: '',              // F1..F7, SEM_FASE; vazio = todas
       termo: '',
       ordem: { coluna: 'status', sentido: 1 },
       pagina: 1,
@@ -338,6 +388,8 @@
     // ---- filtros e tabela ----
 
     function doGestor(s) { return !estado.filtroGestor || s.gestor === estado.filtroGestor; }
+    function codigoFase(s) { return s.fase ? s.fase.codigo : SEM_FASE; }
+    function daFase(s) { return !estado.filtroFase || codigoFase(s) === estado.filtroFase; }
     function daBusca(s) {
       var termo = semAcento(estado.termo.trim());
       return !termo || semAcento(s.numero + ' ' + s.resumo).indexOf(termo) >= 0;
@@ -347,7 +399,7 @@
     /* Os dois selects, como em Expedições: a contagem fica na própria opção
      * ("Em execução (17)") e respeita o gestor escolhido e a busca. */
     function renderFiltros() {
-      var base = estado.solicitacoes.filter(function (s) { return doGestor(s) && daBusca(s); });
+      var base = estado.solicitacoes.filter(function (s) { return doGestor(s) && daFase(s) && daBusca(s); });
       var mapa = {};
       estado.solicitacoes.forEach(function (s) {
         if (!mapa[s.statusCodigo]) mapa[s.statusCodigo] = { codigo: s.statusCodigo, nome: s.status, n: 0 };
@@ -369,19 +421,51 @@
         return '<option value="' + esc(n) + '"' + (n === estado.filtroGestor ? ' selected' : '') + '>' + esc(n) + '</option>';
       }).join('');
 
+      // Fase: contagem respeita status, gestor e busca (não a própria fase).
+      var baseFase = estado.solicitacoes.filter(function (s) {
+        return (!estado.filtroStatus || s.statusCodigo === estado.filtroStatus) && doGestor(s) && daBusca(s);
+      });
+      var porFase = {};
+      estado.solicitacoes.forEach(function (s) { porFase[codigoFase(s)] = 0; });
+      baseFase.forEach(function (s) { porFase[codigoFase(s)]++; });
+      if (estado.filtroFase && !(estado.filtroFase in porFase)) estado.filtroFase = '';
+      var codigos = Object.keys(porFase).filter(function (c) { return c !== SEM_FASE; })
+        .sort(function (a, b) { return ordemFase(a) - ordemFase(b) || a.localeCompare(b); });
+      function opcaoFase(valor, texto) {
+        return '<option value="' + esc(valor) + '"' + (valor === estado.filtroFase ? ' selected' : '') + '>' + esc(texto) + ' (' + porFase[valor] + ')</option>';
+      }
+      selFase.innerHTML = '<option value="">Todas (' + baseFase.length + ')</option>' + codigos.map(function (c) {
+        var f = FASES[ordemFase(c)];
+        return opcaoFase(c, c + (f ? ' · ' + f.nome : ''));
+      }).join('') + (SEM_FASE in porFase ? opcaoFase(SEM_FASE, 'Ainda sem fase') : '');
+
       var vazio = !estado.solicitacoes.length;
-      selStatus.disabled = vazio; selGestor.disabled = vazio; elBusca.disabled = vazio;
+      selStatus.disabled = vazio; selGestor.disabled = vazio; selFase.disabled = vazio; elBusca.disabled = vazio;
+    }
+
+    /* Soma de PF do que está no filtro (todas as páginas). */
+    function renderSomaPf(lista) {
+      var comPf = lista.filter(function (s) { return s.pf; });
+      if (!comPf.length) { elSomaPf.hidden = true; return; }
+      var total = 0, aprovado = 0;
+      comPf.forEach(function (s) { total += s.pf.valor; if (s.pf.situacao === 'A') aprovado += s.pf.valor; });
+      elSomaPf.innerHTML = 'Pontos de função no filtro: <b>' + numeroPf(total) + ' PF</b> em ' + comPf.length +
+        (comPf.length === 1 ? ' demanda' : ' demandas') + ' · <b>' + numeroPf(aprovado) + ' PF</b> aprovados' +
+        (lista.length > comPf.length ? ' · ' + (lista.length - comPf.length) + ' ainda sem contagem' : '');
+      elSomaPf.hidden = false;
     }
 
     function visiveis() {
       var lista = estado.solicitacoes.filter(function (s) {
         if (estado.filtroStatus && s.statusCodigo !== estado.filtroStatus) return false;
-        return doGestor(s) && daBusca(s);
+        return doGestor(s) && daFase(s) && daBusca(s);
       });
       var col = estado.ordem.coluna;
       var sentido = estado.ordem.sentido;
       function chave(s) {
         if (col === 'status') return ordemStatus(s.statusCodigo);
+        if (col === 'fase') return s.fase ? ordemFase(s.fase.codigo) : '';
+        if (col === 'pf') return s.pf ? s.pf.valor : '';
         if (col === 'numero') return s.numero;
         if (col === 'resumo' || col === 'gestor') return semAcento(s[col]);
         return s[col] || ''; // datas AAAA-MM-DD e instante ISO ordenam como texto
@@ -412,6 +496,20 @@
       return texto;
     }
 
+    function celulaFase(s) {
+      if (!s.fase) return '<td class="fase"><span class="vazio-data">—</span></td>';
+      var f = s.fase;
+      return '<td class="fase" title="' + esc(f.codigo + ' · ' + (f.nome || '') + (f.situacaoTexto ? ' (' + f.situacaoTexto + ')' : '')) + '">' +
+        '<span class="fase-cod">' + esc(f.codigo) + '</span>' +
+        (f.nome ? '<span class="fase-nome">' + esc(f.nome) + '</span>' : '') +
+        (f.situacao === 'E' || f.situacao === 'R' ? '<span class="sit ' + esc(f.situacao) + '">' + esc(f.situacaoTexto) + '</span>' : '') + '</td>';
+    }
+    function celulaPf(s) {
+      if (!s.pf) return '<td class="pf"><span class="vazio-data">—</span></td>';
+      return '<td class="pf"><span class="pf-valor">' + numeroPf(s.pf.valor) + '</span>' +
+        '<span class="sit ' + esc(s.pf.situacao) + '">' + esc(s.pf.situacaoTexto || s.pf.situacao) + '</span></td>';
+    }
+
     function celulaData(iso) {
       var d = dataDia(iso);
       return '<td class="data">' + (d || '<span class="vazio-data">—</span>') + '</td>';
@@ -436,11 +534,13 @@
       renderFiltros();
       if (!estado.solicitacoes.length) {
         renderPaginacao(0);
+        elSomaPf.hidden = true;
         elLista.innerHTML = estado.coleta && estado.coleta.estado === 'nunca' ? ''
           : '<div class="vazio">Nenhuma demanda em andamento no ACS.</div>';
         return;
       }
       var todas = visiveis();
+      renderSomaPf(todas);
       if (!todas.length) {
         renderPaginacao(0);
         elLista.innerHTML = '<div class="vazio">Nenhuma demanda bate com o filtro.</div>';
@@ -463,6 +563,7 @@
         h += '<tr tabindex="0" data-numero="' + esc(s.numero) + '" title="Ver todos os dados da demanda ' + esc(s.numero) + '">' +
           '<td class="numero">' + esc(s.numero) + '</td>' +
           '<td><span class="status ' + classeStatus(s.statusCodigo) + '">' + esc(s.status) + '</span></td>' +
+          celulaFase(s) + celulaPf(s) +
           '<td class="resumo">' + esc(s.resumo) + '</td>' +
           '<td class="gestor">' + esc(s.gestor) + '</td>' +
           celulaData(s.dataSolicitacao) + '</tr>';
@@ -483,6 +584,65 @@
       return d || '<span class="vazio-data">' + vazio + '</span>';
     }
 
+    function quandoOuVazio(instante, vazio) {
+      var d = instante ? new Date(instante) : null;
+      if (!d || isNaN(d)) return '<span class="vazio-data">' + vazio + '</span>';
+      return d.toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' });
+    }
+
+    /* Fases (F1..F7, as que ainda não chegaram em cinza) e contagens de PF. */
+    function detalheFasesPf(s) {
+      var h = '<div class="det-secao">Fase e pontos de função</div>';
+      if (!s.detalheEm) {
+        return h + '<p class="det-nota">As fases e o PF desta demanda ainda não foram buscados no ACS. Eles chegam na próxima coleta.</p>';
+      }
+      var f = s.fase;
+      h += '<dl class="det-grade">' +
+        campo('Fase atual', f ? '<span class="fase-cod">' + esc(f.codigo) + '</span> ' + esc(f.nome) +
+          (f.situacaoTexto ? '<span class="sit ' + esc(f.situacao) + '">' + esc(f.situacaoTexto) + '</span>' : '') : '<span class="vazio-data">Ainda sem fase</span>') +
+        campo('Coordenação', esc(s.coordenacao)) +
+        campo('Pontos de função', s.pf ? '<span class="pf-valor">' + numeroPf(s.pf.valor) + ' PF</span>' +
+          '<span class="sit ' + esc(s.pf.situacao) + '">' + esc(s.pf.situacaoTexto || s.pf.situacao) +
+          (s.pf.data ? ' em ' + quandoOuVazio(s.pf.data, '') : '') + '</span>' : '<span class="vazio-data">Ainda sem contagem</span>') +
+        (s.pf && s.pf.novaContagem !== null && s.pf.novaContagem !== undefined
+          ? campo('Nova contagem', '<span class="pf-valor">' + numeroPf(s.pf.novaContagem) + ' PF</span><span class="sit E">aguardando aprovação</span>') : '') +
+        '</dl>';
+
+      // Linha do tempo: as 7 fases do ciclo, com o que o ACS registrou de cada uma.
+      var porCodigo = {};
+      (s.fases || []).forEach(function (x) { porCodigo[x.fase] = x; });
+      var atual = f ? f.codigo : '';
+      var extras = (s.fases || []).filter(function (x) { return ordemFase(x.fase) >= FASES.length; });
+      h += '<table class="fases"><thead><tr><th>Fase</th><th>Situação</th><th>Pedida em</th><th>Aprovada em</th></tr></thead><tbody>';
+      FASES.concat(extras.map(function (x) { return { codigo: x.fase, nome: x.nome || '' }; })).forEach(function (fase) {
+        var x = porCodigo[fase.codigo];
+        var sit = x ? (x.situacao === 'R'
+          ? '<span class="sit R">rejeitada em ' + quandoOuVazio(x.rejeicao, '—') + '</span>'
+          : '<span class="sit ' + esc(x.situacao) + '">' + esc(SIT_FASE[x.situacao] || x.situacao || '') + '</span>') : '<span class="vazio-data">—</span>';
+        h += '<tr class="' + (fase.codigo === atual ? 'atual' : (x ? '' : 'futura')) + '">' +
+          '<td><span class="fase-cod">' + esc(fase.codigo) + '</span> ' + esc(fase.nome) + '</td>' +
+          '<td>' + sit + '</td>' +
+          '<td>' + (x ? quandoOuVazio(x.inclusao, '—') : '') + '</td>' +
+          '<td>' + (x ? quandoOuVazio(x.validacao, '—') : '') + '</td></tr>';
+      });
+      h += '</tbody></table>';
+
+      var metricas = s.metricas || [];
+      if (metricas.length) {
+        h += '<table class="fases"><thead><tr><th>Contagem de PF</th><th>Tipo</th><th>Situação</th><th>Decidida em</th></tr></thead><tbody>';
+        metricas.forEach(function (m) {
+          h += '<tr><td><span class="pf-valor">' + numeroPf(m.pf) + ' PF</span></td>' +
+            '<td>' + esc(TIPO_PF[m.tipo] || m.tipo || '—') + '</td>' +
+            '<td><span class="sit ' + esc(m.situacao) + '">' + esc(SIT_PF[m.situacao] || m.situacao || '') + '</span></td>' +
+            '<td>' + quandoOuVazio(m.data, '—') + '</td></tr>';
+        });
+        h += '</tbody></table>';
+      }
+      h += '<p class="det-nota">Do ACS, buscado em ' + esc(dataHora(s.detalheEm)) + '. Cada fase é um pedido de aprovação: ' +
+        '“F5 aprovada”, por exemplo, quer dizer que a construção terminou.</p>';
+      return h;
+    }
+
     function abrirDetalhe(numero) {
       var s = null;
       estado.solicitacoes.forEach(function (x) { if (String(x.numero) === String(numero)) s = x; });
@@ -501,6 +661,7 @@
           campo('Solicitada em', dataOuVazio(s.dataSolicitacao, 'Não informado')) +
           campo('Neste status', tempoNoStatus(s)) +
         '</dl>' +
+        detalheFasesPf(s) +
         '<div class="det-secao">Prazos</div>' +
         '<dl class="det-grade">' +
           campo('Previsão de início', dataOuVazio(s.previsaoInicio, 'Ainda não definida')) +
@@ -520,6 +681,7 @@
     function filtrou() { estado.pagina = 1; renderLista(); }
     selStatus.addEventListener('change', function () { estado.filtroStatus = selStatus.value; filtrou(); selStatus.focus(); });
     selGestor.addEventListener('change', function () { estado.filtroGestor = selGestor.value; filtrou(); selGestor.focus(); });
+    selFase.addEventListener('change', function () { estado.filtroFase = selFase.value; filtrou(); selFase.focus(); });
     elBusca.addEventListener('input', function () { estado.termo = elBusca.value; filtrou(); });
     elLista.addEventListener('click', function (e) {
       var b = e.target.closest('button[data-ordem]');

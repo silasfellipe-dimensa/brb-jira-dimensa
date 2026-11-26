@@ -331,3 +331,114 @@ describe('assinatura dos pedidos do coletor', () => {
     assert.strictEqual(conferirAssinatura({ segredo, assinatura: a, agora, ...get, caminho: '/api/acs/coletor/carga' }), false);
   });
 });
+
+// ---- fases e pontos de função (vêm junto de cada solicitação) ----
+
+const { interpretarDataHoraBr, normalizarFases, normalizarMetricas, faseAtual, pfAtual } = require('../acs');
+
+// Formato real de /Solicitacoes/{n}/fases e /Metricas/todos, com dados inventados.
+const faseBruta = (cd, sit, inclusao, validacao = null, extra = {}) => ({
+  FK_NR_ACS: 20990101001.0, CD_FASE: cd, DT_INCLUSAO_FASE: inclusao, DS_SITUACAO_FASE: sit,
+  DT_VALIDACAO_FASE: validacao, DT_REJEICAO_FASE: null, NR_MATRIC_CADASTRO_FASE: 9999, ...extra
+});
+const metricaBruta = (contagem, st, data = null) => ({
+  contagem, nome_documento: 'F7A3 - RELATÓRIO DE MENSURAÇÃO FINAL (CONTAGEM DE PF).xlsx',
+  responsavel_aprovacao: 'FULANO APROVADOR', tipo_contagem: 'D', data_aprovacao: data, st_aprovacao: st
+});
+
+describe('interpretarDataHoraBr — "dd/mm/aaaa hh:mm:ss" do ACS (Brasília)', () => {
+  test('vira instante com o fuso de Brasília', () => {
+    assert.strictEqual(interpretarDataHoraBr('14/10/2026 15:39:22'), '2026-10-14T15:39:22-03:00');
+    assert.strictEqual(interpretarDataHoraBr('14/10/2026'), '2026-10-14T00:00:00-03:00');
+  });
+  test('vazio e "-" viram null; data ou hora impossível, undefined', () => {
+    for (const v of [null, undefined, '', '-']) assert.strictEqual(interpretarDataHoraBr(v), null);
+    for (const v of ['31/02/2026 10:00:00', '14/10/2026 25:00:00', '2026-10-14T10:00:00']) assert.strictEqual(interpretarDataHoraBr(v), undefined, v);
+  });
+});
+
+describe('normalizarFases — histórico de fases da demanda', () => {
+  test('guarda fase, situação e datas; matrícula de quem cadastrou fica de fora', () => {
+    const f = normalizarFases([faseBruta('F1', 'A', '08/10/2026 18:02:06', '08/10/2026 18:02:24')]);
+    assert.deepStrictEqual(f, [{ fase: 'F1', situacao: 'A', inclusao: '2026-10-08T18:02:06-03:00', validacao: '2026-10-08T18:02:24-03:00', rejeicao: null }]);
+    assert.ok(!JSON.stringify(f).includes('9999'));
+  });
+  test('ordena pela data de inclusão, não pela ordem em que o ACS mandou', () => {
+    const f = normalizarFases([faseBruta('F6', 'E', '17/11/2026 18:13:13'), faseBruta('F5', 'A', '15/10/2026 14:49:56')]);
+    assert.deepStrictEqual(f.map((x) => x.fase), ['F5', 'F6']);
+  });
+  test('lista vazia é válida (demanda que ainda não pediu nenhuma fase)', () => {
+    assert.deepStrictEqual(normalizarFases([]), []);
+  });
+  test('formato torto devolve null', () => {
+    for (const v of [null, 'x', [null], [faseBruta('<b>', 'A', '01/01/2026')], [faseBruta('F1', 'A', '99/99/2026')]]) {
+      assert.strictEqual(normalizarFases(v), null, JSON.stringify(v));
+    }
+  });
+});
+
+describe('normalizarMetricas — contagens de PF', () => {
+  test('guarda valor, tipo, situação e data; o nome de quem aprovou fica de fora', () => {
+    const m = normalizarMetricas([metricaBruta(10.4, 'A', '18/11/2026 17:33:21')]);
+    assert.strictEqual(m.length, 1);
+    assert.deepStrictEqual({ ...m[0], documento: undefined }, { pf: 10.4, tipo: 'D', situacao: 'A', data: '2026-11-18T17:33:21-03:00', documento: undefined });
+    assert.ok(!JSON.stringify(m).includes('APROVADOR'));
+  });
+  test('a mesma contagem repetida pelo ACS vira uma só', () => {
+    assert.strictEqual(normalizarMetricas([metricaBruta(20.8, 'E'), metricaBruta(20.8, 'E'), metricaBruta(20.8, 'E')]).length, 1);
+  });
+  test('PF negativo, texto ou absurdo devolve null', () => {
+    for (const c of [-1, 'dez', 1e9]) assert.strictEqual(normalizarMetricas([metricaBruta(c, 'A')]), null, String(c));
+  });
+});
+
+describe('faseAtual e pfAtual — o que a lista mostra', () => {
+  test('fase atual é a última do histórico, com o nome do ciclo de vida', () => {
+    const f = faseAtual(normalizarFases([faseBruta('F4', 'A', '08/10/2026 18:03:25'), faseBruta('F5', 'A', '14/10/2026 15:39:22')]));
+    assert.deepStrictEqual(f, { codigo: 'F5', nome: 'Construção', situacao: 'A', situacaoTexto: 'aprovada', desde: '2026-10-14T15:39:22-03:00', validada: null });
+    assert.strictEqual(faseAtual([]), null);
+  });
+  // Bug que isto pega: mostrar a recontagem que ainda não foi aprovada como se
+  // fosse o PF que vale (ou esconder que existe uma).
+  test('PF que vale é a decisão mais recente; recontagem pendente aparece à parte', () => {
+    const p = pfAtual(normalizarMetricas([metricaBruta(13.8, 'A', '21/07/2026 15:28:07'), metricaBruta(20.8, 'E')]));
+    assert.deepStrictEqual(p, { valor: 13.8, situacao: 'A', situacaoTexto: 'Aprovado', data: '2026-07-21T15:28:07-03:00', novaContagem: 20.8 });
+  });
+  test('rejeição mais nova que a aprovação vale', () => {
+    const p = pfAtual(normalizarMetricas([metricaBruta(8, 'A', '01/07/2026 10:00:00'), metricaBruta(9, 'R', '02/07/2026 10:00:00')]));
+    assert.strictEqual(p.valor, 9);
+    assert.strictEqual(p.situacaoTexto, 'Rejeitado');
+  });
+  test('sem nenhuma decidida, mostra a que aguarda aprovação; sem contagem, null', () => {
+    const p = pfAtual(normalizarMetricas([metricaBruta(10.4, 'E')]));
+    assert.strictEqual(p.valor, 10.4);
+    assert.strictEqual(p.novaContagem, null);
+    assert.strictEqual(pfAtual([]), null);
+  });
+});
+
+describe('normalizarSolicitacao com detalhe (FASES, METRICAS, COORDENACAO)', () => {
+  test('com detalhe válido, as colunas de detalhe entram', () => {
+    const r = normalizarSolicitacao(bruta({ FASES: [faseBruta('F1', 'A', '01/01/2026 10:00:00')], METRICAS: [], COORDENACAO: 'GENED' }));
+    assert.ok(r.ok);
+    assert.strictEqual(r.linha.coordenacao, 'GENED');
+    assert.strictEqual(r.linha.fases.length, 1);
+    assert.deepStrictEqual(r.linha.metricas, []);
+  });
+  // Bug que isto pega: um detalhe torto (ou ausente) derrubar a carga inteira,
+  // ou apagar o detalhe que o banco já tinha.
+  test('detalhe torto ou ausente: a solicitação entra, sem as colunas de detalhe', () => {
+    for (const extra of [{}, { FASES: 'x', METRICAS: [] }, { FASES: [], METRICAS: [metricaBruta(-5, 'A')] }]) {
+      const r = normalizarSolicitacao(bruta(extra));
+      assert.ok(r.ok, JSON.stringify(extra));
+      for (const c of ['fases', 'metricas', 'coordenacao']) assert.ok(!(c in r.linha), `${c} com ${JSON.stringify(extra)}`);
+    }
+  });
+  test('deLinhaAcs sem detalhe no banco: fase e PF nulos, listas vazias', () => {
+    const s = deLinhaAcs({ numero: 1, status_codigo: 'X', status: 'EM EXECUÇÃO' });
+    assert.strictEqual(s.fase, null);
+    assert.strictEqual(s.pf, null);
+    assert.deepStrictEqual(s.fases, []);
+    assert.strictEqual(s.detalheEm, null);
+  });
+});
